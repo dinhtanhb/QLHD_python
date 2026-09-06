@@ -1,0 +1,60 @@
+{% extends 'quanly/base.html' %}
+
+{% block title %}Danh sách Đơn vị{% endblock %}
+
+{% block content %}
+<div class="container-fluid bg-white shadow p-4 rounded">
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="text-primary m-0">Danh sách Đơn vị</h2>
+        <div>
+            <!-- Bạn có thể bỏ nút "Quản lý Cán bộ" ở đây đi vì Sidebar đã có rồi, nhưng tôi vẫn giữ lại theo code gốc của bạn -->
+            <a href="/can-bo/" class="btn btn-outline-secondary btn-sm me-2">Quản lý Cán bộ</a>
+            <a href="{% url 'them_don_vi' %}" class="btn btn-success btn-sm">Thêm đơn vị mới</a>
+        </div>
+    </div>
+    
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped align-middle table-hover">
+            <thead class="table-dark text-center">
+                <tr>
+                    <th>Mã Đơn Vị</th>
+                    <th>Tên Đơn Vị</th>
+                    <th>Mã số thuế</th>
+                    <th>Người đại diện</th>
+                    <th>Điện thoại</th>
+                    <th>Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for dv in ds_don_vi %}
+                <tr>
+                    <td class="text-center fw-bold">{{ dv.ma_don_vi }}</td>
+                    <td>{{ dv.ten_don_vi }}</td>
+                    <td class="text-center">{{ dv.mstdv }}</td>
+                    <td>{{ dv.nguoi_dai_dien }}</td>
+                    <td class="text-center">{{ dv.dien_thoai|default:"---" }}</td>
+                    <td class="text-center" style="min-width: 120px;">
+                        <a href="{% url 'sua_don_vi' dv.id %}" class="btn btn-sm btn-primary">Sửa</a>
+                        <a href="{% url 'xoa_don_vi' dv.id %}" class="btn btn-sm btn-danger" onclick="return confirm('Xác nhận xóa đơn vị {{ dv.ten_don_vi }}?');">Xóa</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">Chưa có dữ liệu đơn vị nào.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

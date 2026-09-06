@@ -1,0 +1,104 @@
+{% extends 'quanly/base.html' %}
+
+{% block title %}Danh sách trẻ{% endblock %}
+
+{% block content %}
+    <div class="container-fluid bg-white shadow p-4 rounded">
+        
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="text-primary m-0">Danh sách Trẻ</h2>
+            
+            <!-- BẮT ĐẦU: Thanh tìm kiếm -->
+            <form method="GET" action="" class="d-flex w-50 mx-3">
+                <input type="text" name="q" value="{{ query|default:'' }}" class="form-control me-2" placeholder="Tìm mã, tên trẻ, tên PH, SĐT...">
+                <button type="submit" class="btn btn-outline-primary">Tìm</button>
+                {% if query %}
+                    <a href="{% url 'danh_sach_tre' %}" class="btn btn-outline-secondary ms-2">Xóa</a>
+                {% endif %}
+            </form>
+            <!-- KẾT THÚC: Thanh tìm kiếm -->
+
+            <div>
+                <a href="{% url 'import_tre' %}" class="btn btn-success btn-sm">
+                    <i class="fas fa-file-excel"></i> Import Excel
+                </a>
+                <a href="{% url 'them_tre' %}" class="btn btn-success btn-sm">Thêm trẻ mới</a>
+            </div>
+        </div>
+        
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped align-middle">
+                <thead class="table-dark text-center">
+                    <tr>
+                        <th>Mã Trẻ</th>
+                        <th>Họ và Tên</th>
+                        <th>Ngày Sinh</th>
+                        <th>Giới Tính</th>
+                        <th>Phụ huynh/NCS</th>
+                        <th>Điện thoại</th>
+                        <th>Tên tài khoản</th>
+                        <th>Số tài khoản</th>
+                        <th>Ngân hàng</th>
+                        <th>Chi nhánh</th>
+                        <th>Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Đã đổi ds_tre thành page_obj để hỗ trợ phân trang -->
+                    {% for t in page_obj %}
+                    <tr>
+                        <td class="text-center">{{ t.ma_tre }}</td>
+                        <td>{{ t.ho_ten }}</td>
+                        <td class="text-center">{{ t.ngay_sinh|date:"d/m/Y"|default:"---" }}</td>
+                        <td class="text-center">{{ t.gioi_tinh|default:"---" }}</td>
+                        <td>{{ t.ten_phu_huynh|default:"---" }}</td>
+                        <td>{{ t.dien_thoai|default:"---" }}</td>
+                        <td>{{ t.ten_tai_khoan|default:"---" }}</td>
+                        <td>{{ t.tai_khoan|default:"---" }}</td>
+                        <td>{{ t.ngan_hang|default:"---" }}</td>
+                        <td>{{ t.chi_nhanh|default:"---" }}</td>
+                        <td class="text-center">
+                            <a href="{% url 'sua_tre' t.id %}" class="btn btn-sm btn-primary mb-1">Sửa</a>
+                            <a href="{% url 'xoa_tre' t.id %}" class="btn btn-sm btn-danger mb-1" onclick="return confirm('Bạn có chắc chắn muốn xóa hồ sơ của {{ t.ho_ten }} không?');">Xóa</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="11" class="text-center text-muted py-4">Không tìm thấy dữ liệu trẻ nào phù hợp.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- BẮT ĐẦU: Thanh điều hướng phân trang -->
+        {% if page_obj.has_other_pages %}
+        <nav aria-label="Page navigation" class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                    <li class="page-item"><a class="page-link" href="?q={{ query|default:'' }}&page=1">&laquo; Đầu</a></li>
+                    <li class="page-item"><a class="page-link" href="?q={{ query|default:'' }}&page={{ page_obj.previous_page_number }}">Trước</a></li>
+                {% endif %}
+
+                <li class="page-item disabled"><span class="page-link">Trang {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+
+                {% if page_obj.has_next %}
+                    <li class="page-item"><a class="page-link" href="?q={{ query|default:'' }}&page={{ page_obj.next_page_number }}">Sau</a></li>
+                    <li class="page-item"><a class="page-link" href="?q={{ query|default:'' }}&page={{ page_obj.paginator.num_pages }}">Cuối &raquo;</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        <!-- KẾT THÚC: Thanh điều hướng phân trang -->
+
+    </div>
+{% endblock %}

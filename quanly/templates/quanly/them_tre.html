@@ -1,0 +1,118 @@
+{% extends 'quanly/base.html' %}
+
+{% block title %}Danh sách Đơn vị{% endblock %}
+
+{% block content %}
+    <div class="container bg-white shadow p-4 rounded" style="max-width: 650px;">
+        
+        <!-- Hiển thị thông báo thành công/lỗi -->
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <h3 class="text-primary mb-4">Thêm Hồ Sơ Trẻ Mới</h3>
+        
+        <form method="post">
+            {% csrf_token %}
+            
+            <!-- Hiển thị lỗi ngầm của form (nếu có) -->
+            {% if form.errors %}
+                <div class="alert alert-danger">
+                    Vui lòng kiểm tra lại các thông tin bên dưới.
+                    {{ form.errors }}
+                </div>
+            {% endif %}
+            
+            <!-- Các trường thông tin -->
+            <div class="mb-3">
+                <label class="form-label fw-bold">Mã Trẻ:</label>
+                {{ form.ma_tre }}
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">Họ và Tên:</label>
+                {{ form.ho_ten }}
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">Ngày Sinh:</label>
+                {{ form.ngay_sinh }}
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">Giới Tính:</label>
+                {{ form.gioi_tinh }}
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">Mã Tỉnh (VD: DN, BP):</label>
+                {{ form.ma_tinh }}
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">Tỉnh/Thành phố:</label>
+                {{ form.tinh }}
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">Xã/Phường:</label>
+                {{ form.xa }}
+            </div>
+
+            <!-- Các trường thông tin thêm (Tài khoản, Phụ huynh...) -->
+            <div class="mb-3">
+                <label class="form-label fw-bold">Tên Phụ Huynh/NCS:</label>
+                {{ form.ten_phu_huynh }}
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">Điện Thoại:</label>
+                {{ form.dien_thoai }}
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">Tên Tài Khoản:</label>
+                {{ form.ten_tai_khoan }}
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">Số Tài Khoản:</label>
+                {{ form.tai_khoan }}
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label fw-bold">Ngân Hàng:</label>
+                    {{ form.ngan_hang }}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label fw-bold">Chi Nhánh:</label>
+                    {{ form.chi_nhanh }}
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between mt-4">
+                <a href="/tre/" class="btn btn-secondary">Quay lại danh sách</a>
+                <button type="submit" class="btn btn-success">Lưu thông tin</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Script xử lý tự động thay đổi danh sách Xã khi chọn Tỉnh -->
+    <script>
+        document.getElementById('select-tinh').addEventListener('change', function() {
+            var tinhId = this.value;
+            var xaSelect = document.getElementById('id_xa');
+            
+            xaSelect.innerHTML = '<option value="">-- Chọn Xã/Phường --</option>';
+            
+            if (tinhId) {
+                fetch('/ajax/lay-xa/?tinh_id=' + tinhId)
+                    .then(response => response.json())
+                    .then(data => {
+                        data.forEach(function(xa) {
+                            var option = document.createElement('option');
+                            option.value = xa.id;
+                            option.textContent = xa.ten_xa;
+                            xaSelect.appendChild(option);
+                        });
+                    });
+            }
+        });
+    </script>
+{% endblock %}

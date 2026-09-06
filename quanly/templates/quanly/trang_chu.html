@@ -1,0 +1,92 @@
+{% extends 'quanly/base.html' %}
+
+{% block title %}Trang chủ - VietHealth{% endblock %}
+
+{% block content %}
+<div class="container-fluid bg-white shadow p-4 rounded">
+    
+    <div class="mb-4 border-bottom pb-3">
+        <h2 class="text-primary m-0">Chào mừng anh Vũ Đình Tân đến với Hệ thống Quản lý VietHealth!</h2>
+        <p class="text-muted mt-2 mb-0">Dưới đây là thống kê tổng quan về dữ liệu hệ thống hiện tại.</p>
+    </div>
+
+    <div class="row g-4 mt-2">
+        <!-- Thẻ thống kê Đơn vị -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-primary text-white h-100 shadow-sm border-0">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase mb-1 fw-bold">Tổng số Đơn vị</h6>
+                            <h2 class="display-5 fw-bold mb-0">{{ tong_don_vi }}</h2>
+                        </div>
+                        <i class="bi bi-building fs-1 text-white opacity-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent border-0 d-flex align-items-center justify-content-between pb-3">
+                    <a class="text-white text-decoration-none stretched-link fw-bold" href="/don-vi/">Xem chi tiết</a>
+                    <i class="bi bi-arrow-right"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Thẻ thống kê Nhóm Hợp đồng -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-success text-white h-100 shadow-sm border-0">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase mb-1 fw-bold">Nhóm Hợp đồng</h6>
+                            <h2 class="display-5 fw-bold mb-0">{{ tong_nhom }}</h2>
+                        </div>
+                        <i class="bi bi-file-earmark-text fs-1 text-white opacity-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent border-0 d-flex align-items-center justify-content-between pb-3">
+                    <a class="text-white text-decoration-none stretched-link fw-bold" href="/nhom-hd/">Xem chi tiết</a>
+                    <i class="bi bi-arrow-right"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Thẻ thống kê Trẻ -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-warning text-dark h-100 shadow-sm border-0">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase mb-1 fw-bold">Hồ sơ Trẻ</h6>
+                            <h2 class="display-5 fw-bold mb-0">{{ tong_tre }}</h2>
+                        </div>
+                        <i class="bi bi-person-hearts fs-1 text-dark opacity-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent border-0 d-flex align-items-center justify-content-between pb-3">
+                    <a class="text-dark text-decoration-none stretched-link fw-bold" href="/tre/">Xem chi tiết</a>
+                    <i class="bi bi-arrow-right"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Thẻ thống kê Cán bộ -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-danger text-white h-100 shadow-sm border-0">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase mb-1 fw-bold">Hồ sơ Cán bộ</h6>
+                            <h2 class="display-5 fw-bold mb-0">{{ tong_can_bo }}</h2>
+                        </div>
+                        <i class="bi bi-person-badge fs-1 text-white opacity-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent border-0 d-flex align-items-center justify-content-between pb-3">
+                    <a class="text-white text-decoration-none stretched-link fw-bold" href="/can-bo/">Xem chi tiết</a>
+                    <i class="bi bi-arrow-right"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

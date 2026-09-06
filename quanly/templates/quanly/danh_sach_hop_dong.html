@@ -1,0 +1,37 @@
+{% extends 'quanly/base.html' %}
+{% block title %}Danh sách Hợp đồng{% endblock %}
+{% block content %}
+<div class="container-fluid bg-white shadow p-4 rounded">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="text-primary m-0">Danh sách Hợp đồng & Phân công</h2>
+        <a href="{% url 'import_phan_cong' %}" class="btn btn-success btn-sm">Import từ Excel</a>
+    </div>
+
+    <table class="table table-bordered table-striped align-middle">
+        <thead class="table-dark text-center">
+            <tr>
+                <th>Số Hợp đồng</th>
+                <th>Cán bộ can thiệp</th>
+                <th>Nhóm HĐ</th>
+                <th>Ngày ký</th>
+                <th>Trạng thái</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for hd in ds_hop_dong %}
+            <tr>
+                <td class="text-center fw-bold">{{ hd.so_hop_dong }}</td>
+                <td>{{ hd.can_bo.ho_ten }}</td>
+                <td class="text-center">{{ hd.nhom_hd.ten_nhom }}</td>
+                <td class="text-center">{{ hd.ngay_ky|date:"d/m/Y" }}</td>
+                <td class="text-center"><span class="badge bg-primary">{{ hd.get_trang_thai_display }}</span></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" class="text-center text-muted py-4">Chưa có hợp đồng nào được tạo hoặc import.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

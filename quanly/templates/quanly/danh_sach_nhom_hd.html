@@ -1,0 +1,53 @@
+{% extends 'quanly/base.html' %}
+
+{% block title %}Danh sách Đơn vị{% endblock %}
+
+{% block content %}
+    <div class="container bg-white shadow p-4 rounded" style="max-width: 900px;">
+        
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="text-primary m-0">Danh mục Nhóm Hợp Đồng</h2>
+            <div>
+                <a href="/don-vi/" class="btn btn-outline-secondary btn-sm me-2">Quản lý Đơn vị</a>
+                <a href="{% url 'them_nhom_hd' %}" class="btn btn-success btn-sm">Thêm nhóm mới</a>
+            </div>
+        </div>
+        
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped align-middle table-hover">
+                <thead class="table-dark text-center">
+                    <tr>
+                        <th style="width: 20%;">Mã Nhóm</th>
+                        <th>Tên Nhóm Hợp Đồng</th>
+                        <th style="width: 20%;">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for nhom in ds_nhom %}
+                    <tr>
+                        <td class="text-center fw-bold">{{ nhom.ma_nhom_hd }}</td>
+                        <td>{{ nhom.ten_nhom_hd }}</td>
+                        <td class="text-center">
+                            <a href="{% url 'sua_nhom_hd' nhom.id %}" class="btn btn-sm btn-primary">Sửa</a>
+                            <a href="{% url 'xoa_nhom_hd' nhom.id %}" class="btn btn-sm btn-danger" onclick="return confirm('Xác nhận xóa nhóm {{ nhom.ten_nhom_hd }}?');">Xóa</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-4">Chưa có dữ liệu danh mục nào.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endblock %}
