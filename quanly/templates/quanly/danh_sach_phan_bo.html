@@ -1,0 +1,69 @@
+{% extends 'quanly/base.html' %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h4 class="mb-0"><i class="bi bi-list-check"></i> Danh Sách Phân Bổ Chỉ Tiêu</h4>
+            <a href="{% url 'import_phan_bo' %}" class="btn btn-light btn-sm fw-bold">
+                <i class="bi bi-file-earmark-excel"></i> Import Excel Phân Bổ
+            </a>
+        </div>
+        <div class="card-body">
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>#</th>
+                            <th>Mã CBCT</th>
+                            <th>Họ tên Cán bộ</th>
+                            <th>Nhóm HĐ</th>
+                            <th>Trẻ PHCN</th>
+                            <th>ĐM Đi lại PHCN</th>
+                            <th>Trẻ CS</th>
+                            <th>ĐM Đi lại CS</th>
+                            <th>Giá trị HĐ dự kiến</th>
+                            <th>Trạng thái</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in danh_sach %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            <td><strong>{{ item.can_bo.ma_can_bo }}</strong></td>
+                            <td>{{ item.can_bo.ho_ten }}</td>
+                            <td>Nhóm {{ item.nhom_hd }}</td>
+                            <td>{{ item.so_tre_phcn }}</td>
+                            <td>{{ item.dinh_muc_di_lai_phcn|floatformat:0 }} đ</td>
+                            <td>{{ item.so_tre_cs }}</td>
+                            <td>{{ item.dinh_muc_di_lai_cs|floatformat:0 }} đ</td>
+                            <td class="fw-bold text-primary">{{ item.gia_tri_hd_du_kien|floatformat:0 }} VNĐ</td>
+                            <td>
+                                {% if item.trang_thai == 'DE_XUAT' %}
+                                    <span class="badge bg-warning text-dark">Chờ đề xuất HĐ</span>
+                                {% else %}
+                                    <span class="badge bg-success">Đã tạo Hợp đồng</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="10" class="text-center text-muted py-4">Chưa có dữ liệu phân bổ chỉ tiêu nào.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

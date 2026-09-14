@@ -1,0 +1,159 @@
+{% extends 'quanly/base.html' %}
+
+{% block title %}Phân bổ chỉ tiêu{% endblock %}
+
+{% block content %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+
+<div class="container mt-4">
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h4 class="mb-0">Phân Bổ Chỉ Tiêu & Định Mức Hợp Đồng</h4>
+            
+            <!-- NÚT IMPORT EXCEL DÀNH RIÊNG CHO ADMIN -->
+            {% if user.is_staff %}
+            <a href="{% url 'import_phan_bo' %}" class="btn btn-success btn-sm mb-3">
+                <i class="bi bi-file-earmark-excel"></i> Import Phân Bổ (Excel)
+            </a>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-success">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+
+            <form method="POST">
+                {% csrf_token %}
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label class="form-label fw-bold">Cán bộ can thiệp (Nhập Mã hoặc Tên để tìm)</label>
+                        {{ form.can_bo }}
+                    </div>
+                    <div class="col-md-4 mt-3">
+                        <label class="form-label fw-bold">Ngày lập đề xuất</label>
+                        {{ form.ngay_lap_de_xuat }}
+                    </div>
+                </div>
+
+                <hr>
+                <h5 class="text-info fw-bold"><i class="bi bi-heart-pulse"></i> Chỉ tiêu Phục hồi chức năng (PHCN)</h5>
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Số trẻ PHCN</label>
+                        {{ form.so_tre_phcn }}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Số buổi / 1 trẻ</label>
+                        {{ form.so_buoi_phcn }}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Định mức đi lại PHCN (VNĐ)</label>
+                        {{ form.dinh_muc_di_lai_phcn }}
+                    </div>
+                </div>
+
+                <hr>
+                <h5 class="text-info fw-bold"><i class="bi bi-people"></i> Chỉ tiêu Chăm sóc xã hội (CSXH)</h5>
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Số trẻ CSXH</label>
+                        {{ form.so_tre_cs }}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Số buổi / 1 trẻ</label>
+                        {{ form.so_buoi_cs }}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Định mức đi lại CSXH (VNĐ)</label>
+                        {{ form.dinh_muc_di_lai_cs }}
+                    </div>
+                </div>
+
+                <hr>
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-success fs-5">Giá trị hợp đồng dự kiến (VNĐ)</label>
+                        {{ form.gia_tri_hd_du_kien }}
+                    </div>
+                </div>
+
+                <!-- Dùng 1 nút bấm duy nhất -->
+                <div class="d-flex justify-content-end">
+                    <button type="submit" class="btn btn-primary px-4 btn-lg">
+                        <i class="bi bi-send-check"></i> Lưu & Chuyển sang Đề xuất Hợp đồng
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(document).ready(function() {
+        // Khởi tạo Select2
+        $('.select2-search').select2({
+            theme: 'bootstrap-5',
+            placeholder: '--- Gõ Mã hoặc Tên Cán bộ để tìm ---',
+            allowClear: true
+        });
+
+        // Khóa không cho nhập tay vào ô giá trị hợp đồng dự kiến
+        $('#id_gia_tri_hd_du_kien').prop('readonly', true);
+
+        // ĐỊNH MỨC TÀI CHÍNH (Đồng bộ theo quanly/financial.py)
+        const DON_GIA_CONG = 200000;
+        const BANGLE_DINH_MUC_DI_LAI = {
+            1: 50000,   // DM1
+            2: 100000   // DM2
+        };
+
+        // Hàm quy đổi mã định mức ra số tiền
+        function laySoTienDiLai(val) {
+            let num = parseFloat(val) || 0;
+            if (BANGLE_DINH_MUC_DI_LAI[num] !== undefined) {
+                return BANGLE_DINH_MUC_DI_LAI[num];
+            }
+            return num;
+        }
+
+        // Hàm tính tổng giá trị hợp đồng
+        function tinhGiaTriHopDong() {
+            let trePhcn = parseFloat($('#id_so_tre_phcn').val()) || 0;
+            let buoiPhcn = parseFloat($('#id_so_buoi_phcn').val()) || 0;
+            let dmPhcnVal = $('#id_dinh_muc_di_lai_phcn').val();
+
+            let treCs = parseFloat($('#id_so_tre_cs').val()) || 0;
+            let buoiCs = parseFloat($('#id_so_buoi_cs').val()) || 0;
+            let dmCsVal = $('#id_dinh_muc_di_lai_cs').val();
+
+            let donGiaDiLaiPhcn = laySoTienDiLai(dmPhcnVal);
+            let donGiaDiLaiCs = laySoTienDiLai(dmCsVal);
+
+            // Tính riêng 4 dòng thành tiền
+            let congPhcn = trePhcn * buoiPhcn * DON_GIA_CONG;
+            let diLaiPhcn = trePhcn * buoiPhcn * donGiaDiLaiPhcn;
+
+            let congCs = treCs * buoiCs * DON_GIA_CONG;
+            let diLaiCs = treCs * buoiCs * donGiaDiLaiCs;
+
+            // Tổng cộng
+            let tongTien = congPhcn + diLaiPhcn + congCs + diLaiCs;
+
+            $('#id_gia_tri_hd_du_kien').val(tongTien);
+        }
+
+        // Bắt sự kiện thay đổi dữ liệu
+        $('#id_so_tre_phcn, #id_so_buoi_phcn, #id_dinh_muc_di_lai_phcn, #id_so_tre_cs, #id_so_buoi_cs, #id_dinh_muc_di_lai_cs').on('input change', function() {
+            tinhGiaTriHopDong();
+        });
+
+        // Tính sẵn khi mở trang
+        tinhGiaTriHopDong();
+    });
+</script>
+{% endblock %}

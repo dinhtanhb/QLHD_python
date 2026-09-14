@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.humanize',
     'quanly',
 ]
 
@@ -130,3 +131,6 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+LOGIN_REDIRECT_URL = '/'  # Nhảy về trang chủ sau khi đăng nhập thành công
+LOGOUT_REDIRECT_URL = '/accounts/login/'  # Về lại trang đăng nhập khi thoát

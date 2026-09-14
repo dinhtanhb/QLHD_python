@@ -2,129 +2,315 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>{% block title %}Hệ thống Quản lý{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Hệ thống Quản lý - VietHealth{% endblock %}</title>
+    
+    <!-- Bootstrap CSS & Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    
     <style>
-        body { display: flex; height: 100vh; overflow: hidden; margin: 0; background-color: #f8f9fa; }
-        
-        /* Cấu hình Sidebar */
-        #sidebar { 
-            width: 260px; min-width: 70px; max-width: 500px; 
-            background: #212529; color: white; display: flex; flex-direction: column;
+        :root {
+            --sidebar-bg: #212529;
+            --sidebar-hover: #343a40;
+            --sidebar-submenu-bg: #181b1e;
+            --sidebar-color: #adb5bd;
+            --sidebar-active-color: #ffffff;
+            --resizer-width: 4px;
         }
-        .sidebar-header { padding: 15px; text-align: center; font-weight: bold; font-size: 1.2rem; border-bottom: 1px solid #495057; }
-        .menu-item { padding: 12px 20px; color: #adb5bd; text-decoration: none; display: flex; align-items: center; cursor: pointer; }
-        .menu-item:hover { color: white; background: #343a40; }
-        .menu-item i { font-size: 1.2rem; min-width: 30px; }
-        .menu-text { white-space: nowrap; overflow: hidden; transition: opacity 0.2s; }
-        
-        /* Menu con */
-        .submenu { display: none; background: #343a40; padding-left: 40px; }
-        .submenu a { display: block; padding: 10px 0; color: #adb5bd; text-decoration: none; font-size: 0.9rem; }
-        .submenu a:hover { color: white; }
-        
-        /* Thanh kéo dãn */
-        #resizer { width: 5px; cursor: col-resize; background: #495057; transition: background 0.2s; }
-        #resizer:hover, #resizer:active { background: #0d6efd; }
 
-        /* Vùng nội dung chính */
-        #main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
-        #topbar { background: white; padding: 10px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; align-items: center; }
-        #content-area { padding: 20px; overflow-y: auto; flex-grow: 1; }
+        body {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            margin: 0;
+            background-color: #f4f6f9;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
 
-        /* Trạng thái thu gọn */
-        .collapsed #sidebar { width: 70px !important; }
-        .collapsed .menu-text, .collapsed .submenu, .collapsed .sidebar-title { display: none !important; }
-        .collapsed #resizer { cursor: default; pointer-events: none; }
+        /* Sidebar Styles */
+        #sidebar {
+            width: 260px;
+            min-width: 70px;
+            max-width: 450px;
+            background: var(--sidebar-bg);
+            color: var(--sidebar-color);
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+            z-index: 1000;
+        }
+
+        .sidebar-header {
+            padding: 16px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.2rem;
+            letter-spacing: 0.5px;
+            color: #fff;
+            border-bottom: 1px solid #343a40;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .menu-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .menu-item {
+            padding: 12px 18px;
+            color: var(--sidebar-color);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .menu-item:hover {
+            color: var(--sidebar-active-color);
+            background: var(--sidebar-hover);
+        }
+
+        .menu-item i.menu-icon {
+            font-size: 1.15rem;
+            min-width: 32px;
+            display: inline-block;
+        }
+
+        .menu-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-grow: 1;
+        }
+
+        .arrow-icon {
+            font-size: 0.8rem;
+            transition: transform 0.2s ease;
+        }
+
+        .menu-item.open .arrow-icon {
+            transform: rotate(180deg);
+        }
+
+        /* Submenu Styles */
+        .submenu {
+            display: none;
+            background: var(--sidebar-submenu-bg);
+        }
+
+        .submenu .menu-item {
+            padding: 9px 18px 9px 42px;
+            font-size: 0.9rem;
+        }
+
+        /* Resizer Divider */
+        #resizer {
+            width: var(--resizer-width);
+            cursor: col-resize;
+            background: #343a40;
+            transition: background 0.2s;
+            z-index: 1001;
+        }
+
+        #resizer:hover, #resizer:active {
+            background: #0d6efd;
+        }
+
+        /* Main Content Layout */
+        #main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        #topbar {
+            background: #ffffff;
+            padding: 12px 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            display: flex;
+            align-items: center;
+            z-index: 999;
+        }
+
+        #content-area {
+            padding: 24px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        /* Collapsed Sidebar State */
+        .collapsed #sidebar {
+            width: 70px !important;
+        }
+
+        .collapsed .menu-text, 
+        .collapsed .submenu, 
+        .collapsed .sidebar-title,
+        .collapsed .arrow-icon {
+            display: none !important;
+        }
+
+        .collapsed .menu-item {
+            justify-content: center;
+            padding: 14px 0;
+        }
+
+        .collapsed .menu-item i.menu-icon {
+            min-width: unset;
+            text-align: center;
+        }
+
+        .collapsed #resizer {
+            cursor: default;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
 
-    <!-- Sidebar -->
+    <!-- Sidebar Navigation -->
     <nav id="sidebar">
         <div class="sidebar-header">
             <span class="sidebar-title">VIETHEALTH</span>
         </div>
-        <div class="menu-list mt-3">
-            <a href="/" class="menu-item"><i class="bi bi-house-door"></i> <span class="menu-text">Trang chủ (Dashboard)</span></a>
+        
+        <div class="menu-list mt-2">
+            <a href="/" class="menu-item">
+                <i class="bi bi-house-door menu-icon"></i> 
+                <span class="menu-text">Trang chủ (Dashboard)</span>
+            </a>
                         
-            <!-- Menu cha có chứa submenu -->
-            <div class="menu-item" onclick="toggleSubmenu('danhmuc')">
-                <i class="bi bi-list-task"></i> 
-                <span class="menu-text">Danh mục <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i></span>
+            <!-- Menu Danh mục -->
+            <div class="menu-item" onclick="toggleSubmenu('danhmuc', this)">
+                <i class="bi bi-folder2-open menu-icon"></i> 
+                <span class="menu-text">Danh mục</span>
+                <i class="bi bi-chevron-down arrow-icon"></i>
             </div>
             <div id="danhmuc" class="submenu">
                 <a href="/don-vi/" class="menu-item">
-                    <i class="bi bi-building"></i> 
+                    <i class="bi bi-building menu-icon"></i> 
                     <span class="menu-text">Đơn vị</span>
                 </a>
                 <a href="/nhom-hd/" class="menu-item">
-                    <i class="bi bi-file-earmark-text"></i> 
+                    <i class="bi bi-tags menu-icon"></i> 
                     <span class="menu-text">Nhóm Hợp đồng</span>
                 </a>
                 <a href="/tre/" class="menu-item">
-                    <i class="bi bi-person-hearts"></i> 
+                    <i class="bi bi-person-hearts menu-icon"></i> 
                     <span class="menu-text">Quản lý Trẻ</span>
                 </a>
                 <a href="/can-bo/" class="menu-item">
-                    <i class="bi bi-person-badge"></i> 
+                    <i class="bi bi-person-badge menu-icon"></i> 
                     <span class="menu-text">Quản lý Cán bộ</span>
                 </a>
             </div>
-            <div class="menu-item" onclick="toggleSubmenu('quanlyhopdong')">
-                <i class="bi bi-list-task"></i> 
-                <span class="menu-text">Quy trình hợp đồng <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i></span>
+
+            <!-- Menu Quy trình hợp đồng -->
+            <div class="menu-item" onclick="toggleSubmenu('quanlyhopdong', this)">
+                <i class="bi bi-journal-check menu-icon"></i> 
+                <span class="menu-text">Quy trình hợp đồng</span>
+                <i class="bi bi-chevron-down arrow-icon"></i>
             </div>
             <div id="quanlyhopdong" class="submenu">
-                <a href="/hop-dong/" class="menu-item"><i class="bi bi-file-earmark-text"></i> <span class="menu-text">Hợp đồng & Phân công</span></a>
+                <a href="{% url 'phan_bo_chi_tieu' %}" class="menu-item">
+                    <i class="bi bi-diagram-3 menu-icon"></i> 
+                    <span class="menu-text">Phân bổ chỉ tiêu</span>
+                </a>
+                <a href="{% url 'danh_sach_de_xuat' %}" class="menu-item">
+                    <i class="bi bi-card-checklist menu-icon"></i> 
+                    <span class="menu-text">Danh sách đề xuất (Chờ HĐ)</span>
+                </a>
+                <a href="/hop-dong/" class="menu-item">
+                    <i class="bi bi-file-earmark-text menu-icon"></i> 
+                    <span class="menu-text">Danh sách Hợp đồng</span>
+                </a>
             </div>
         </div>
+        <div class="ms-auto d-flex align-items-center">
+            {% if user.is_authenticated %}
+                <span class="me-3 text-secondary small fw-semibold">
+                    <i class="bi bi-person-circle"></i> Xin chào, {{ user.username }}
+                </span>
+                <form action="{% url 'logout' %}" method="post" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-box-arrow-right"></i> Đăng xuất
+                    </button>
+                </form>
+            {% else %}
+                <a href="{% url 'login' %}" class="btn btn-primary btn-sm">Đăng nhập</a>
+            {% endif %}
+</div>
     </nav>
 
-    <!-- Thanh kéo dãn -->
+    <!-- Thanh kéo dãn Kích thước Sidebar -->
     <div id="resizer"></div>
 
-    <!-- Nội dung chính -->
+    <!-- Vùng Nội dung Chính -->
     <div id="main-content">
         <header id="topbar">
-            <button id="toggle-btn" class="btn btn-outline-secondary btn-sm"><i class="bi bi-list"></i></button>
-            <h5 class="ms-3 mb-0">Hệ thống Quản lý</h5>
+            <button id="toggle-btn" class="btn btn-outline-secondary btn-sm me-3" title="Thu gọn/Mở rộng Sidebar">
+                <i class="bi bi-list fs-6"></i>
+            </button>
+            <h5 class="mb-0 fw-semibold text-secondary">Hệ thống Quản lý</h5>
         </header>
+
         <main id="content-area">
-            <!-- Khu vực để các trang khác nhúng nội dung vào -->
             {% block content %}
             {% endblock %}
         </main>
     </div>
 
+    <!-- JavaScript Xử lý Tương tác -->
     <script>
-        // JS Đóng/Mở Sidebar
         const body = document.body;
+        const sidebar = document.getElementById('sidebar');
+        const resizer = document.getElementById('resizer');
+
+        // Toggle Bật/Tắt Sidebar
         document.getElementById('toggle-btn').addEventListener('click', () => {
             body.classList.toggle('collapsed');
         });
 
-        // JS Kéo dãn Sidebar
-        const sidebar = document.getElementById('sidebar');
-        const resizer = document.getElementById('resizer');
+        // Kéo dãn Sidebar
         let isResizing = false;
 
-        resizer.addEventListener('mousedown', () => { isResizing = true; });
-        document.addEventListener('mouseup', () => { isResizing = false; });
+        resizer.addEventListener('mousedown', () => { 
+            isResizing = true; 
+            document.body.style.cursor = 'col-resize';
+        });
+
+        document.addEventListener('mouseup', () => { 
+            isResizing = false; 
+            document.body.style.cursor = 'default';
+        });
+
         document.addEventListener('mousemove', (e) => {
             if (!isResizing || body.classList.contains('collapsed')) return;
             let newWidth = e.clientX;
-            if (newWidth >= 200 && newWidth <= 500) {
+            if (newWidth >= 180 && newWidth <= 450) {
                 sidebar.style.width = newWidth + 'px';
             }
         });
 
-        // JS Mở Submenu
-        function toggleSubmenu(id) {
+        // Toggle Mở/Đóng Submenu
+        function toggleSubmenu(id, parentElem) {
             if (body.classList.contains('collapsed')) return;
-            const el = document.getElementById(id);
-            el.style.display = (el.style.display === 'block') ? 'none' : 'block';
+            
+            const submenu = document.getElementById(id);
+            const isOpen = submenu.style.display === 'block';
+
+            submenu.style.display = isOpen ? 'none' : 'block';
+            if (parentElem) {
+                parentElem.classList.toggle('open', !isOpen);
+            }
         }
     </script>
 </body>

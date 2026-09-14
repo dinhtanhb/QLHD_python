@@ -1,5 +1,6 @@
 from django import forms
-from .models import DonVi, Tre, CanBo, DonVi, NhomHD
+from .models import DonVi, Tre, CanBo, DonVi, NhomHD, PhanBoChiTieu
+from .financial import FinancialConfig
 
 class DonViForm(forms.ModelForm):
     class Meta:
@@ -67,3 +68,44 @@ class NhomHDForm(forms.ModelForm):
         super(NhomHDForm, self).__init__(*args, **kwargs)
         for field_name, field in self.fields.items():
             field.widget.attrs['class'] = 'form-control'
+
+class PhanBoChiTieuForm(forms.ModelForm):
+    # Khai báo ChoiceField để người dùng chọn nhanh định mức (50.000 hoặc 100.000)
+    dinh_muc_di_lai_phcn = forms.ChoiceField(
+        choices=[
+            (FinancialConfig.DON_GIA_DI_LAI_DM1, f"Định mức 1 - {FinancialConfig.DON_GIA_DI_LAI_DM1:,.0f}đ"),
+            (FinancialConfig.DON_GIA_DI_LAI_DM2, f"Định mức 2 - {FinancialConfig.DON_GIA_DI_LAI_DM2:,.0f}đ"),
+        ],
+        initial=FinancialConfig.DON_GIA_DI_LAI_DM1,
+        label="Định mức đi lại PHCN",
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    
+    dinh_muc_di_lai_cs = forms.ChoiceField(
+        choices=[
+            (FinancialConfig.DON_GIA_DI_LAI_DM1, f"Định mức 1 - {FinancialConfig.DON_GIA_DI_LAI_DM1:,.0f}đ"),
+            (FinancialConfig.DON_GIA_DI_LAI_DM2, f"Định mức 2 - {FinancialConfig.DON_GIA_DI_LAI_DM2:,.0f}đ"),
+        ],
+        initial=FinancialConfig.DON_GIA_DI_LAI_DM1,
+        label="Định mức đi lại CSXH",
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+
+    class Meta:
+        model = PhanBoChiTieu
+        fields = [
+            'can_bo', 
+            'ngay_lap_de_xuat', 
+            'so_tre_phcn', 'so_buoi_phcn', 'dinh_muc_di_lai_phcn',
+            'so_tre_cs', 'so_buoi_cs', 'dinh_muc_di_lai_cs',
+            'gia_tri_hd_du_kien'
+        ]
+        widgets = {
+            'can_bo': forms.Select(attrs={'class': 'form-select select2-search'}),
+            'ngay_lap_de_xuat': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'so_tre_phcn': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'so_buoi_phcn': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'so_tre_cs': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'so_buoi_cs': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'gia_tri_hd_du_kien': forms.NumberInput(attrs={'class': 'form-control', 'step': '1000', 'min': '0'}),
+        }

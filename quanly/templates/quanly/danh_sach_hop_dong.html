@@ -1,37 +1,52 @@
 {% extends 'quanly/base.html' %}
+{% load humanize %}
 {% block title %}Danh sách Hợp đồng{% endblock %}
-{% block content %}
-<div class="container-fluid bg-white shadow p-4 rounded">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 class="text-primary m-0">Danh sách Hợp đồng & Phân công</h2>
-        <a href="{% url 'import_phan_cong' %}" class="btn btn-success btn-sm">Import từ Excel</a>
-    </div>
 
-    <table class="table table-bordered table-striped align-middle">
-        <thead class="table-dark text-center">
-            <tr>
-                <th>Số Hợp đồng</th>
-                <th>Cán bộ can thiệp</th>
-                <th>Nhóm HĐ</th>
-                <th>Ngày ký</th>
-                <th>Trạng thái</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for hd in ds_hop_dong %}
-            <tr>
-                <td class="text-center fw-bold">{{ hd.so_hop_dong }}</td>
-                <td>{{ hd.can_bo.ho_ten }}</td>
-                <td class="text-center">{{ hd.nhom_hd.ten_nhom }}</td>
-                <td class="text-center">{{ hd.ngay_ky|date:"d/m/Y" }}</td>
-                <td class="text-center"><span class="badge bg-primary">{{ hd.get_trang_thai_display }}</span></td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="5" class="text-center text-muted py-4">Chưa có hợp đồng nào được tạo hoặc import.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="card shadow">
+        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+            <h4 class="mb-0">Danh Sách Hợp Đồng Chính Thức</h4>
+            <span class="badge bg-light text-dark"><i class="bi bi-lock-fill"></i> Đã Khóa</span>
+        </div>
+        <div class="card-body">
+            <table class="table table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Số Hợp Đồng</th>
+                        <th>Cán Bộ Can Thiệp</th>
+                        <th>Giá trị hợp đồng</th>
+                        <th>Ngày Ký</th>
+                        <th>Thời Gian Hiệu Lực</th>
+                        <th>Trạng Thái</th>
+                        <th>Thao Tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for hd in hop_dongs %}
+                    <tr>
+                        <td class="fw-bold text-primary">{{ hd.so_hop_dong }}</td>
+                        <td>{{ hd.can_bo }}</td>
+                        <td class="fw-bold text-success">
+                            {{ hd.gia_tri_hd_du_kien|floatformat:"0"|intcomma }} VNĐ
+                        </td>
+                        <td>{{ hd.ngay_ky|date:"d/m/Y" }}</td>
+                        <td>{{ hd.tu_ngay|date:"d/m/Y" }} - {{ hd.den_ngay|date:"d/m/Y" }}</td>
+                        <td><span class="badge bg-success">Đã Tạo</span></td>
+                        <td>
+                            {% if user.is_staff %}
+                                <a href="#" class="btn btn-warning btn-sm"><i class="bi bi-pencil"></i> Sửa (Admin)</a>
+                            {% else %}
+                                <button class="btn btn-secondary btn-sm" disabled><i class="bi bi-lock-fill"></i> Đã Khóa</button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center">Chưa có hợp đồng nào được khởi tạo.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 {% endblock %}
