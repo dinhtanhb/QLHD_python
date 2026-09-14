@@ -2,22 +2,33 @@
 venv/
 env/
 .venv/
-.vscode/
-
-# Python Cache
-__pycache__/
-*.pyc
-*.pyo
 
 # VS Code
 .vscode/
 
-# Database
-*.sqlite3
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django
 db.sqlite3
+*.sqlite3
 
 # Environment
 .env
 
 # Logs
 *.log
+
+# Static build
+staticfiles/
+
+# Media
+media/
+
+# Pytest
+.pytest_cache/
+
+# Migrations cache
+**/__pycache__/
