@@ -4,6 +4,7 @@
 **Ngày cập nhật:** 14/09/2026
 **Trạng thái:** Tạm dừng các trang nghiệp vụ - Chuyển sang mốc tổng kết và lập kế hoạch hoàn thiện
 
+**Ghi chú:** Câu 1: 1 trẻ có thể được phân công cho nhiều CBCT (Cán bộ can thiệp) tùy theo nhu cầu tương ứng với các đợt phân công và hợp đồng cụ thể; Câu 2: 1 CBCT có thể có ký nhiều HĐ trong 1 năm hoặc được gia hạn cả năm, hoặc từ năm này sang năm sau; Câu 3: chỉ theo TỈnh - xã - địa chỉ chi tiết; Câu 4: mỗi tháng sẽ có 1 đợt thanh toán gồm: Đề nghị thanh toán + bảng kê các lần thanh toán (có mẫu word). Khi tới hạn kết thúc HĐ sẽ có Biên bản nghiệm thu & Thanh lý hợp đồng; Câu 5: Admin, Điều phối viên, Kế toán, Cán bộ dự án (CBDA)...
 ---
 
 ## I. TỔNG QUAN DỰ ÁN & MỤC TIÊU HỆ THỐNG

@@ -11,6 +11,7 @@ from datetime import date
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth.decorators import login_required
 from .financial import FinancialConfig
 
 def clean_empty_excel_value(val):
@@ -39,6 +40,7 @@ def clean_empty_excel_value(val):
 # ================================
 # TRANG CHỦ (DASHBOARD)
 # ================================
+@login_required
 def trang_chu(request):
     tong_tre = Tre.objects.count()
     tong_can_bo = CanBo.objects.count()
@@ -62,11 +64,12 @@ def lay_danh_sach_xa(request):
 # ================================
 # QUẢN LÝ NHÓM HỢP ĐỒNG
 # ================================
-
+@login_required
 def danh_sach_nhom_hd(request):
     ds_nhom = NhomHD.objects.all().order_by('-id')
     return render(request, 'quanly/danh_sach_nhom_hd.html', {'ds_nhom': ds_nhom})
 
+@login_required
 def them_nhom_hd(request):
     if request.method == 'POST':
         form = NhomHDForm(request.POST)
@@ -80,6 +83,7 @@ def them_nhom_hd(request):
         form = NhomHDForm()
     return render(request, 'quanly/them_nhom_hd.html', {'form': form})
 
+@login_required
 def sua_nhom_hd(request, id):
     nhom = get_object_or_404(NhomHD, pk=id)
     if request.method == 'POST':
@@ -94,6 +98,7 @@ def sua_nhom_hd(request, id):
         form = NhomHDForm(instance=nhom)
     return render(request, 'quanly/sua_nhom_hd.html', {'form': form, 'nhom': nhom})
 
+@login_required
 def xoa_nhom_hd(request, id):
     nhom = get_object_or_404(NhomHD, pk=id)
     ten = nhom.ten_nhom_hd
@@ -103,11 +108,12 @@ def xoa_nhom_hd(request, id):
 
 # QUẢN LÝ ĐƠN VỊ
 # ================================
-
+@login_required
 def danh_sach_don_vi(request):
     ds_don_vi = DonVi.objects.all().order_by('-id')
     return render(request, 'quanly/danh_sach_don_vi.html', {'ds_don_vi': ds_don_vi})
 
+@login_required
 def them_don_vi(request):
     if request.method == 'POST':
         form = DonViForm(request.POST)
@@ -121,6 +127,7 @@ def them_don_vi(request):
         form = DonViForm()
     return render(request, 'quanly/them_don_vi.html', {'form': form})
 
+@login_required
 def sua_don_vi(request, id):
     don_vi = get_object_or_404(DonVi, pk=id)
     if request.method == 'POST':
@@ -135,6 +142,7 @@ def sua_don_vi(request, id):
         form = DonViForm(instance=don_vi)
     return render(request, 'quanly/sua_don_vi.html', {'form': form, 'don_vi': don_vi})
 
+@login_required
 def xoa_don_vi(request, id):
     don_vi = get_object_or_404(DonVi, pk=id)
     ten = don_vi.ten_don_vi
@@ -143,6 +151,7 @@ def xoa_don_vi(request, id):
     return redirect('danh_sach_don_vi')
 
 # 1. DANH SÁCH TRẺ
+@login_required
 def danh_sach_tre(request):
     # 1. Xử lý tìm kiếm
     query = request.GET.get('q', '')
@@ -169,6 +178,7 @@ def danh_sach_tre(request):
     return render(request, 'quanly/danh_sach_tre.html', context)
 
 # 2. THÊM TRẺ MỚI
+@login_required
 def them_tre(request):
     if request.method == 'POST':
         form = TreForm(request.POST)
@@ -183,6 +193,7 @@ def them_tre(request):
     return render(request, 'quanly/them_tre.html', {'form': form})
 
 # 3. SỬA HỒ SƠ TRẺ
+@login_required
 def sua_tre(request, id):
     tre = get_object_or_404(Tre, pk=id)
     if request.method == 'POST':
@@ -198,6 +209,7 @@ def sua_tre(request, id):
     return render(request, 'quanly/sua_tre.html', {'form': form, 'tre': tre})
 
 # 4. XÓA TRẺ
+@login_required
 def xoa_tre(request, id):
     tre = get_object_or_404(Tre, pk=id)
     ten_tre = tre.ho_ten
@@ -206,6 +218,7 @@ def xoa_tre(request, id):
     return redirect('danh_sach_tre')
 
 # 5. IMPORT TRẺ
+@login_required
 def import_tre(request):
   if request.method == 'POST' and request.FILES.get('file_excel'):
     excel_file = request.FILES['file_excel']
@@ -313,7 +326,7 @@ def import_tre(request):
 
 # QUẢN LÝ CÁN BỘ
 # ================================
-
+@login_required
 def danh_sach_can_bo(request):
     query = request.GET.get('q', '')
     
@@ -340,6 +353,7 @@ def danh_sach_can_bo(request):
     }
     return render(request, 'quanly/danh_sach_can_bo.html', context)
 
+@login_required
 def them_can_bo(request):
     if request.method == 'POST':
         form = CanBoForm(request.POST)
@@ -353,6 +367,7 @@ def them_can_bo(request):
         form = CanBoForm()
     return render(request, 'quanly/them_can_bo.html', {'form': form})
 
+@login_required
 def sua_can_bo(request, id):
     can_bo = get_object_or_404(CanBo, pk=id)
     if request.method == 'POST':
@@ -367,6 +382,7 @@ def sua_can_bo(request, id):
         form = CanBoForm(instance=can_bo)
     return render(request, 'quanly/sua_can_bo.html', {'form': form, 'can_bo': can_bo})
 
+@login_required
 def xoa_can_bo(request, id):
     can_bo = get_object_or_404(CanBo, pk=id)
     ten = can_bo.ho_ten
@@ -374,6 +390,7 @@ def xoa_can_bo(request, id):
     messages.success(request, f'Đã xóa dữ liệu cán bộ {ten} khỏi hệ thống.')
     return redirect('danh_sach_can_bo')
 
+@login_required
 def import_can_bo(request):
     if request.method == 'POST' and request.FILES.get('file_excel'):
         excel_file = request.FILES['file_excel']
@@ -579,7 +596,7 @@ def import_can_bo(request):
 
 # CÁC HÀM XỬ LÝ HỢP ĐỒNG & PHÂN CÔNG
 # ==========================================
-
+@login_required
 def import_phan_cong(request):
   if request.method == 'POST' and request.FILES.get('file_excel'):
     excel_file = request.FILES['file_excel']
@@ -683,7 +700,7 @@ def import_phan_cong(request):
 # =========================================================
 # QUY TRÌNH HỢP ĐỒNG: PHÂN BỔ -> ĐỀ XUẤT -> CHÍNH THỨC
 # =========================================================
-
+@login_required
 def phan_bo_chi_tieu(request):
     """
     BƯỚC 1: Cán bộ tạo Phân bổ chỉ tiêu (Lưu và chuyển thẳng sang Đề xuất Hợp đồng)
@@ -943,6 +960,7 @@ def danh_sach_phan_bo(request):
     danh_sach = PhanBoChiTieu.objects.select_related('can_bo').all().order_by('-id')
     return render(request, 'quanly/danh_sach_phan_bo.html', {'danh_sach': danh_sach})
 
+@login_required
 def danh_sach_de_xuat(request):
     query = request.GET.get('q', '').strip()
     
@@ -968,7 +986,7 @@ def danh_sach_de_xuat(request):
     }
     return render(request, 'quanly/danh_sach_de_xuat.html', context)
 
-
+@login_required
 def tao_hop_dong_chinh_thuc(request, pk):
     hop_dong = get_object_or_404(PhanBoChiTieu, pk=pk)
 
@@ -997,7 +1015,7 @@ def tao_hop_dong_chinh_thuc(request, pk):
     context = {'hop_dong': hop_dong}
     return render(request, 'quanly/xac_nhan_tao_hop_dong.html', context)
 
-
+@login_required
 def danh_sach_hop_dong(request):
     query = request.GET.get('q', '').strip()
     

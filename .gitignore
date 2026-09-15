@@ -10,6 +10,7 @@ env/
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
 # Django
 db.sqlite3
@@ -19,6 +20,7 @@ db.sqlite3
 .env
 
 # Logs
+logs/
 *.log
 
 # Static build
@@ -32,3 +34,6 @@ media/
 
 # Migrations cache
 **/__pycache__/
+
+# File tạm dùng để review cấu trúc project
+structure.txt
