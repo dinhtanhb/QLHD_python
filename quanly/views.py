@@ -4,14 +4,16 @@ import re
 
 import pandas as pd
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Q
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from .decorators import admin_required, dashboard_required, hopdong_required, readonly_required
+from .document_export import create_contract_from_proposal, export_contract_bundle
 from .financial import FinancialConfig
 from .forms import (
     CanBoForm,
@@ -826,7 +828,10 @@ def danh_sach_de_xuat(request):
 def duyet_de_xuat(request, pk):
     proposal = get_object_or_404(DeXuatHopDong, pk=pk)
     if request.method == "POST":
-        proposal.trang_thai = "DUYET"
+        if not proposal.phan_bo.danh_sach_phan_cong.exists():
+            messages.error(request, "Đề xuất chưa có phân công trẻ nên chưa thể duyệt.")
+            return redirect("danh_sach_de_xuat")
+        proposal.trang_thai = "DA_DUYET"
         proposal.save(update_fields=["trang_thai", "updated_at"])
         messages.success(request, "Đã duyệt đề xuất hợp đồng.")
     return redirect("danh_sach_de_xuat")
@@ -838,54 +843,13 @@ def tao_hop_dong_chinh_thuc(request, pk):
     if request.method == "POST":
         form = HopDongForm(request.POST)
         if form.is_valid():
-            with transaction.atomic():
-                hop_dong = form.save()
-                # Tự động tạo chi tiết khối lượng từ dữ liệu phân công.
-                assignments = proposal.phan_bo.danh_sach_phan_cong.all()
-                grouped = {}
-                for item in assignments:
-                    grouped.setdefault(item.loai_dich_vu, {"so_tre": set(), "so_buoi": 0, "dinh_muc": item.dinh_muc_di_lai})
-                    grouped[item.loai_dich_vu]["so_tre"].add(item.tre_id)
-                    grouped[item.loai_dich_vu]["so_buoi"] += item.so_buoi_du_kien
-                for service, data in grouped.items():
-                    so_tre = len(data["so_tre"])
-                    so_buoi = data["so_buoi"]
-                    ChiTietKhoiLuongHopDong.objects.create(
-                        hop_dong=hop_dong,
-                        loai_dich_vu=service,
-                        so_tre=so_tre,
-                        so_buoi=so_buoi,
-                        don_gia_cong=hop_dong.don_gia_cong,
-                        dinh_muc_di_lai=data["dinh_muc"],
-                    )
-
-                # Snapshot phụ lục Kỳ 1 tại thời điểm tạo hợp đồng.
-                phu_luc = PhuLucHopDong.objects.create(
-                    hop_dong=hop_dong,
-                    loai_phu_luc="KY_1",
-                    so_phu_luc=f"PL-K1-{hop_dong.so_hop_dong}",
-                    ngay_lap=timezone.localdate(),
-                )
-                for item in assignments.select_related("tre", "phan_bo__can_bo"):
-                    ChiTietPhuLucPhanCong.objects.create(
-                        phu_luc=phu_luc,
-                        phan_cong=item,
-                        ma_tre=item.tre.ma_tre,
-                        ten_tre=item.tre.ho_ten,
-                        ma_can_bo=item.phan_bo.can_bo.ma_can_bo,
-                        ten_can_bo=item.phan_bo.can_bo.ho_ten,
-                        loai_dich_vu=item.loai_dich_vu,
-                        dot_phan_cong=item.dot_phan_cong,
-                        ky_phan_cong=item.ky_phan_cong,
-                        ngay_phan_cong=item.ngay_phan_cong,
-                        so_buoi_du_kien=item.so_buoi_du_kien,
-                        dinh_muc_di_lai=item.dinh_muc_di_lai,
-                        dia_diem_ct=item.dia_diem_ct,
-                        hinh_thuc_ct=item.hinh_thuc_ct,
-                        ghi_chu=item.ghi_chu,
-                    )
-            messages.success(request, f"Đã tạo Hợp đồng {hop_dong.so_hop_dong} và Phụ lục Kỳ 1.")
-            return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+            try:
+                hop_dong = create_contract_from_proposal(proposal, form.cleaned_data)
+            except ValidationError as exc:
+                form.add_error(None, exc)
+            else:
+                messages.success(request, f"Đã tạo Hợp đồng {hop_dong.so_hop_dong} và Phụ lục Kỳ 1.")
+                return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     else:
         form = HopDongForm(initial={
             "de_xuat": proposal,
@@ -910,8 +874,29 @@ def danh_sach_hop_dong(request):
 def chi_tiet_hop_dong(request, pk):
     hop_dong = get_object_or_404(HopDong.objects.select_related("can_bo", "nhom_hd", "de_xuat"), pk=pk)
     khoi_luong = hop_dong.chi_tiet_khoi_luong.all().order_by("loai_dich_vu")
-    phu_luc = hop_dong.phu_luc_hop_dong.all().prefetch_related("chi_tiet_phan_cong").order_by("-ngay_lap", "-id")
+    phu_luc = hop_dong.phu_luc.all().prefetch_related("chi_tiet_phan_cong").order_by("-ngay_lap", "-id")
     return render(request, "quanly/chi_tiet_hop_dong.html", {"hop_dong": hop_dong, "khoi_luong": khoi_luong, "phu_luc": phu_luc})
+
+
+@hopdong_required
+def xuat_bo_hop_dong(request, pk):
+    hop_dong = get_object_or_404(
+        HopDong.objects.select_related("can_bo", "de_xuat__phan_bo"),
+        pk=pk,
+    )
+    try:
+        output = export_contract_bundle(hop_dong)
+    except ValidationError as exc:
+        messages.error(request, str(exc))
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    safe_number = re.sub(r"[^A-Za-z0-9._-]+", "_", hop_dong.so_hop_dong)
+    response["Content-Disposition"] = f'attachment; filename="HopDong_{safe_number}.docx"'
+    return response
 
 
 @hopdong_required

@@ -1509,7 +1509,8 @@ NGHIỆM THU
         ↓
 THANH LÝ
         ↓
-BÁO CÁO / ĐỐI CHIẾU
+        BÁO CÁO / ĐỐI CHIẾU
+
 Danh mục
    ↓
 Phân bổ chỉ tiêu
@@ -3008,4 +3009,118 @@ NGHIỆM THU
         ↓
 THANH LÝ
         ↓
-BÁO CÁO / ĐỐI CHIẾU
+        BÁO CÁO / ĐỐI CHIẾU
+
+69. QUY TẮC CẬP NHẬT BÀN GIAO VÀ GITHUB
+
+Trong quá trình phát triển tiếp theo:
+
+- Vừa xây dựng các file nghiệp vụ và viết code, vừa cập nhật file bàn giao này.
+- Cập nhật các mục: trạng thái hoàn thành, quyết định nghiệp vụ mới, file đã sửa,
+  lỗi đã xử lý, migration, cách kiểm thử và việc cần làm tiếp theo.
+- Khi hoàn thành một mốc chức năng hoặc trước khi chuyển sang phần việc lớn khác,
+  phải nhắc người dùng commit và push code lên GitHub branch `dev`.
+- Không tự ý push, force push hoặc thay đổi branch nếu người dùng chưa yêu cầu.
+- Khi nhắc push, cần nêu rõ các file/thay đổi cần kiểm tra trước khi commit.
+
+70. LỘ TRÌNH XÂY DỰNG ĐẾN KHI CHẠY THẬT
+
+Lộ trình đã thống nhất theo các cổng nghiệm thu:
+
+P0. Baseline source, cấu hình MySQL, migration, test hiện có và dữ liệu mẫu.
+P1. Hoàn thiện tạo/quản lý hợp đồng chính thức an toàn từ PhanBoChiTieu.
+P2. Xuất Word bộ hợp đồng và Phụ lục 2 Kỳ 1.
+P3. Xuất file Phụ lục Kỳ 2 trở đi, không tạo HĐ/phụ lục DB mới.
+P4. Ghi nhận thực hiện và thanh toán, chống vượt/trùng dữ liệu.
+P5. Nghiệm thu, thanh lý, báo cáo, phân quyền, backup và UAT.
+
+Mỗi phase phải thực hiện theo vòng lặp:
+
+đọc source → lập kế hoạch chi tiết → viết/sửa code → test tự động → kiểm thử luồng
+→ cập nhật tài liệu bàn giao → báo cáo kết quả → nhắc push GitHub.
+
+Các thông tin còn cần xác nhận trước test tích hợp:
+
+- Thông tin kết nối MySQL thực tế.
+- Vị trí và phiên bản cuối của file Word mẫu.
+- Dữ liệu UAT mẫu hay dữ liệu thật đã ẩn danh.
+
+71. BỘ FILE MẪU XUẤT VÀ NHẬP DỮ LIỆU ĐÃ TIẾP NHẬN
+
+Thư mục mẫu:
+
+quanly/document_templates/
+
+Đã có các nhóm:
+
+- hop_dong: Mau_HopDong.docx
+- phu_luc: Mau_PhuLucPhanCong.docx
+- phu_luc_gia_han: gia hạn khối lượng và gia hạn thời gian
+- nghiem_thu_thanh_ly: Mau_BBNT.docx và Mau_TLHD.docx
+- thanh_toan_cong_can_thiep: mẫu đề nghị thanh toán và danh sách tài khoản
+- thanh_toan_di_lai_phu_huynh: mẫu thanh toán đi lại theo nhóm đối tượng
+- import: các mẫu CBCT, đơn vị, hợp đồng, nghiệm thu, nhật ký, phân bổ, phân công và trẻ
+
+Các template Word hiện dùng nhiều placeholder như:
+
+{{SoHopDong}}, {{MaSoGVMN}}, {{HoTenGVMN}}, {{NgayKy_Ngay}},
+{{TongTrePHCN}}, {{TongBuoiPHCN}}, {{ThanhTienPHCN}},
+{{KyPhanCong}}, {{NgayPhanCong}}, {{HoTenTre}}, {{MaTre}}, {{DichVu}},
+{{SoBuoi}}, {{GiaTriHopDong}}.
+
+Thứ tự xử lý ưu tiên:
+
+1. Hợp đồng + Phụ lục 2.
+2. Nghiệm thu/thanh lý.
+3. Thanh toán cán bộ can thiệp.
+4. Thanh toán đi lại phụ huynh.
+5. Hoàn thiện các mẫu import và kiểm tra đối chiếu cột dữ liệu.
+
+Không sửa trực tiếp template mẫu trước khi xác định context và quy tắc dữ liệu tương ứng.
+
+Lưu ý bảo mật:
+
+Thư mục mẫu hiện chưa được Git theo dõi và một số file có dữ liệu cá nhân mẫu.
+Không push nguyên thư mục lên GitHub trước khi làm sạch dữ liệu hoặc quyết định
+phạm vi file template được phép lưu trong repository.
+
+72. TIẾN ĐỘ CODE MỐC P0/P1 BAN ĐẦU
+
+Đã triển khai:
+
+- quanly/document_export.py: context tài chính từ PhanBoChiTieu, snapshot Kỳ 1,
+  thay placeholder và xuất bộ Word theo template thực tế.
+- URL xuất bộ hợp đồng: /hop-dong/<pk>/xuat-bo-hop-dong/.
+- Nút Xuất bộ hợp đồng Word trong trang chi tiết hợp đồng.
+- Tạo hợp đồng chính thức lấy giá trị và định mức từ PhanBoChiTieu, không tin
+  giá trị/CBCT/nhóm HĐ do client gửi.
+- Duyệt đề xuất dùng trạng thái DA_DUYET.
+- Snapshot dùng source_phan_cong và trang chi tiết dùng hop_dong.phu_luc.all().
+- requirements.txt bổ sung python-docx.
+
+Đã kiểm tra:
+
+- Có dữ liệu MySQL thực tế: 172 phân bổ, 5 phân công, 2 đề xuất, 2 hợp đồng.
+- python manage.py check: đạt.
+- python manage.py makemigrations --check: No changes detected.
+- Smoke test xuất Word với hợp đồng hiện có: đạt, không còn placeholder chưa thay.
+
+Đã kiểm tra render:
+
+- LibreOffice đã được phát hiện và dùng để chuyển DOCX sang PDF/PNG.
+- Đã kiểm tra trực quan đủ 15 trang của bộ hợp đồng mẫu; bảng Phụ lục 2,
+  chữ ký và các phụ lục hiển thị đúng, không còn placeholder chưa thay.
+- Một trang trắng là ngắt trang có sẵn trong template; một số trường ngày/CCCD
+  trống là do dữ liệu mẫu chưa đầy đủ, không phải giá trị được tự suy diễn.
+
+Giới hạn còn lại:
+
+- Chi tiết khối lượng PHCN/CSXH cần tiếp tục rà soát cách biểu diễn theo loại
+  dịch vụ trước khi chốt nghiệp vụ thanh toán.
+
+73. MỐC COMMIT/PUSH
+
+Mốc xuất bộ hợp đồng Word đã đủ điều kiện commit/push sau khi chạy kiểm tra mã,
+kiểm tra migration và render mẫu. Khi commit, chỉ đưa mã nguồn, requirements và
+file bàn giao vào Git; không đưa thư mục document_templates vì đang chứa dữ liệu
+cá nhân mẫu. Nếu cần cập nhật template lên GitHub, phải làm sạch dữ liệu trước.
