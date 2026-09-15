@@ -1,4 +1,3 @@
-from datetime import date
 from django.db import migrations, models
 from django.utils import timezone
 import django.db.models.deletion
@@ -57,9 +56,11 @@ class Migration(migrations.Migration):
         migrations.RemoveField(model_name="phanbochitieu", name="den_ngay"),
         migrations.RemoveField(model_name="phanbochitieu", name="gia_tri_hd_du_kien"),
         migrations.RemoveField(model_name="phanbochitieu", name="trang_thai"),
+        migrations.RemoveField(model_name="phanbochitieu", name="ngay_lap_de_xuat"),
         migrations.AddField(model_name="phanbochitieu", name="created_at", field=models.DateTimeField(auto_now_add=True, default=timezone.now, verbose_name="Ngày tạo"), preserve_default=False),
         migrations.AddField(model_name="phanbochitieu", name="updated_at", field=models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")),
         migrations.AddField(model_name="phanbochitieu", name="ngay_lap", field=models.DateField(default=timezone.now, verbose_name="Ngày lập phân bổ")),
+        migrations.AddField(model_name="phanbochitieu", name="ghi_chu", field=models.TextField(blank=True, null=True, verbose_name="Ghi chú")),
         migrations.AlterField(model_name="phanbochitieu", name="can_bo", field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="phan_bo_chi_tieu", to="quanly.canbo", verbose_name="Cán bộ chuyên trách")),
         migrations.AlterField(model_name="phanbochitieu", name="nhom_hd", field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="phan_bo_chi_tieu", to="quanly.nhomhd", verbose_name="Nhóm hợp đồng")),
         migrations.AlterField(model_name="phanbochitieu", name="so_tre_phcn", field=models.PositiveIntegerField(default=0, verbose_name="Số trẻ PHCN")),
@@ -68,13 +69,17 @@ class Migration(migrations.Migration):
         migrations.AlterField(model_name="phanbochitieu", name="so_tre_cs", field=models.PositiveIntegerField(default=0, verbose_name="Số trẻ CSXH")),
         migrations.AlterField(model_name="phanbochitieu", name="so_buoi_cs", field=models.PositiveIntegerField(default=10, verbose_name="Số buổi/trẻ CSXH")),
         migrations.AlterField(model_name="phanbochitieu", name="dinh_muc_di_lai_cs", field=models.DecimalField(decimal_places=0, default=Decimal("50000"), max_digits=12, verbose_name="Định mức đi lại CSXH")),
+        migrations.AlterField(model_name="phanbochitieu", name="is_locked", field=models.BooleanField(default=False, verbose_name="Đã khóa")),
 
         # Phân công: đổi FK HĐ cũ thành FK Phân bổ; chuẩn hóa kỳ/đợt sang số.
         migrations.RenameField(model_name="phancongtre", old_name="hop_dong", new_name="phan_bo"),
         migrations.AddField(model_name="phancongtre", name="created_at", field=models.DateTimeField(auto_now_add=True, default=timezone.now, verbose_name="Ngày tạo"), preserve_default=False),
         migrations.AddField(model_name="phancongtre", name="updated_at", field=models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")),
+        migrations.AddField(model_name="phancongtre", name="ghi_chu", field=models.TextField(blank=True, null=True, verbose_name="Ghi chú")),
         migrations.AlterField(model_name="phancongtre", name="phan_bo", field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="danh_sach_phan_cong", to="quanly.phanbochitieu", verbose_name="Phân bổ chỉ tiêu")),
         migrations.AlterField(model_name="phancongtre", name="tre", field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="danh_sach_phan_cong", to="quanly.tre", verbose_name="Trẻ")),
+        migrations.AlterField(model_name="phancongtre", name="loai_dich_vu", field=models.CharField(choices=[("VLTL", "Vật lý trị liệu"), ("HDTL", "Hoạt động trị liệu"), ("NNTL", "Ngôn ngữ trị liệu"), ("GDDB", "Giáo dục đặc biệt"), ("CSXH", "Chăm sóc xã hội"), ("CSYT", "Chăm sóc y tế")], max_length=10, verbose_name="Loại dịch vụ")),
+        migrations.AlterField(model_name="phancongtre", name="so_buoi_du_kien", field=models.PositiveIntegerField(default=0, verbose_name="Số buổi dự kiến")),
         migrations.AlterField(model_name="phancongtre", name="dot_phan_cong", field=models.PositiveIntegerField(default=1, verbose_name="Đợt phân công")),
         migrations.AlterField(model_name="phancongtre", name="ky_phan_cong", field=models.PositiveIntegerField(default=1, verbose_name="Kỳ phân công")),
         migrations.AlterField(model_name="phancongtre", name="dinh_muc_di_lai", field=models.DecimalField(decimal_places=0, default=Decimal("0"), max_digits=12, verbose_name="Định mức đi lại")),
@@ -261,4 +266,76 @@ class Migration(migrations.Migration):
                 ("hop_dong", models.OneToOneField(on_delete=django.db.models.deletion.PROTECT, related_name="thanh_ly", to="quanly.hopdong", verbose_name="Hợp đồng")),
             ],
         ),
+
+        # Đồng bộ trạng thái model cũ và các Meta options với models.py hiện tại.
+        migrations.AlterField(
+            model_name="canbo",
+            name="gioi_tinh",
+            field=models.CharField(
+                choices=[("Nam", "Nam"), ("Nữ", "Nữ"), ("Khác", "Khác")],
+                blank=True,
+                null=True,
+                max_length=10,
+                verbose_name="Giới tính",
+            ),
+        ),
+        migrations.AlterField(
+            model_name="tre",
+            name="ten_phu_huynh",
+            field=models.CharField(blank=True, null=True, max_length=100, verbose_name="Tên phụ huynh"),
+        ),
+        migrations.AddIndex(model_name="phanbochitieu", index=models.Index(fields=["can_bo", "ngay_lap"], name="idx_pbct_cb_ngay")),
+        migrations.AddIndex(model_name="phanbochitieu", index=models.Index(fields=["nhom_hd", "ngay_lap"], name="idx_pbct_nhom_ngay")),
+        migrations.AddIndex(model_name="phancongtre", index=models.Index(fields=["phan_bo", "dot_phan_cong"], name="idx_pct_pb_dot")),
+        migrations.AddIndex(model_name="phancongtre", index=models.Index(fields=["tre", "ky_phan_cong"], name="idx_pct_tre_ky")),
+        migrations.AddIndex(model_name="phancongtre", index=models.Index(fields=["loai_dich_vu", "ngay_phan_cong"], name="idx_pct_dv_ngay")),
+        migrations.AddConstraint(
+            model_name="xa",
+            constraint=models.UniqueConstraint(fields=["tinh", "ten_xa"], name="uq_xa_tinh_ten"),
+        ),
+        migrations.AlterModelOptions(
+            name="canbo",
+            options={"ordering": ["ho_ten"], "verbose_name": "Cán bộ chuyên trách", "verbose_name_plural": "Cán bộ chuyên trách"},
+        ),
+        migrations.AlterModelOptions(
+            name="donvi",
+            options={"ordering": ["ten_don_vi"], "verbose_name": "Đơn vị", "verbose_name_plural": "Đơn vị"},
+        ),
+        migrations.AlterModelOptions(
+            name="hopdong",
+            options={"ordering": ["-ngay_ky", "-id"]},
+        ),
+        migrations.AlterModelOptions(
+            name="nhatkythuchien",
+            options={"ordering": ["-ngay_thuc_hien", "-id"]},
+        ),
+        migrations.AlterModelOptions(
+            name="nhomhd",
+            options={"ordering": ["ma_nhom_hd"], "verbose_name": "Nhóm hợp đồng", "verbose_name_plural": "Nhóm hợp đồng"},
+        ),
+        migrations.AlterModelOptions(
+            name="phanbochitieu",
+            options={"ordering": ["-ngay_lap", "-id"]},
+        ),
+        migrations.AlterModelOptions(
+            name="phancongtre",
+            options={"ordering": ["-ngay_phan_cong", "-id"]},
+        ),
+        migrations.AlterModelOptions(
+            name="phuluchopdong",
+            options={"ordering": ["-ngay_lap", "-id"]},
+        ),
+        migrations.AlterModelOptions(
+            name="tinh",
+            options={"ordering": ["ten_tinh"], "verbose_name": "Tỉnh/Thành phố", "verbose_name_plural": "Tỉnh/Thành phố"},
+        ),
+        migrations.AlterModelOptions(
+            name="tre",
+            options={"ordering": ["ma_tre"], "verbose_name": "Trẻ", "verbose_name_plural": "Trẻ"},
+        ),
+        migrations.AlterModelOptions(
+            name="xa",
+            options={"ordering": ["ten_xa"], "verbose_name": "Xã/Phường", "verbose_name_plural": "Xã/Phường"},
+        ),
+        migrations.DeleteModel(name="ChiTieuHopDong"),
     ]
