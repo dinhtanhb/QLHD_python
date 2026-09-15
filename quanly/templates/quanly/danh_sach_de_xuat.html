@@ -1,4 +1,5 @@
 {% extends 'quanly/base.html' %}
+{% load number_format %}
 {% block title %}Đề xuất hợp đồng{% endblock %}
 
 {% block content %}
@@ -30,8 +31,8 @@
                             <td><strong>{{ item.phan_bo.can_bo.ma_can_bo }}</strong><br>{{ item.phan_bo.can_bo.ho_ten }}</td>
                             <td>{{ item.phan_bo.nhom_hd.ma_nhom_hd }} - {{ item.phan_bo.nhom_hd.ten_nhom_hd }}</td>
                             <td>{{ item.ngay_de_xuat|date:"d/m/Y" }}</td>
-                            <td>PHCN: {{ item.so_tre_phcn }} trẻ / {{ item.so_buoi_phcn }} buổi<br>CSXH: {{ item.so_tre_cs }} trẻ / {{ item.so_buoi_cs }} buổi</td>
-                            <td class="fw-bold text-success">{{ item.gia_tri_du_kien|floatformat:0 }} đ</td>
+                            <td>PHCN: {{ item.so_tre_phcn|vn_number }} trẻ / {{ item.so_buoi_phcn|vn_number }} buổi<br>CSXH: {{ item.so_tre_cs|vn_number }} trẻ / {{ item.so_buoi_cs|vn_number }} buổi</td>
+                            <td class="fw-bold text-success">{{ item.gia_tri_du_kien|vn_number }} đ</td>
                             <td class="text-center">{{ item.get_trang_thai_display }}</td>
                             <td class="text-center">
                                 {% if item.trang_thai != 'DA_TAO_HOP_DONG' and item.trang_thai != 'HUY' and item.trang_thai != 'TU_CHOI' %}
