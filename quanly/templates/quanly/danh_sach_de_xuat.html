@@ -15,38 +15,77 @@
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             {% endfor %}
+
             <form method="get" class="row g-2 mb-3">
-                <div class="col-md-5"><input class="form-control" name="q" value="{{ query }}" placeholder="Mã CBCT hoặc họ tên..."></div>
-                <div class="col-auto"><button class="btn btn-primary">Tìm kiếm</button></div>
+                <div class="col-md-5">
+                    <input class="form-control" name="q" value="{{ query }}" placeholder="Mã CBCT hoặc họ tên...">
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-primary" type="submit">Tìm kiếm</button>
+                </div>
             </form>
+
             <div class="table-responsive">
                 <table class="table table-bordered table-hover align-middle">
                     <thead class="table-dark text-center">
-                        <tr><th>#</th><th>CBCT</th><th>Nhóm HĐ</th><th>Ngày đề xuất</th><th>Khối lượng</th><th>Giá trị dự kiến</th><th>Trạng thái</th><th>Thao tác</th></tr>
+                        <tr>
+                            <th>#</th>
+                            <th>CBCT</th>
+                            <th>Nhóm HĐ</th>
+                            <th>Ngày đề xuất</th>
+                            <th>Khối lượng</th>
+                            <th>Giá trị dự kiến</th>
+                            <th>Trạng thái</th>
+                            <th>Thao tác</th>
+                        </tr>
                     </thead>
                     <tbody>
                     {% for item in page_obj %}
                         <tr>
                             <td>{{ forloop.counter }}</td>
-                            <td><strong>{{ item.phan_bo.can_bo.ma_can_bo }}</strong><br>{{ item.phan_bo.can_bo.ho_ten }}</td>
+                            <td>
+                                <strong>{{ item.phan_bo.can_bo.ma_can_bo }}</strong><br>
+                                {{ item.phan_bo.can_bo.ho_ten }}
+                            </td>
                             <td>{{ item.phan_bo.nhom_hd.ma_nhom_hd }} - {{ item.phan_bo.nhom_hd.ten_nhom_hd }}</td>
                             <td>{{ item.ngay_de_xuat|date:"d/m/Y" }}</td>
-                            <td>PHCN: {{ item.so_tre_phcn|vn_number }} trẻ / {{ item.so_buoi_phcn|vn_number }} buổi<br>CSXH: {{ item.so_tre_cs|vn_number }} trẻ / {{ item.so_buoi_cs|vn_number }} buổi</td>
+                            <td>
+                                PHCN: {{ item.so_tre_phcn|vn_number }} trẻ / {{ item.so_buoi_phcn|vn_number }} buổi<br>
+                                CSXH: {{ item.so_tre_cs|vn_number }} trẻ / {{ item.so_buoi_cs|vn_number }} buổi
+                            </td>
                             <td class="fw-bold text-success">{{ item.gia_tri_du_kien|vn_number }} đ</td>
-                            <td class="text-center">{{ item.get_trang_thai_display }}</td>
                             <td class="text-center">
-                                {% if item.trang_thai != 'DA_TAO_HOP_DONG' and item.trang_thai != 'HUY' and item.trang_thai != 'TU_CHOI' %}
-                                    <a href="{% url 'duyet_de_xuat' item.pk %}" class="btn btn-sm btn-warning">Duyệt</a>
-                                    <a href="{% url 'tao_hop_dong_chinh_thuc' item.pk %}" class="btn btn-sm btn-success">Tạo HĐ</a>
+                                {{ item.get_trang_thai_display }}
+                            </td>
+                            <td class="text-center">
+                                {% if item.trang_thai == 'CHO_KIEM_TRA' or item.trang_thai == 'DU_DIEU_KIEN' or item.trang_thai == 'DUYET' %}
+                                    {% if item.trang_thai != 'DUYET' %}
+                                        <form method="post" action="{% url 'duyet_de_xuat' item.pk %}" class="d-inline">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-sm btn-warning">
+                                                Duyệt
+                                            </button>
+                                        </form>
+                                    {% endif %}
+                                    <a href="{% url 'tao_hop_dong_chinh_thuc' item.pk %}" class="btn btn-sm btn-success">
+                                        Tạo HĐ
+                                    </a>
+                                {% elif item.trang_thai == 'DA_DUYET' %}
+                                    <a href="{% url 'tao_hop_dong_chinh_thuc' item.pk %}" class="btn btn-sm btn-success">
+                                        Tạo HĐ
+                                    </a>
                                 {% endif %}
                             </td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="8" class="text-center text-muted py-4">Chưa có đề xuất hợp đồng.</td></tr>
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">Chưa có đề xuất hợp đồng.</td>
+                        </tr>
                     {% endfor %}
                     </tbody>
                 </table>
             </div>
+
             {% include 'quanly/_pagination.html' with page_obj=page_obj query=query %}
         </div>
     </div>
