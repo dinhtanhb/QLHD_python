@@ -1,0 +1,3011 @@
+# QLHD_CONTEXT_HANDOFF.md
+
+# BẢN BÀN GIAO NGỮ CẢNH DỰ ÁN QLHD
+
+> Tài liệu này dùng để chuyển toàn bộ ngữ cảnh làm việc của dự án QLHD
+> sang một ChatGPT / tài khoản / phiên làm việc khác.
+>
+> Khi tiếp nhận tài liệu này, KHÔNG hỏi lại các quyết định nghiệp vụ đã được
+> đánh dấu là "ĐÃ CHỐT". Hãy đọc GitHub branch `dev` để xác minh source code
+> hiện tại trước khi sửa.
+
+---
+
+# 1. THÔNG TIN DỰ ÁN
+
+## 1.1. Người dùng
+
+Tên: Vũ Đình Tân
+
+Đơn vị: Trung tâm Phát triển Sức khỏe Bền vững (VietHealth)
+
+Vai trò trong dự án:
+- Quản lý số liệu / Data Manager
+- Đại diện triển khai hệ thống QLHD
+
+---
+
+# 2. TÊN HỆ THỐNG
+
+Tên:
+
+**Quản lý Phân bổ Chỉ tiêu & Hợp đồng – QLHD**
+
+Mục tiêu:
+
+Số hóa toàn bộ quy trình:
+
+Hệ thống phục vụ hai nhóm dịch vụ chính:
+
+PHCN – Phục hồi chức năng
+CSXH – Chăm sóc xã hội
+
+Đối tượng thực hiện:
+
+CBCT – Cán bộ chuyên trách / cán bộ can thiệp
+
+3. TECH STACK
+Backend:
+Python 3.10+
+Django 5.1.1
+Django ORM
+Django Views
+Django Forms
+
+Frontend:
+HTML5
+CSS3
+JavaScript
+Bootstrap 5.3
+
+Xử lý dữ liệu:
+Pandas 3.0.5
+OpenPyXL 3.1.5
+
+Database:
+MySQL
+
+KHÔNG tự ý chuyển sang SQLite.
+
+Repository:
+https://github.com/dinhtanhb/QLHD_python
+
+Branch làm việc:
+dev
+
+Branch chính:
+main
+
+4. QUY TẮC LÀM VIỆC VỚI NGƯỜI DÙNG
+
+Khi hỗ trợ dự án:
+
+Trả lời bằng tiếng Việt.
+Đi thẳng vào vấn đề.
+Không giải thích lý thuyết dài dòng nếu không được yêu cầu.
+Khi sửa code phải đưa code đầy đủ, liền mạch.
+KHÔNG dùng:
+# ... giữ nguyên phần còn lại
+
+hoặc:
+
+...
+
+để bỏ qua code.
+
+Code phải copy-paste được.
+Ưu tiên Clean Code.
+Ưu tiên hiệu năng.
+Xử lý exception an toàn.
+Đặc biệt chú ý:
+Decimal
+tiền tệ
+Excel
+pandas
+OpenPyXL
+\xa0
+khoảng trắng
+dữ liệu null
+dữ liệu sai kiểu
+
+Khi gặp traceback:
+
+Nguyên nhân gốc:
+1–2 câu ngắn gọn.
+
+Sau đó:
+→ giải pháp
+→ code hoàn chỉnh
+
+Không đưa ra quá nhiều phương án thay thế nếu không được yêu cầu.
+
+5. NGUYÊN TẮC KIẾN TRÚC NGHIỆP VỤ
+
+Đây là các nguyên tắc ĐÃ CHỐT.
+
+5.1. Phân bổ != Đề xuất != Hợp đồng
+
+Ba đối tượng hoàn toàn khác nhau:
+
+PhanBoChiTieu
+       ↓
+DeXuatHopDong
+       ↓
+HopDong
+
+Không gộp chúng thành một entity.
+
+6. QUY TRÌNH NGHIỆP VỤ ĐÃ CHỐT
+1. DANH MỤC
+       ↓
+2. PHÂN BỔ CHỈ TIÊU
+       ↓
+3. PHÂN CÔNG TRẺ
+       ↓
+4. KIỂM TRA / ĐỀ XUẤT HỢP ĐỒNG
+       ↓
+5. TẠO & KÝ HỢP ĐỒNG
+       ↓
+6. GHI NHẬN THỰC HIỆN
+       ↓
+7. THANH TOÁN HÀNG THÁNG
+       ↓
+8. NGHIỆM THU / THANH LÝ
+       ↓
+9. BÁO CÁO / ĐỐI CHIẾU
+7. QUY TẮC PHÂN BỔ
+
+PhanBoChiTieu là cơ sở xác định:
+
+CBCT
+Nhóm hợp đồng
+Số trẻ PHCN
+Số buổi PHCN
+Số trẻ CSXH
+Số buổi CSXH
+Định mức đi lại
+Giá trị hợp đồng dự kiến
+
+Phân bổ chỉ tiêu KHÔNG tự động tạo hợp đồng.
+
+8. QUY TẮC PHÂN CÔNG TRẺ
+
+Phân công trẻ là bước sau phân bổ.
+
+Phân công dùng để:
+
+xác định trẻ thực tế được giao
+xác định dịch vụ
+xác định kỳ phân công
+phục vụ Phụ lục 2
+phục vụ ghi nhận thực hiện
+phục vụ thanh toán
+phục vụ đối chiếu
+
+Quan trọng:
+
+Số trẻ thực tế đã phân công KHÔNG được dùng để thay đổi giá trị hợp đồng đã được xác định từ Phân bổ chỉ tiêu.
+
+9. QUY TẮC GIÁ TRỊ HỢP ĐỒNG
+
+Đây là quy tắc QUAN TRỌNG NHẤT.
+
+9.1. Giá trị HĐ lấy từ Phân bổ chỉ tiêu
+
+Không lấy từ:
+
+PhanCongTre
+
+Không tính lại giá trị HĐ dựa trên số trẻ thực tế được phân công.
+
+10. ĐỊNH MỨC TÀI CHÍNH
+
+Đơn giá công:
+
+DON_GIA_CONG = 200.000
+
+Định mức đi lại:
+
+DON_GIA_DI_LAI_DM1 = 50.000
+DON_GIA_DI_LAI_DM2 = 100.000
+
+Lưu ý:
+
+Định mức thực tế của từng hợp đồng phải lấy từ:
+
+PhanBoChiTieu
+
+hoặc FinancialConfig tùy logic hiện tại.
+
+Không tự ý hard-code nếu hệ thống đã có cấu hình.
+
+11. CÔNG THỨC GIÁ TRỊ HỢP ĐỒNG
+11.1. PHCN
+Thành tiền công PHCN
+=
+TongTrePHCN
+×
+TongBuoiPHCN
+×
+200.000
+
+Hỗ trợ đi lại:
+
+HoTroDiLaiPHCN
+=
+TongTrePHCN
+×
+TongBuoiPHCN
+×
+DinhMucDiLaiPHCN
+
+Tổng PHCN:
+
+ThanhTienPHCN
++
+HoTroDiLaiPHCN
+12. CSXH
+Thành tiền công CSXH
+=
+TongTreCSXH
+×
+TongBuoiCSXH
+×
+200.000
+
+Hỗ trợ đi lại:
+
+HoTroDiLaiCSXH
+=
+TongTreCSXH
+×
+TongBuoiCSXH
+×
+DinhMucDiLaiCSXH
+
+Tổng CSXH:
+
+ThanhTienCSXH
++
+HoTroDiLaiCSXH
+13. TỔNG GIÁ TRỊ HỢP ĐỒNG
+TongTien
+=
+TongPHCN
++
+TongCSXH
+14. VÍ DỤ NGHIỆP VỤ ĐÃ CHỐT
+
+Ví dụ:
+
+Phân bổ:
+
+PHCN:
+10 trẻ
+20 buổi
+Định mức đi lại = 50.000
+
+CSXH:
+6 trẻ
+10 buổi
+Định mức đi lại = theo Phân bổ
+
+Giá trị HĐ PHCN:
+
+10 × 20 × (200.000 + 50.000)
+=
+50.000.000
+
+Nếu CSXH có định mức 250.000:
+
+6 × 10 × (200.000 + 250.000)
+=
+27.000.000
+
+Tổng:
+
+77.000.000
+
+Nhưng nếu sau đó chỉ phân công:
+
+PHCN = 8 trẻ
+CSXH = 4 trẻ
+
+THÌ:
+
+GIÁ TRỊ HỢP ĐỒNG KHÔNG ĐƯỢC GIẢM.
+
+Vẫn lấy theo Phân bổ.
+
+15. MODEL V2 ĐÃ HOÀN THÀNH
+
+Các model chính:
+
+TimeStampedModel
+
+Tinh
+Xa
+DonVi
+CanBo
+NhomHD
+Tre
+
+PhanBoChiTieu
+PhanCongTre
+DeXuatHopDong
+HopDong
+
+ChiTietKhoiLuongHopDong
+
+PhuLucHopDong
+ChiTietPhuLucPhanCong
+
+NhatKyThucHien
+
+DotThanhToan
+ChiTietThanhToan
+
+NghiemThu
+ThanhLyHopDong
+16. PHANBOCHITIEU
+
+PhanBoChiTieu là entity phân bổ.
+
+Có các nhóm thông tin:
+
+CanBo
+NhomHD
+tham_gia_ct
+ngay_lap
+so_tre_phcn
+so_buoi_phcn
+so_tre_cs
+so_buoi_cs
+dinh_muc_di_lai_phcn
+dinh_muc_di_lai_cs
+ghi_chu
+is_locked
+
+Không chứa trực tiếp thông tin hợp đồng.
+
+17. PHANCONGTRE
+
+PhanCongTre có:
+
+phan_bo
+tre
+loai_dich_vu
+so_buoi_du_kien
+dinh_muc_di_lai
+dia_diem_ct
+hinh_thuc_ct
+dot_phan_cong
+ky_phan_cong
+ngay_phan_cong
+trang_thai
+ghi_chu
+
+Loại dịch vụ hiện có:
+
+VLTL
+HDTL
+NNTL
+GDDB
+CSXH
+CSYT
+18. DE XUAT HOP DONG
+
+DeXuatHopDong có:
+
+phan_bo
+lan_de_xuat
+so_de_xuat
+ngay_de_xuat
+snapshot số trẻ PHCN
+snapshot số buổi PHCN
+snapshot số trẻ CSXH
+snapshot số buổi CSXH
+gia_tri_du_kien
+trang_thai
+ly_do
+
+Có unique:
+
+(phan_bo, lan_de_xuat)
+19. TRẠNG THÁI ĐỀ XUẤT
+
+Logic chuẩn cần dùng:
+
+CHO_KIEM_TRA
+DU_DIEU_KIEN
+DA_DUYET
+DA_TAO_HOP_DONG
+
+Có thể có thêm trạng thái từ chối/hủy nếu model hiện tại đã hỗ trợ.
+
+Không sử dụng:
+
+DUYET
+
+nếu model chuẩn là:
+
+DA_DUYET
+20. HOPDONG
+
+HopDong là entity độc lập.
+
+Các field quan trọng:
+
+de_xuat
+can_bo
+nhom_hd
+so_hop_dong
+ngay_ky
+tu_ngay
+den_ngay
+don_gia_cong
+dinh_muc_di_lai_phcn
+dinh_muc_di_lai_cs
+gia_tri_hop_dong
+trang_thai
+is_locked
+ghi_chu
+21. TRẠNG THÁI HỢP ĐỒNG
+
+Các trạng thái chuẩn:
+
+DU_THAO
+DA_KY
+DANG_THUC_HIEN
+TAM_DUNG
+HET_HAN
+NGHIEM_THU
+THANH_LY
+HUY
+22. CHI TIET KHOI LUONG HOP DONG
+
+Có thể dùng để lưu/hiển thị khối lượng theo loại dịch vụ:
+
+loai_dich_vu
+so_tre
+so_buoi
+don_gia_cong
+dinh_muc_di_lai
+amount
+
+Unique:
+
+(hop_dong, loai_dich_vu)
+
+Amount tự tính.
+
+Nhưng cần nhớ:
+
+ChiTietKhoiLuongHopDong không được biến thành nguồn thay đổi giá trị HĐ trái với PhanBoChiTieu.
+
+23. PHỤ LỤC HỢP ĐỒNG
+
+DB hiện có:
+
+PhuLucHopDong
+ChiTietPhuLucPhanCong
+
+Nhưng nghiệp vụ ĐÃ CHỐT là:
+
+Kỳ 1
+
+Phụ lục 2 Kỳ 1 nằm trong bộ HĐ.
+
+Kỳ 2 trở đi
+
+Không tạo một PhuLucHopDong mới cho từng kỳ.
+
+Chỉ xuất file riêng.
+
+24. SNAPSHOT KỲ 1
+
+Có thể sử dụng:
+
+ChiTietPhuLucPhanCong
+
+để snapshot dữ liệu Kỳ 1 tại thời điểm tạo/ký HĐ.
+
+Điều này giúp:
+
+HĐ đã ký
++
+Phụ lục 2 Kỳ 1
+
+không bị thay đổi nếu phân công sau đó thay đổi.
+
+25. QUY TẮC KỲ PHÂN CÔNG
+
+Đây là quy tắc ĐÃ CHỐT.
+
+PHÂN BỔ CHỈ TIÊU
+       │
+       ├──────────────> TÍNH GIÁ TRỊ HỢP ĐỒNG
+       │
+       └──────────────> KIỂM TRA PHÂN CÔNG
+                              │
+                              ▼
+                         PHÂN CÔNG TRẺ
+                              │
+             ┌────────────────┼────────────────┐
+             │                │                │
+             ▼                ▼                ▼
+           KỲ 1             KỲ 2             KỲ n
+             │                │                │
+             ▼                ▼                ▼
+        Trong bộ HĐ       File riêng        File riêng
+26. KỲ 1
+
+Kỳ 1:
+
+là một phần của bộ HĐ
+xuất trong file Word HĐ
+chính là Phụ lục 2
+sử dụng dữ liệu phân công Kỳ 1
+
+Không tạo một workflow hợp đồng riêng cho Kỳ 1.
+
+27. KỲ 2+
+
+Kỳ 2, Kỳ 3...:
+
+không thay đổi giá trị HĐ
+không tạo HĐ mới
+không tạo phụ lục HĐ mới theo từng kỳ
+chỉ xuất file riêng
+dùng dữ liệu PhanCongTre
+28. MẪU WORD – HỢP ĐỒNG
+
+Người dùng đã cung cấp các placeholder trong chat.
+
+Phần 3.1 Giá trị hợp đồng
+{{TongTrePHCN}}
+{{TongBuoiPHCN}}
+{{ThanhTienPHCN}}
+{{HoTroDiLaiPHCN}}
+
+{{TongTreCSXH}}
+{{TongBuoiCSXH}}
+{{ThanhTienCSXH}}
+{{HoTroDiLaiCSXH}}
+
+{{TongTien}}
+
+Nguồn dữ liệu:
+
+PhanBoChiTieu
+
+Không lấy từ:
+
+PhanCongTre
+29. MẪU WORD – PHỤ LỤC 2
+
+Tên:
+
+PHỤ LỤC 2 – DANH SÁCH TRẺ PHÂN CÔNG CAN THIỆP
+CHO CÁN BỘ CAN THIỆP
+
+Placeholder:
+
+{{KyPhanCong}}
+{{NgayPhanCong}}
+{{STT}}
+{{HoTenTre}}
+{{MaTre}}
+{{DichVu}}
+{{SoBuoi}}
+{{HoTenGVMN}}
+
+Footer:
+
+Cán bộ điều phối tỉnh Trần Ngọc Thảo
+
+và:
+
+Cán bộ can thiệp {{HoTenGVMN}}
+30. Ý NGHĨA CÁC PLACEHOLDER
+{{KyPhanCong}}
+
+Ví dụ:
+
+Kỳ 1
+{{NgayPhanCong}}
+
+Ngày phân công của kỳ.
+
+{{STT}}
+
+Số thứ tự.
+
+{{HoTenTre}}
+
+Tên trẻ.
+
+{{MaTre}}
+
+Mã trẻ.
+
+{{DichVu}}
+
+Tên dịch vụ dạng người dùng đọc được.
+
+{{SoBuoi}}
+
+Số buổi dự kiến của trẻ.
+
+{{HoTenGVMN}}
+
+Tên cán bộ can thiệp.
+
+Nguồn thường là:
+
+PhanBoChiTieu.can_bo
+31. VẤN ĐỀ NGÀY PHÂN CÔNG
+
+Template có một:
+
+{{NgayPhanCong}}
+
+Trong khi DB có thể có ngày phân công trên từng PhanCongTre.
+
+Khi triển khai export cần kiểm tra dữ liệu thực tế.
+
+Không tự ý đoán nếu trong một kỳ có nhiều ngày khác nhau.
+
+Có thể cần thống nhất quy tắc:
+
+ngày chung của kỳ
+hoặc
+ngày đầu tiên
+hoặc
+ngày theo từng dòng
+
+Nhưng chỉ quyết định khi kiểm tra dữ liệu/template thực tế.
+
+32. SIGNAL TÍNH GIÁ TRỊ ĐỀ XUẤT
+
+Hiện đã có:
+
+quanly/signals.py
+
+Mục tiêu:
+
+Khi save DeXuatHopDong:
+
+lấy allocation
+snapshot counts/sessions
+tính gia_tri_du_kien
+
+Công thức:
+
+PHCN =
+so_tre_phcn
+×
+so_buoi_phcn
+×
+(don_gia_cong + dinh_muc_di_lai_phcn)
+
+CSXH =
+so_tre_cs
+×
+so_buoi_cs
+×
+(don_gia_cong + dinh_muc_di_lai_cs)
+
+TOTAL =
+PHCN + CSXH
+33. APPS.PY
+
+quanly/apps.py hiện load:
+
+signals
+model_compat
+
+Mục tiêu trước mắt là giữ hệ thống chạy ổn định.
+
+Nhưng khi source đã được làm sạch:
+
+ưu tiên sửa trực tiếp view/model
+loại bỏ workaround không còn cần thiết
+34. MODEL_COMPAT.PY
+
+Đã từng tạo workaround để tương thích code cũ.
+
+Workaround 1
+
+Code cũ:
+
+phan_cong=item
+
+Model thực tế:
+
+source_phan_cong
+
+Compatibility đã map:
+
+phan_cong
+→
+source_phan_cong
+Workaround 2
+
+Code cũ:
+
+hop_dong.phu_luc_hop_dong
+
+Trong model:
+
+related_name = "phu_luc"
+
+Do đó đúng là:
+
+hop_dong.phu_luc.all()
+
+Khi sửa source chính thức:
+
+sửa view
+kiểm tra toàn repo
+nếu không còn sử dụng compatibility thì xóa workaround.
+
+Không giữ workaround vĩnh viễn nếu không cần.
+
+35. LỖI DUYỆT ĐỀ XUẤT ĐÃ TỪNG GẶP
+
+View cũ có:
+
+proposal.trang_thai = "DUYET"
+
+Nhưng model chuẩn:
+
+DA_DUYET
+
+Ngoài ra template từng dùng GET anchor trong khi view yêu cầu POST.
+
+Cần chuẩn hóa:
+
+POST
+↓
+kiểm tra điều kiện
+↓
+DA_DUYET
+
+Sau khi tạo HĐ:
+
+DA_TAO_HOP_DONG
+36. LỖI TẠO PHỤ LỤC ĐÃ TỪNG GẶP
+
+Lỗi:
+
+ChiTietPhuLucPhanCong() got unexpected keyword arguments:
+'phan_cong'
+
+Nguyên nhân:
+
+Model không có field:
+
+phan_cong
+
+Mà có:
+
+source_phan_cong
+
+Code chuẩn phải dùng:
+
+source_phan_cong=item
+
+Không dùng:
+
+phan_cong=item
+37. LỖI CHI TIẾT HỢP ĐỒNG
+
+Lỗi:
+
+AttributeError:
+'HopDong' object has no attribute 'phu_luc_hop_dong'
+
+Nguyên nhân:
+
+PhuLucHopDong.hop_dong có:
+
+related_name="phu_luc"
+
+Code đúng:
+
+hop_dong.phu_luc.all()
+
+Không dùng:
+
+hop_dong.phu_luc_hop_dong.all()
+38. MIGRATION
+
+Migration V2:
+
+0010
+
+ĐÃ HOÀN THÀNH.
+
+Trạng thái:
+
+0001 [X]
+0002 [X]
+...
+0010 [X]
+
+Đã thực hiện:
+
+python manage.py migrate quanly 0010 --fake
+
+Sau đó:
+
+python manage.py makemigrations --check
+
+Kết quả:
+
+No changes detected
+
+Và:
+
+python manage.py check
+
+Kết quả:
+
+System check identified no issues
+39. QUY TẮC MIGRATION
+
+KHÔNG:
+
+reset database
+xóa migration
+tạo migration 0011 chỉ để sửa vấn đề cũ
+đổi DB
+
+Nếu sửa Python logic:
+
+Không cần migration.
+
+Chỉ tạo migration nếu thực sự thay đổi schema model.
+
+40. DUPLICATE XA ĐÃ XỬ LÝ
+
+Từng có duplicate:
+
+Xa
+(tinh_id, ten_xa)
+
+Record duplicate:
+
+id = 35
+
+đã được xóa.
+
+Unique constraint đã được xử lý trong migration 0010.
+
+41. CÁC URL CHÍNH
+/hop-dong/phan-cong/
+
+/hop-dong/phan-cong/them/
+
+/hop-dong/phan-cong/sua/<pk>/
+
+/hop-dong/danh-sach-phan-bo/
+
+/phan-bo/<pk>/sua/
+
+/phan-bo/<pk>/khoa/
+
+/danh-sach-de-xuat/
+
+/de-xuat/<pk>/tao/
+
+/de-xuat/<pk>/duyet/
+
+/hop-dong/tao-chinh-thuc/<pk>/
+
+/hop-dong/
+
+/hop-dong/<pk>/
+
+/hop-dong/<hop_dong_id>/khoi-luong/them/
+
+/hop-dong/<hop_dong_id>/phu-luc/them/
+42. LỖI DANH SÁCH PHÂN BỔ
+
+Từng thiếu nút/điểm vào phân công.
+
+Đã sửa:
+
+danh_sach_phan_bo.html
+
+Người dùng xác nhận:
+
+đã tạo được phân công
+43. LỖI DANH SÁCH ĐỀ XUẤT
+
+View truyền:
+
+page_obj
+
+Template lại loop:
+
+danh_sach
+
+Do đó danh sách rỗng.
+
+Đã sửa template để loop:
+
+page_obj
+44. FORMAT SỐ VIỆT NAM
+
+Đã có:
+
+quanly/templatetags/__init__.py
+quanly/templatetags/number_format.py
+
+Filter:
+
+|vn_number
+
+Ví dụ:
+
+65000000
+
+hiển thị:
+
+65.000.000
+45. GIAO DIỆN CLIENT
+
+Preview giá trị phân bổ có sử dụng:
+
+Intl.NumberFormat("vi-VN")
+46. TẠO HỢP ĐỒNG CHÍNH THỨC
+
+Logic cần đảm bảo:
+
+Proposal
+    ↓
+Allocation
+    ↓
+Contract
+
+Khi POST tạo HĐ:
+
+Validate form.
+Lấy proposal.
+Lấy allocation.
+Kiểm tra CBCT / nhóm HĐ.
+Tính giá trị từ allocation.
+Không tin giá trị tiền do client gửi.
+Save HĐ trong transaction.
+Tạo chi tiết cần thiết.
+Tạo snapshot Kỳ 1 nếu cần.
+Cập nhật proposal:
+DA_TAO_HOP_DONG
+Redirect chi tiết HĐ.
+47. BẢO MẬT GIÁ TRỊ HỢP ĐỒNG
+
+Không cho phép user sửa HTML form để thay đổi:
+
+gia_tri_hop_dong
+
+Server phải tính lại / ép giá trị từ:
+
+PhanBoChiTieu
+
+Client-side chỉ dùng để preview.
+
+48. PHÂN BIỆT BA LOẠI KHỐI LƯỢNG
+
+Phải luôn phân biệt:
+
+1. Khối lượng theo hợp đồng
+2. Khối lượng thực hiện
+3. Khối lượng thanh toán
+
+Không được lấy cái này thay thế cái kia.
+
+49. THANH TOÁN
+
+Sau này phải kiểm soát:
+
+không thanh toán trùng
+
+Có:
+
+DotThanhToan
+ChiTietThanhToan
+
+Thanh toán phải căn cứ vào khối lượng thực hiện hợp lệ.
+
+Không mặc định:
+
+Hợp đồng = đã thực hiện
+50. NGHIỆM THU / THANH LÝ
+
+Luồng cuối:
+
+Hợp đồng
+↓
+Thực hiện
+↓
+Thanh toán
+↓
+Nghiệm thu
+↓
+Thanh lý
+
+Không cho phép nhảy trạng thái tùy tiện nếu nghiệp vụ yêu cầu kiểm soát.
+
+51. WORD EXPORT
+
+Đây là phần đang chuẩn bị triển khai.
+
+Trước khi code:
+
+Phải đọc trực tiếp GitHub branch dev để tìm:
+
+docx
+python-docx
+docxtpl
+DocxTemplate
+render
+word
+pdf
+
+Mục tiêu:
+
+Không tạo kiến trúc export mới nếu project đã có cơ chế tương ứng.
+
+52. WORD – BỘ HỢP ĐỒNG
+
+Output cuối mong muốn:
+
+01 FILE WORD
+│
+├── Hợp đồng chính
+│
+└── Phụ lục 2 – Kỳ 1
+
+Phần HĐ chính lấy tài chính từ:
+
+PhanBoChiTieu
+
+Phụ lục Kỳ 1 lấy danh sách từ:
+
+PhanCongTre
+53. WORD – KỲ 2+
+
+Khi người dùng chọn:
+
+Kỳ 2
+
+hệ thống xuất:
+
+Phụ lục 2 – Kỳ 2.docx
+
+Tương tự:
+
+Kỳ 3
+Kỳ 4
+...
+
+Không gắn thành một phụ lục HĐ mới.
+
+54. KHÔNG ĐƯỢC LÀM SAI
+
+Không được:
+
+Kỳ 2
+↓
+thay đổi giá trị HĐ
+
+Không được:
+
+Kỳ 3
+↓
+tạo HĐ mới
+
+Không được:
+
+assignment thực tế
+↓
+tự động giảm giá trị HĐ
+55. PHU LUC HOP DONG – ĐỊNH HƯỚNG
+
+Hiện DB có:
+
+PhuLucHopDong
+ChiTietPhuLucPhanCong
+
+Không cần xóa ngay.
+
+Có thể sử dụng cho:
+
+Snapshot Kỳ 1
+
+để đảm bảo tài liệu HĐ đã tạo không thay đổi theo assignment mới.
+
+Nhưng không mở rộng thành:
+
+PhuLuc Kỳ 2
+PhuLuc Kỳ 3
+PhuLuc Kỳ 4
+...
+
+nếu không có yêu cầu nghiệp vụ mới.
+
+56. VIỆC CẦN LÀM TIẾP THEO
+
+Theo thứ tự:
+
+Bước 1
+
+Đọc source GitHub:
+
+dinhtanhb/QLHD_python
+branch dev
+Bước 2
+
+Kiểm tra:
+
+models.py
+forms.py
+views.py
+urls.py
+signals.py
+apps.py
+model_compat.py
+financial.py
+Bước 3
+
+Tìm cơ chế Word/PDF hiện tại.
+
+Bước 4
+
+Chuẩn hóa:
+
+tao_hop_dong_chinh_thuc
+Bước 5
+
+Đảm bảo:
+
+gia_tri_hop_dong
+
+lấy từ allocation.
+
+Bước 6
+
+Chuẩn hóa:
+
+proposal.trang_thai = "DA_TAO_HOP_DONG"
+
+sau khi tạo HĐ thành công.
+
+Bước 7
+
+Sửa:
+
+source_phan_cong=item
+Bước 8
+
+Sửa:
+
+hop_dong.phu_luc.all()
+Bước 9
+
+Kiểm tra và loại bỏ workaround model_compat.py nếu không còn cần.
+
+Bước 10
+
+Xây Word context.
+
+Bước 11
+
+Xuất:
+
+HĐ + Phụ lục 2 Kỳ 1
+Bước 12
+
+Xây:
+
+Export Phụ lục Kỳ 2+
+Bước 13
+
+Test toàn bộ flow.
+
+57. NGUYÊN TẮC TEST
+
+Phải test tối thiểu:
+
+Test 1
+
+Phân bổ:
+
+PHCN = 10 trẻ
+PHCN = 20 buổi
+
+Phân công:
+
+PHCN = 8 trẻ
+
+Kết quả:
+
+Giá trị HĐ vẫn tính theo 10 trẻ.
+Test 2
+
+Phân công Kỳ 1:
+
+5 trẻ
+
+Kỳ 2:
+
+3 trẻ
+
+Kết quả:
+
+HĐ có Phụ lục Kỳ 1
+Kỳ 2 xuất file riêng
+Test 3
+
+Thay đổi assignment sau khi tạo HĐ.
+
+Kết quả:
+
+Giá trị HĐ không thay đổi.
+Test 4
+
+Không có assignment.
+
+Kết quả:
+
+Không được tạo đề xuất HĐ.
+Test 5
+
+Có assignment nhưng khác allocation.
+
+Kết quả:
+
+Không làm thay đổi giá trị HĐ.
+58. NGUYÊN TẮC DB
+
+Database là:
+
+SOURCE OF TRUTH
+
+Word/PDF/Excel là:
+
+OUTPUT
+
+Không dùng file Word làm nguồn dữ liệu ngược lại.
+
+59. NGUYÊN TẮC SNAPSHOT
+
+Các thông tin đã ký / đã phát hành phải có khả năng giữ nguyên lịch sử.
+
+Đặc biệt:
+
+Hợp đồng
+Phụ lục Kỳ 1
+
+không được tự động thay đổi khi dữ liệu phân công sau này thay đổi.
+
+60. GIT / GITHUB
+
+Repository:
+
+dinhtanhb/QLHD_python
+
+Branch làm việc:
+
+dev
+
+Khi sửa code:
+
+Đọc file hiện tại.
+Lấy SHA hiện tại.
+Sửa chính xác.
+Commit rõ nghĩa.
+Không ghi đè code mới của user.
+Không reset branch.
+Không force push.
+61. SHA ĐÃ BIẾT TRƯỚC ĐÂY
+
+views.py SHA từng đọc:
+
+883677f6cebfb7818d6c8860fb85eb17b8832f1c
+
+models.py SHA từng đọc:
+
+4b9f6b78d6f10ddfca1ef3ad6e3a306b77a1c7ee
+
+Các commit liên quan:
+
+53fd22690060bc1b822931cec23b71142202f568
+
+Liên quan sửa Duyệt, nhưng source sau đó vẫn cần kiểm tra lại.
+
+7fa5315a368c75b0140f004454a8404d1bf637d4
+
+Thêm compatibility cho phan_cong.
+
+93a08650e35b531c0e31473e3560573434884490
+
+Thêm compatibility alias cho phu_luc_hop_dong.
+
+KHÔNG giả định source hiện tại vẫn đúng y nguyên các SHA trên.
+Phải đọc branch dev hiện tại.
+
+62. TÌNH TRẠNG HIỆN TẠI
+
+Mốc đã hoàn thành:
+
+Model V2
+Migration V2
+Phân bổ
+Phân công
+Đề xuất
+Tạo HĐ cơ bản
+Chi tiết HĐ cơ bản
+Snapshot phụ lục đã có model
+Một số logic tài chính
+Format số
+Một số template
+
+Đang chuẩn bị:
+
+Quản lý HĐ chính thức
++
+Word/PDF
++
+Phụ lục Kỳ 1
++
+Export Kỳ 2+
+
+Sau đó:
+
+Nhật ký thực hiện
+↓
+Thanh toán
+↓
+Nghiệm thu
+↓
+Thanh lý
+↓
+Báo cáo
+63. TƯ DUY KIẾN TRÚC CỐT LÕI
+
+Luôn nhớ:
+
+PHÂN BỔ
+=
+CAM KẾT KHỐI LƯỢNG / NGÂN SÁCH
+PHÂN CÔNG
+=
+GIAO TRẺ THỰC TẾ
+HỢP ĐỒNG
+=
+CAM KẾT CHÍNH THỨC
+THỰC HIỆN
+=
+NHỮNG GÌ THỰC TẾ ĐÃ LÀM
+THANH TOÁN
+=
+NHỮNG GÌ ĐỦ ĐIỀU KIỆN ĐƯỢC THANH TOÁN
+
+Không trộn 5 khái niệm này.
+
+64. SƠ ĐỒ TỔNG THỂ
+                    DANH MỤC
+                       │
+                       ▼
+              PHÂN BỔ CHỈ TIÊU
+                       │
+             ┌─────────┴─────────┐
+             │                   │
+             ▼                   ▼
+       TÍNH GIÁ TRỊ HĐ      PHÂN CÔNG TRẺ
+             │                   │
+             │          ┌────────┼────────┐
+             │          │        │        │
+             │          ▼        ▼        ▼
+             │        KỲ 1     KỲ 2     KỲ N
+             │          │        │        │
+             │          │        │        │
+             ▼          │        │        │
+       ĐỀ XUẤT HĐ        │        │        │
+             │           │        │        │
+             ▼           │        │        │
+          DUYỆT          │        │        │
+             │           │        │        │
+             ▼           │        │        │
+      HỢP ĐỒNG CHÍNH     │        │        │
+             │           │        │        │
+             ├───────────┘        │        │
+             │                    │        │
+             ▼                    ▼        ▼
+      WORD HĐ + PL KỲ 1       FILE KỲ 2  FILE KỲ N
+             │
+             ▼
+       THỰC HIỆN
+             │
+             ▼
+        THANH TOÁN
+             │
+             ▼
+        NGHIỆM THU
+             │
+             ▼
+         THANH LÝ
+             │
+             ▼
+        BÁO CÁO
+65. CÂU LỆNH KHỞI ĐỘNG CHO CHATGPT MỚI
+
+Khi upload file này sang tài khoản khác, gửi thêm câu sau:
+
+Hãy đọc toàn bộ file QLHD_CONTEXT_HANDOFF.md. Đây là tài liệu bàn giao chính thức của dự án QLHD. Hãy tiếp tục dự án từ đúng trạng thái trong tài liệu, không hỏi lại các quyết định nghiệp vụ đã được đánh dấu ĐÃ CHỐT. Sau đó đọc trực tiếp repository GitHub dinhtanhb/QLHD_python trên branch dev để xác minh source code hiện tại trước khi thực hiện bất kỳ thay đổi nào. Không tự ý thay đổi kiến trúc, nghiệp vụ hoặc database. Khi sửa code, phải đưa code đầy đủ, liền mạch và copy-paste được.
+
+66. QUY TẮC ƯU TIÊN KHI CÓ MÂU THUẪN
+
+Nếu phát hiện mâu thuẫn giữa:
+
+Code hiện tại
+
+và:
+
+Quy tắc nghiệp vụ trong tài liệu này
+
+thì:
+
+Ưu tiên nghiệp vụ đã chốt.
+
+Nhưng trước khi sửa:
+
+đọc source hiện tại
+xác định nguyên nhân
+sửa tối thiểu
+không phá migration/database
+kiểm tra các luồng liên quan
+67. TRẠNG THÁI BÀN GIAO
+
+Tài liệu này được xem là:
+
+SOURCE OF CONTEXT
+
+cho các phiên ChatGPT tiếp theo.
+
+Repository GitHub:
+
+SOURCE OF CODE
+
+Database MySQL:
+
+SOURCE OF DATA
+
+Word/PDF:
+
+OUTPUT DOCUMENT
+68. MỤC TIÊU TIẾP THEO
+
+Mục tiêu ngay trước mắt:
+
+HOÀN THIỆN QUẢN LÝ HỢP ĐỒNG
+        ↓
+WORD HỢP ĐỒNG
+        ↓
+PHỤ LỤC 2 KỲ 1
+        ↓
+EXPORT KỲ 2+
+
+Sau khi hoàn thành mới tiếp tục:
+
+NHẬT KÝ THỰC HIỆN
+        ↓
+THANH TOÁN
+        ↓
+NGHIỆM THU
+        ↓
+THANH LÝ
+        ↓
+BÁO CÁO / ĐỐI CHIẾU
+Danh mục
+   ↓
+Phân bổ chỉ tiêu
+   ↓
+Phân công trẻ
+   ↓
+Kiểm tra / Đề xuất hợp đồng
+   ↓
+Tạo & ký hợp đồng
+   ↓
+Ghi nhận thực hiện
+   ↓
+Thanh toán hàng tháng
+   ↓
+Nghiệm thu / Thanh lý
+   ↓
+Báo cáo / Đối chiếu
+
+Hệ thống phục vụ hai nhóm dịch vụ chính:
+
+PHCN – Phục hồi chức năng
+CSXH – Chăm sóc xã hội
+
+Đối tượng thực hiện:
+
+CBCT – Cán bộ chuyên trách / cán bộ can thiệp
+3. TECH STACK
+
+Backend:
+
+Python 3.10+
+Django 5.1.1
+Django ORM
+Django Views
+Django Forms
+
+Frontend:
+
+HTML5
+CSS3
+JavaScript
+Bootstrap 5.3
+
+Xử lý dữ liệu:
+
+Pandas 3.0.5
+OpenPyXL 3.1.5
+
+Database:
+
+MySQL
+
+KHÔNG tự ý chuyển sang SQLite.
+
+Repository:
+
+https://github.com/dinhtanhb/QLHD_python
+
+Branch làm việc:
+
+dev
+
+Branch chính:
+
+main
+4. QUY TẮC LÀM VIỆC VỚI NGƯỜI DÙNG
+
+Khi hỗ trợ dự án:
+
+Trả lời bằng tiếng Việt.
+Đi thẳng vào vấn đề.
+Không giải thích lý thuyết dài dòng nếu không được yêu cầu.
+Khi sửa code phải đưa code đầy đủ, liền mạch.
+KHÔNG dùng:
+# ... giữ nguyên phần còn lại
+
+hoặc:
+
+...
+
+để bỏ qua code.
+
+Code phải copy-paste được.
+Ưu tiên Clean Code.
+Ưu tiên hiệu năng.
+Xử lý exception an toàn.
+Đặc biệt chú ý:
+Decimal
+tiền tệ
+Excel
+pandas
+OpenPyXL
+\xa0
+khoảng trắng
+dữ liệu null
+dữ liệu sai kiểu
+
+Khi gặp traceback:
+
+Nguyên nhân gốc:
+1–2 câu ngắn gọn.
+
+Sau đó:
+→ giải pháp
+→ code hoàn chỉnh
+
+Không đưa ra quá nhiều phương án thay thế nếu không được yêu cầu.
+
+5. NGUYÊN TẮC KIẾN TRÚC NGHIỆP VỤ
+
+Đây là các nguyên tắc ĐÃ CHỐT.
+
+5.1. Phân bổ != Đề xuất != Hợp đồng
+
+Ba đối tượng hoàn toàn khác nhau:
+
+PhanBoChiTieu
+       ↓
+DeXuatHopDong
+       ↓
+HopDong
+
+Không gộp chúng thành một entity.
+
+6. QUY TRÌNH NGHIỆP VỤ ĐÃ CHỐT
+1. DANH MỤC
+       ↓
+2. PHÂN BỔ CHỈ TIÊU
+       ↓
+3. PHÂN CÔNG TRẺ
+       ↓
+4. KIỂM TRA / ĐỀ XUẤT HỢP ĐỒNG
+       ↓
+5. TẠO & KÝ HỢP ĐỒNG
+       ↓
+6. GHI NHẬN THỰC HIỆN
+       ↓
+7. THANH TOÁN HÀNG THÁNG
+       ↓
+8. NGHIỆM THU / THANH LÝ
+       ↓
+9. BÁO CÁO / ĐỐI CHIẾU
+7. QUY TẮC PHÂN BỔ
+
+PhanBoChiTieu là cơ sở xác định:
+
+CBCT
+Nhóm hợp đồng
+Số trẻ PHCN
+Số buổi PHCN
+Số trẻ CSXH
+Số buổi CSXH
+Định mức đi lại
+Giá trị hợp đồng dự kiến
+
+Phân bổ chỉ tiêu KHÔNG tự động tạo hợp đồng.
+
+8. QUY TẮC PHÂN CÔNG TRẺ
+
+Phân công trẻ là bước sau phân bổ.
+
+Phân công dùng để:
+
+xác định trẻ thực tế được giao
+xác định dịch vụ
+xác định kỳ phân công
+phục vụ Phụ lục 2
+phục vụ ghi nhận thực hiện
+phục vụ thanh toán
+phục vụ đối chiếu
+
+Quan trọng:
+
+Số trẻ thực tế đã phân công KHÔNG được dùng để thay đổi giá trị hợp đồng đã được xác định từ Phân bổ chỉ tiêu.
+
+9. QUY TẮC GIÁ TRỊ HỢP ĐỒNG
+
+Đây là quy tắc QUAN TRỌNG NHẤT.
+
+9.1. Giá trị HĐ lấy từ Phân bổ chỉ tiêu
+
+Không lấy từ:
+
+PhanCongTre
+
+Không tính lại giá trị HĐ dựa trên số trẻ thực tế được phân công.
+
+10. ĐỊNH MỨC TÀI CHÍNH
+
+Đơn giá công:
+
+DON_GIA_CONG = 200.000
+
+Định mức đi lại:
+
+DON_GIA_DI_LAI_DM1 = 50.000
+DON_GIA_DI_LAI_DM2 = 100.000
+
+Lưu ý:
+
+Định mức thực tế của từng hợp đồng phải lấy từ:
+
+PhanBoChiTieu
+
+hoặc FinancialConfig tùy logic hiện tại.
+
+Không tự ý hard-code nếu hệ thống đã có cấu hình.
+
+11. CÔNG THỨC GIÁ TRỊ HỢP ĐỒNG
+11.1. PHCN
+Thành tiền công PHCN
+=
+TongTrePHCN
+×
+TongBuoiPHCN
+×
+200.000
+
+Hỗ trợ đi lại:
+
+HoTroDiLaiPHCN
+=
+TongTrePHCN
+×
+TongBuoiPHCN
+×
+DinhMucDiLaiPHCN
+
+Tổng PHCN:
+
+ThanhTienPHCN
++
+HoTroDiLaiPHCN
+12. CSXH
+Thành tiền công CSXH
+=
+TongTreCSXH
+×
+TongBuoiCSXH
+×
+200.000
+
+Hỗ trợ đi lại:
+
+HoTroDiLaiCSXH
+=
+TongTreCSXH
+×
+TongBuoiCSXH
+×
+DinhMucDiLaiCSXH
+
+Tổng CSXH:
+
+ThanhTienCSXH
++
+HoTroDiLaiCSXH
+13. TỔNG GIÁ TRỊ HỢP ĐỒNG
+TongTien
+=
+TongPHCN
++
+TongCSXH
+14. VÍ DỤ NGHIỆP VỤ ĐÃ CHỐT
+
+Ví dụ:
+
+Phân bổ:
+
+PHCN:
+10 trẻ
+20 buổi
+Định mức đi lại = 50.000
+
+CSXH:
+6 trẻ
+10 buổi
+Định mức đi lại = theo Phân bổ
+
+Giá trị HĐ PHCN:
+
+10 × 20 × (200.000 + 50.000)
+=
+50.000.000
+
+Nếu CSXH có định mức 250.000:
+
+6 × 10 × (200.000 + 250.000)
+=
+27.000.000
+
+Tổng:
+
+77.000.000
+
+Nhưng nếu sau đó chỉ phân công:
+
+PHCN = 8 trẻ
+CSXH = 4 trẻ
+
+THÌ:
+
+GIÁ TRỊ HỢP ĐỒNG KHÔNG ĐƯỢC GIẢM.
+
+Vẫn lấy theo Phân bổ.
+
+15. MODEL V2 ĐÃ HOÀN THÀNH
+
+Các model chính:
+
+TimeStampedModel
+
+Tinh
+Xa
+DonVi
+CanBo
+NhomHD
+Tre
+
+PhanBoChiTieu
+PhanCongTre
+DeXuatHopDong
+HopDong
+
+ChiTietKhoiLuongHopDong
+
+PhuLucHopDong
+ChiTietPhuLucPhanCong
+
+NhatKyThucHien
+
+DotThanhToan
+ChiTietThanhToan
+
+NghiemThu
+ThanhLyHopDong
+16. PHANBOCHITIEU
+
+PhanBoChiTieu là entity phân bổ.
+
+Có các nhóm thông tin:
+
+CanBo
+NhomHD
+tham_gia_ct
+ngay_lap
+so_tre_phcn
+so_buoi_phcn
+so_tre_cs
+so_buoi_cs
+dinh_muc_di_lai_phcn
+dinh_muc_di_lai_cs
+ghi_chu
+is_locked
+
+Không chứa trực tiếp thông tin hợp đồng.
+
+17. PHANCONGTRE
+
+PhanCongTre có:
+
+phan_bo
+tre
+loai_dich_vu
+so_buoi_du_kien
+dinh_muc_di_lai
+dia_diem_ct
+hinh_thuc_ct
+dot_phan_cong
+ky_phan_cong
+ngay_phan_cong
+trang_thai
+ghi_chu
+
+Loại dịch vụ hiện có:
+
+VLTL
+HDTL
+NNTL
+GDDB
+CSXH
+CSYT
+18. DE XUAT HOP DONG
+
+DeXuatHopDong có:
+
+phan_bo
+lan_de_xuat
+so_de_xuat
+ngay_de_xuat
+snapshot số trẻ PHCN
+snapshot số buổi PHCN
+snapshot số trẻ CSXH
+snapshot số buổi CSXH
+gia_tri_du_kien
+trang_thai
+ly_do
+
+Có unique:
+
+(phan_bo, lan_de_xuat)
+19. TRẠNG THÁI ĐỀ XUẤT
+
+Logic chuẩn cần dùng:
+
+CHO_KIEM_TRA
+DU_DIEU_KIEN
+DA_DUYET
+DA_TAO_HOP_DONG
+
+Có thể có thêm trạng thái từ chối/hủy nếu model hiện tại đã hỗ trợ.
+
+Không sử dụng:
+
+DUYET
+
+nếu model chuẩn là:
+
+DA_DUYET
+20. HOPDONG
+
+HopDong là entity độc lập.
+
+Các field quan trọng:
+
+de_xuat
+can_bo
+nhom_hd
+so_hop_dong
+ngay_ky
+tu_ngay
+den_ngay
+don_gia_cong
+dinh_muc_di_lai_phcn
+dinh_muc_di_lai_cs
+gia_tri_hop_dong
+trang_thai
+is_locked
+ghi_chu
+21. TRẠNG THÁI HỢP ĐỒNG
+
+Các trạng thái chuẩn:
+
+DU_THAO
+DA_KY
+DANG_THUC_HIEN
+TAM_DUNG
+HET_HAN
+NGHIEM_THU
+THANH_LY
+HUY
+22. CHI TIET KHOI LUONG HOP DONG
+
+Có thể dùng để lưu/hiển thị khối lượng theo loại dịch vụ:
+
+loai_dich_vu
+so_tre
+so_buoi
+don_gia_cong
+dinh_muc_di_lai
+amount
+
+Unique:
+
+(hop_dong, loai_dich_vu)
+
+Amount tự tính.
+
+Nhưng cần nhớ:
+
+ChiTietKhoiLuongHopDong không được biến thành nguồn thay đổi giá trị HĐ trái với PhanBoChiTieu.
+
+23. PHỤ LỤC HỢP ĐỒNG
+
+DB hiện có:
+
+PhuLucHopDong
+ChiTietPhuLucPhanCong
+
+Nhưng nghiệp vụ ĐÃ CHỐT là:
+
+Kỳ 1
+
+Phụ lục 2 Kỳ 1 nằm trong bộ HĐ.
+
+Kỳ 2 trở đi
+
+Không tạo một PhuLucHopDong mới cho từng kỳ.
+
+Chỉ xuất file riêng.
+
+24. SNAPSHOT KỲ 1
+
+Có thể sử dụng:
+
+ChiTietPhuLucPhanCong
+
+để snapshot dữ liệu Kỳ 1 tại thời điểm tạo/ký HĐ.
+
+Điều này giúp:
+
+HĐ đã ký
++
+Phụ lục 2 Kỳ 1
+
+không bị thay đổi nếu phân công sau đó thay đổi.
+
+25. QUY TẮC KỲ PHÂN CÔNG
+
+Đây là quy tắc ĐÃ CHỐT.
+
+PHÂN BỔ CHỈ TIÊU
+       │
+       ├──────────────> TÍNH GIÁ TRỊ HỢP ĐỒNG
+       │
+       └──────────────> KIỂM TRA PHÂN CÔNG
+                              │
+                              ▼
+                         PHÂN CÔNG TRẺ
+                              │
+             ┌────────────────┼────────────────┐
+             │                │                │
+             ▼                ▼                ▼
+           KỲ 1             KỲ 2             KỲ n
+             │                │                │
+             ▼                ▼                ▼
+        Trong bộ HĐ       File riêng        File riêng
+26. KỲ 1
+
+Kỳ 1:
+
+là một phần của bộ HĐ
+xuất trong file Word HĐ
+chính là Phụ lục 2
+sử dụng dữ liệu phân công Kỳ 1
+
+Không tạo một workflow hợp đồng riêng cho Kỳ 1.
+
+27. KỲ 2+
+
+Kỳ 2, Kỳ 3...:
+
+không thay đổi giá trị HĐ
+không tạo HĐ mới
+không tạo phụ lục HĐ mới theo từng kỳ
+chỉ xuất file riêng
+dùng dữ liệu PhanCongTre
+28. MẪU WORD – HỢP ĐỒNG
+
+Người dùng đã cung cấp các placeholder trong chat.
+
+Phần 3.1 Giá trị hợp đồng
+{{TongTrePHCN}}
+{{TongBuoiPHCN}}
+{{ThanhTienPHCN}}
+{{HoTroDiLaiPHCN}}
+
+{{TongTreCSXH}}
+{{TongBuoiCSXH}}
+{{ThanhTienCSXH}}
+{{HoTroDiLaiCSXH}}
+
+{{TongTien}}
+
+Nguồn dữ liệu:
+
+PhanBoChiTieu
+
+Không lấy từ:
+
+PhanCongTre
+29. MẪU WORD – PHỤ LỤC 2
+
+Tên:
+
+PHỤ LỤC 2 – DANH SÁCH TRẺ PHÂN CÔNG CAN THIỆP
+CHO CÁN BỘ CAN THIỆP
+
+Placeholder:
+
+{{KyPhanCong}}
+{{NgayPhanCong}}
+{{STT}}
+{{HoTenTre}}
+{{MaTre}}
+{{DichVu}}
+{{SoBuoi}}
+{{HoTenGVMN}}
+
+Footer:
+
+Cán bộ điều phối tỉnh Trần Ngọc Thảo
+
+và:
+
+Cán bộ can thiệp {{HoTenGVMN}}
+30. Ý NGHĨA CÁC PLACEHOLDER
+{{KyPhanCong}}
+
+Ví dụ:
+
+Kỳ 1
+{{NgayPhanCong}}
+
+Ngày phân công của kỳ.
+
+{{STT}}
+
+Số thứ tự.
+
+{{HoTenTre}}
+
+Tên trẻ.
+
+{{MaTre}}
+
+Mã trẻ.
+
+{{DichVu}}
+
+Tên dịch vụ dạng người dùng đọc được.
+
+{{SoBuoi}}
+
+Số buổi dự kiến của trẻ.
+
+{{HoTenGVMN}}
+
+Tên cán bộ can thiệp.
+
+Nguồn thường là:
+
+PhanBoChiTieu.can_bo
+31. VẤN ĐỀ NGÀY PHÂN CÔNG
+
+Template có một:
+
+{{NgayPhanCong}}
+
+Trong khi DB có thể có ngày phân công trên từng PhanCongTre.
+
+Khi triển khai export cần kiểm tra dữ liệu thực tế.
+
+Không tự ý đoán nếu trong một kỳ có nhiều ngày khác nhau.
+
+Có thể cần thống nhất quy tắc:
+
+ngày chung của kỳ
+hoặc
+ngày đầu tiên
+hoặc
+ngày theo từng dòng
+
+Nhưng chỉ quyết định khi kiểm tra dữ liệu/template thực tế.
+
+32. SIGNAL TÍNH GIÁ TRỊ ĐỀ XUẤT
+
+Hiện đã có:
+
+quanly/signals.py
+
+Mục tiêu:
+
+Khi save DeXuatHopDong:
+
+lấy allocation
+snapshot counts/sessions
+tính gia_tri_du_kien
+
+Công thức:
+
+PHCN =
+so_tre_phcn
+×
+so_buoi_phcn
+×
+(don_gia_cong + dinh_muc_di_lai_phcn)
+
+CSXH =
+so_tre_cs
+×
+so_buoi_cs
+×
+(don_gia_cong + dinh_muc_di_lai_cs)
+
+TOTAL =
+PHCN + CSXH
+33. APPS.PY
+
+quanly/apps.py hiện load:
+
+signals
+model_compat
+
+Mục tiêu trước mắt là giữ hệ thống chạy ổn định.
+
+Nhưng khi source đã được làm sạch:
+
+ưu tiên sửa trực tiếp view/model
+loại bỏ workaround không còn cần thiết
+34. MODEL_COMPAT.PY
+
+Đã từng tạo workaround để tương thích code cũ.
+
+Workaround 1
+
+Code cũ:
+
+phan_cong=item
+
+Model thực tế:
+
+source_phan_cong
+
+Compatibility đã map:
+
+phan_cong
+→
+source_phan_cong
+Workaround 2
+
+Code cũ:
+
+hop_dong.phu_luc_hop_dong
+
+Trong model:
+
+related_name = "phu_luc"
+
+Do đó đúng là:
+
+hop_dong.phu_luc.all()
+
+Khi sửa source chính thức:
+
+sửa view
+kiểm tra toàn repo
+nếu không còn sử dụng compatibility thì xóa workaround.
+
+Không giữ workaround vĩnh viễn nếu không cần.
+
+35. LỖI DUYỆT ĐỀ XUẤT ĐÃ TỪNG GẶP
+
+View cũ có:
+
+proposal.trang_thai = "DUYET"
+
+Nhưng model chuẩn:
+
+DA_DUYET
+
+Ngoài ra template từng dùng GET anchor trong khi view yêu cầu POST.
+
+Cần chuẩn hóa:
+
+POST
+↓
+kiểm tra điều kiện
+↓
+DA_DUYET
+
+Sau khi tạo HĐ:
+
+DA_TAO_HOP_DONG
+36. LỖI TẠO PHỤ LỤC ĐÃ TỪNG GẶP
+
+Lỗi:
+
+ChiTietPhuLucPhanCong() got unexpected keyword arguments:
+'phan_cong'
+
+Nguyên nhân:
+
+Model không có field:
+
+phan_cong
+
+Mà có:
+
+source_phan_cong
+
+Code chuẩn phải dùng:
+
+source_phan_cong=item
+
+Không dùng:
+
+phan_cong=item
+37. LỖI CHI TIẾT HỢP ĐỒNG
+
+Lỗi:
+
+AttributeError:
+'HopDong' object has no attribute 'phu_luc_hop_dong'
+
+Nguyên nhân:
+
+PhuLucHopDong.hop_dong có:
+
+related_name="phu_luc"
+
+Code đúng:
+
+hop_dong.phu_luc.all()
+
+Không dùng:
+
+hop_dong.phu_luc_hop_dong.all()
+38. MIGRATION
+
+Migration V2:
+
+0010
+
+ĐÃ HOÀN THÀNH.
+
+Trạng thái:
+
+0001 [X]
+0002 [X]
+...
+0010 [X]
+
+Đã thực hiện:
+
+python manage.py migrate quanly 0010 --fake
+
+Sau đó:
+
+python manage.py makemigrations --check
+
+Kết quả:
+
+No changes detected
+
+Và:
+
+python manage.py check
+
+Kết quả:
+
+System check identified no issues
+39. QUY TẮC MIGRATION
+
+KHÔNG:
+
+reset database
+xóa migration
+tạo migration 0011 chỉ để sửa vấn đề cũ
+đổi DB
+
+Nếu sửa Python logic:
+
+Không cần migration.
+
+Chỉ tạo migration nếu thực sự thay đổi schema model.
+
+40. DUPLICATE XA ĐÃ XỬ LÝ
+
+Từng có duplicate:
+
+Xa
+(tinh_id, ten_xa)
+
+Record duplicate:
+
+id = 35
+
+đã được xóa.
+
+Unique constraint đã được xử lý trong migration 0010.
+
+41. CÁC URL CHÍNH
+/hop-dong/phan-cong/
+
+/hop-dong/phan-cong/them/
+
+/hop-dong/phan-cong/sua/<pk>/
+
+/hop-dong/danh-sach-phan-bo/
+
+/phan-bo/<pk>/sua/
+
+/phan-bo/<pk>/khoa/
+
+/danh-sach-de-xuat/
+
+/de-xuat/<pk>/tao/
+
+/de-xuat/<pk>/duyet/
+
+/hop-dong/tao-chinh-thuc/<pk>/
+
+/hop-dong/
+
+/hop-dong/<pk>/
+
+/hop-dong/<hop_dong_id>/khoi-luong/them/
+
+/hop-dong/<hop_dong_id>/phu-luc/them/
+42. LỖI DANH SÁCH PHÂN BỔ
+
+Từng thiếu nút/điểm vào phân công.
+
+Đã sửa:
+
+danh_sach_phan_bo.html
+
+Người dùng xác nhận:
+
+đã tạo được phân công
+43. LỖI DANH SÁCH ĐỀ XUẤT
+
+View truyền:
+
+page_obj
+
+Template lại loop:
+
+danh_sach
+
+Do đó danh sách rỗng.
+
+Đã sửa template để loop:
+
+page_obj
+44. FORMAT SỐ VIỆT NAM
+
+Đã có:
+
+quanly/templatetags/__init__.py
+quanly/templatetags/number_format.py
+
+Filter:
+
+|vn_number
+
+Ví dụ:
+
+65000000
+
+hiển thị:
+
+65.000.000
+45. GIAO DIỆN CLIENT
+
+Preview giá trị phân bổ có sử dụng:
+
+Intl.NumberFormat("vi-VN")
+46. TẠO HỢP ĐỒNG CHÍNH THỨC
+
+Logic cần đảm bảo:
+
+Proposal
+    ↓
+Allocation
+    ↓
+Contract
+
+Khi POST tạo HĐ:
+
+Validate form.
+Lấy proposal.
+Lấy allocation.
+Kiểm tra CBCT / nhóm HĐ.
+Tính giá trị từ allocation.
+Không tin giá trị tiền do client gửi.
+Save HĐ trong transaction.
+Tạo chi tiết cần thiết.
+Tạo snapshot Kỳ 1 nếu cần.
+Cập nhật proposal:
+DA_TAO_HOP_DONG
+Redirect chi tiết HĐ.
+47. BẢO MẬT GIÁ TRỊ HỢP ĐỒNG
+
+Không cho phép user sửa HTML form để thay đổi:
+
+gia_tri_hop_dong
+
+Server phải tính lại / ép giá trị từ:
+
+PhanBoChiTieu
+
+Client-side chỉ dùng để preview.
+
+48. PHÂN BIỆT BA LOẠI KHỐI LƯỢNG
+
+Phải luôn phân biệt:
+
+1. Khối lượng theo hợp đồng
+2. Khối lượng thực hiện
+3. Khối lượng thanh toán
+
+Không được lấy cái này thay thế cái kia.
+
+49. THANH TOÁN
+
+Sau này phải kiểm soát:
+
+không thanh toán trùng
+
+Có:
+
+DotThanhToan
+ChiTietThanhToan
+
+Thanh toán phải căn cứ vào khối lượng thực hiện hợp lệ.
+
+Không mặc định:
+
+Hợp đồng = đã thực hiện
+50. NGHIỆM THU / THANH LÝ
+
+Luồng cuối:
+
+Hợp đồng
+↓
+Thực hiện
+↓
+Thanh toán
+↓
+Nghiệm thu
+↓
+Thanh lý
+
+Không cho phép nhảy trạng thái tùy tiện nếu nghiệp vụ yêu cầu kiểm soát.
+
+51. WORD EXPORT
+
+Đây là phần đang chuẩn bị triển khai.
+
+Trước khi code:
+
+Phải đọc trực tiếp GitHub branch dev để tìm:
+
+docx
+python-docx
+docxtpl
+DocxTemplate
+render
+word
+pdf
+
+Mục tiêu:
+
+Không tạo kiến trúc export mới nếu project đã có cơ chế tương ứng.
+
+52. WORD – BỘ HỢP ĐỒNG
+
+Output cuối mong muốn:
+
+01 FILE WORD
+│
+├── Hợp đồng chính
+│
+└── Phụ lục 2 – Kỳ 1
+
+Phần HĐ chính lấy tài chính từ:
+
+PhanBoChiTieu
+
+Phụ lục Kỳ 1 lấy danh sách từ:
+
+PhanCongTre
+53. WORD – KỲ 2+
+
+Khi người dùng chọn:
+
+Kỳ 2
+
+hệ thống xuất:
+
+Phụ lục 2 – Kỳ 2.docx
+
+Tương tự:
+
+Kỳ 3
+Kỳ 4
+...
+
+Không gắn thành một phụ lục HĐ mới.
+
+54. KHÔNG ĐƯỢC LÀM SAI
+
+Không được:
+
+Kỳ 2
+↓
+thay đổi giá trị HĐ
+
+Không được:
+
+Kỳ 3
+↓
+tạo HĐ mới
+
+Không được:
+
+assignment thực tế
+↓
+tự động giảm giá trị HĐ
+55. PHU LUC HOP DONG – ĐỊNH HƯỚNG
+
+Hiện DB có:
+
+PhuLucHopDong
+ChiTietPhuLucPhanCong
+
+Không cần xóa ngay.
+
+Có thể sử dụng cho:
+
+Snapshot Kỳ 1
+
+để đảm bảo tài liệu HĐ đã tạo không thay đổi theo assignment mới.
+
+Nhưng không mở rộng thành:
+
+PhuLuc Kỳ 2
+PhuLuc Kỳ 3
+PhuLuc Kỳ 4
+...
+
+nếu không có yêu cầu nghiệp vụ mới.
+
+56. VIỆC CẦN LÀM TIẾP THEO
+
+Theo thứ tự:
+
+Bước 1
+
+Đọc source GitHub:
+
+dinhtanhb/QLHD_python
+branch dev
+Bước 2
+
+Kiểm tra:
+
+models.py
+forms.py
+views.py
+urls.py
+signals.py
+apps.py
+model_compat.py
+financial.py
+Bước 3
+
+Tìm cơ chế Word/PDF hiện tại.
+
+Bước 4
+
+Chuẩn hóa:
+
+tao_hop_dong_chinh_thuc
+Bước 5
+
+Đảm bảo:
+
+gia_tri_hop_dong
+
+lấy từ allocation.
+
+Bước 6
+
+Chuẩn hóa:
+
+proposal.trang_thai = "DA_TAO_HOP_DONG"
+
+sau khi tạo HĐ thành công.
+
+Bước 7
+
+Sửa:
+
+source_phan_cong=item
+Bước 8
+
+Sửa:
+
+hop_dong.phu_luc.all()
+Bước 9
+
+Kiểm tra và loại bỏ workaround model_compat.py nếu không còn cần.
+
+Bước 10
+
+Xây Word context.
+
+Bước 11
+
+Xuất:
+
+HĐ + Phụ lục 2 Kỳ 1
+Bước 12
+
+Xây:
+
+Export Phụ lục Kỳ 2+
+Bước 13
+
+Test toàn bộ flow.
+
+57. NGUYÊN TẮC TEST
+
+Phải test tối thiểu:
+
+Test 1
+
+Phân bổ:
+
+PHCN = 10 trẻ
+PHCN = 20 buổi
+
+Phân công:
+
+PHCN = 8 trẻ
+
+Kết quả:
+
+Giá trị HĐ vẫn tính theo 10 trẻ.
+Test 2
+
+Phân công Kỳ 1:
+
+5 trẻ
+
+Kỳ 2:
+
+3 trẻ
+
+Kết quả:
+
+HĐ có Phụ lục Kỳ 1
+Kỳ 2 xuất file riêng
+Test 3
+
+Thay đổi assignment sau khi tạo HĐ.
+
+Kết quả:
+
+Giá trị HĐ không thay đổi.
+Test 4
+
+Không có assignment.
+
+Kết quả:
+
+Không được tạo đề xuất HĐ.
+Test 5
+
+Có assignment nhưng khác allocation.
+
+Kết quả:
+
+Không làm thay đổi giá trị HĐ.
+58. NGUYÊN TẮC DB
+
+Database là:
+
+SOURCE OF TRUTH
+
+Word/PDF/Excel là:
+
+OUTPUT
+
+Không dùng file Word làm nguồn dữ liệu ngược lại.
+
+59. NGUYÊN TẮC SNAPSHOT
+
+Các thông tin đã ký / đã phát hành phải có khả năng giữ nguyên lịch sử.
+
+Đặc biệt:
+
+Hợp đồng
+Phụ lục Kỳ 1
+
+không được tự động thay đổi khi dữ liệu phân công sau này thay đổi.
+
+60. GIT / GITHUB
+
+Repository:
+
+dinhtanhb/QLHD_python
+
+Branch làm việc:
+
+dev
+
+Khi sửa code:
+
+Đọc file hiện tại.
+Lấy SHA hiện tại.
+Sửa chính xác.
+Commit rõ nghĩa.
+Không ghi đè code mới của user.
+Không reset branch.
+Không force push.
+61. SHA ĐÃ BIẾT TRƯỚC ĐÂY
+
+views.py SHA từng đọc:
+
+883677f6cebfb7818d6c8860fb85eb17b8832f1c
+
+models.py SHA từng đọc:
+
+4b9f6b78d6f10ddfca1ef3ad6e3a306b77a1c7ee
+
+Các commit liên quan:
+
+53fd22690060bc1b822931cec23b71142202f568
+
+Liên quan sửa Duyệt, nhưng source sau đó vẫn cần kiểm tra lại.
+
+7fa5315a368c75b0140f004454a8404d1bf637d4
+
+Thêm compatibility cho phan_cong.
+
+93a08650e35b531c0e31473e3560573434884490
+
+Thêm compatibility alias cho phu_luc_hop_dong.
+
+KHÔNG giả định source hiện tại vẫn đúng y nguyên các SHA trên.
+Phải đọc branch dev hiện tại.
+
+62. TÌNH TRẠNG HIỆN TẠI
+
+Mốc đã hoàn thành:
+
+Model V2
+Migration V2
+Phân bổ
+Phân công
+Đề xuất
+Tạo HĐ cơ bản
+Chi tiết HĐ cơ bản
+Snapshot phụ lục đã có model
+Một số logic tài chính
+Format số
+Một số template
+
+Đang chuẩn bị:
+
+Quản lý HĐ chính thức
++
+Word/PDF
++
+Phụ lục Kỳ 1
++
+Export Kỳ 2+
+
+Sau đó:
+
+Nhật ký thực hiện
+↓
+Thanh toán
+↓
+Nghiệm thu
+↓
+Thanh lý
+↓
+Báo cáo
+63. TƯ DUY KIẾN TRÚC CỐT LÕI
+
+Luôn nhớ:
+
+PHÂN BỔ
+=
+CAM KẾT KHỐI LƯỢNG / NGÂN SÁCH
+PHÂN CÔNG
+=
+GIAO TRẺ THỰC TẾ
+HỢP ĐỒNG
+=
+CAM KẾT CHÍNH THỨC
+THỰC HIỆN
+=
+NHỮNG GÌ THỰC TẾ ĐÃ LÀM
+THANH TOÁN
+=
+NHỮNG GÌ ĐỦ ĐIỀU KIỆN ĐƯỢC THANH TOÁN
+
+Không trộn 5 khái niệm này.
+
+64. SƠ ĐỒ TỔNG THỂ
+                    DANH MỤC
+                       │
+                       ▼
+              PHÂN BỔ CHỈ TIÊU
+                       │
+             ┌─────────┴─────────┐
+             │                   │
+             ▼                   ▼
+       TÍNH GIÁ TRỊ HĐ      PHÂN CÔNG TRẺ
+             │                   │
+             │          ┌────────┼────────┐
+             │          │        │        │
+             │          ▼        ▼        ▼
+             │        KỲ 1     KỲ 2     KỲ N
+             │          │        │        │
+             │          │        │        │
+             ▼          │        │        │
+       ĐỀ XUẤT HĐ        │        │        │
+             │           │        │        │
+             ▼           │        │        │
+          DUYỆT          │        │        │
+             │           │        │        │
+             ▼           │        │        │
+      HỢP ĐỒNG CHÍNH     │        │        │
+             │           │        │        │
+             ├───────────┘        │        │
+             │                    │        │
+             ▼                    ▼        ▼
+      WORD HĐ + PL KỲ 1       FILE KỲ 2  FILE KỲ N
+             │
+             ▼
+       THỰC HIỆN
+             │
+             ▼
+        THANH TOÁN
+             │
+             ▼
+        NGHIỆM THU
+             │
+             ▼
+         THANH LÝ
+             │
+             ▼
+        BÁO CÁO
+65. CÂU LỆNH KHỞI ĐỘNG CHO CHATGPT MỚI
+
+Khi upload file này sang tài khoản khác, gửi thêm câu sau:
+
+Hãy đọc toàn bộ file QLHD_CONTEXT_HANDOFF.md. Đây là tài liệu bàn giao chính thức của dự án QLHD. Hãy tiếp tục dự án từ đúng trạng thái trong tài liệu, không hỏi lại các quyết định nghiệp vụ đã được đánh dấu ĐÃ CHỐT. Sau đó đọc trực tiếp repository GitHub dinhtanhb/QLHD_python trên branch dev để xác minh source code hiện tại trước khi thực hiện bất kỳ thay đổi nào. Không tự ý thay đổi kiến trúc, nghiệp vụ hoặc database. Khi sửa code, phải đưa code đầy đủ, liền mạch và copy-paste được.
+
+66. QUY TẮC ƯU TIÊN KHI CÓ MÂU THUẪN
+
+Nếu phát hiện mâu thuẫn giữa:
+
+Code hiện tại
+
+và:
+
+Quy tắc nghiệp vụ trong tài liệu này
+
+thì:
+
+Ưu tiên nghiệp vụ đã chốt.
+
+Nhưng trước khi sửa:
+
+đọc source hiện tại
+xác định nguyên nhân
+sửa tối thiểu
+không phá migration/database
+kiểm tra các luồng liên quan
+67. TRẠNG THÁI BÀN GIAO
+
+Tài liệu này được xem là:
+
+SOURCE OF CONTEXT
+
+cho các phiên ChatGPT tiếp theo.
+
+Repository GitHub:
+
+SOURCE OF CODE
+
+Database MySQL:
+
+SOURCE OF DATA
+
+Word/PDF:
+
+OUTPUT DOCUMENT
+68. MỤC TIÊU TIẾP THEO
+
+Mục tiêu ngay trước mắt:
+
+HOÀN THIỆN QUẢN LÝ HỢP ĐỒNG
+        ↓
+WORD HỢP ĐỒNG
+        ↓
+PHỤ LỤC 2 KỲ 1
+        ↓
+EXPORT KỲ 2+
+
+Sau khi hoàn thành mới tiếp tục:
+
+NHẬT KÝ THỰC HIỆN
+        ↓
+THANH TOÁN
+        ↓
+NGHIỆM THU
+        ↓
+THANH LÝ
+        ↓
+BÁO CÁO / ĐỐI CHIẾU
