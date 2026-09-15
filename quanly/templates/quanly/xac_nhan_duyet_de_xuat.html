@@ -1,0 +1,9 @@
+{% extends 'quanly/base.html' %}
+{% block title %}Duyệt đề xuất hợp đồng{% endblock %}
+{% block content %}
+<div class="container mt-4"><div class="card shadow"><div class="card-header bg-warning"><h5 class="mb-0">Duyệt Đề xuất HĐ #{{ de_xuat.pk }}</h5></div><div class="card-body">
+<p><strong>CBCT:</strong> {{ de_xuat.phan_bo.can_bo }}</p><p><strong>Giá trị dự kiến:</strong> {{ de_xuat.gia_tri_du_kien|floatformat:0 }} đ</p>
+<p>Khối lượng: PHCN {{ de_xuat.so_tre_phcn }} trẻ / {{ de_xuat.so_buoi_phcn }} buổi; CSXH {{ de_xuat.so_tre_cs }} trẻ / {{ de_xuat.so_buoi_cs }} buổi.</p>
+<form method="post">{% csrf_token %}<a href="{% url 'danh_sach_de_xuat' %}" class="btn btn-secondary">Hủy</a> <button class="btn btn-success">Xác nhận duyệt</button></form>
+</div></div></div>
+{% endblock %}
