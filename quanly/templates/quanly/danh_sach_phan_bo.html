@@ -1,4 +1,5 @@
 {% extends 'quanly/base.html' %}
+{% load number_format %}
 {% block title %}Danh sách Phân bổ chỉ tiêu{% endblock %}
 
 {% block content %}
@@ -41,11 +42,11 @@
                             <td><strong>{{ item.can_bo.ma_can_bo }}</strong><br>{{ item.can_bo.ho_ten }}</td>
                             <td>{{ item.nhom_hd.ma_nhom_hd }} - {{ item.nhom_hd.ten_nhom_hd }}</td>
                             <td>{{ item.ngay_lap|date:"d/m/Y" }}</td>
-                            <td>{{ item.so_tre_phcn }} trẻ / {{ item.so_buoi_phcn }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_phcn|floatformat:0 }} đ</td>
-                            <td>{{ item.so_tre_cs }} trẻ / {{ item.so_buoi_cs }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_cs|floatformat:0 }} đ</td>
+                            <td>{{ item.so_tre_phcn|vn_number }} trẻ / {{ item.so_buoi_phcn|vn_number }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_phcn|vn_number }} đ</td>
+                            <td>{{ item.so_tre_cs|vn_number }} trẻ / {{ item.so_buoi_cs|vn_number }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_cs|vn_number }} đ</td>
                             <td class="text-center">
                                 {% if item.danh_sach_phan_cong.count > 0 %}
-                                    <span class="badge bg-success">{{ item.danh_sach_phan_cong.count }}</span>
+                                    <span class="badge bg-success">{{ item.danh_sach_phan_cong.count|vn_number }}</span>
                                     <a href="{% url 'danh_sach_phan_cong' %}?phan_bo_id={{ item.pk }}" class="btn btn-sm btn-outline-primary ms-1">Xem</a>
                                 {% else %}
                                     <span class="badge bg-secondary">0</span>
