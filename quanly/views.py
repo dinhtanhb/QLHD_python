@@ -1,1044 +1,936 @@
-import pandas as pd
-import numpy as np
-import uuid
-from decimal import Decimal
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib import messages
-from django.http import JsonResponse
-from .models import DonVi, Tre, Tinh, Xa, CanBo, NhomHD, PhanBoChiTieu, PhanCongTre
-from .forms import DonViForm, TreForm, CanBoForm, NhomHDForm, PhanBoChiTieuForm
 from datetime import date
+from decimal import Decimal, InvalidOperation
+import re
+
+import pandas as pd
+from django.contrib import messages
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Q
-from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+
+from .decorators import admin_required, dashboard_required, hopdong_required, readonly_required
 from .financial import FinancialConfig
-from .decorators import (admin_required, dashboard_required, hopdong_required, readonly_required)
+from .forms import (
+    CanBoForm,
+    ChiTietKhoiLuongHopDongForm,
+    DeXuatHopDongForm,
+    DonViForm,
+    HopDongForm,
+    NhomHDForm,
+    PhanBoChiTieuForm,
+    PhanCongTreForm,
+    PhuLucHopDongForm,
+    TreForm,
+)
+from .models import (
+    CanBo,
+    ChiTietKhoiLuongHopDong,
+    ChiTietPhuLucPhanCong,
+    DeXuatHopDong,
+    DonVi,
+    HopDong,
+    NhomHD,
+    PhanBoChiTieu,
+    PhanCongTre,
+    PhuLucHopDong,
+    Tre,
+    Tinh,
+    Xa,
+)
 
-def clean_empty_excel_value(val):
-    """
-    Xử lý dữ liệu thô từ Excel:
-    Biến mọi ô trống, khoảng trắng, NaN thành kiểu None chuẩn của Python
-    để lưu vào Database dưới dạng NULL.
-    """
-    # Xử lý các giá trị Not-a-Number (NaN) của pandas
-    if pd.isna(val):
-        return None
-    
-    # Ép kiểu chuỗi và loại bỏ khoảng trắng 2 đầu
-    val_str = str(val).strip()
-    
-    # Nếu chuỗi rỗng hoặc chứa các chữ đại diện cho rỗng
-    if val_str == "" or val_str.lower() in ['nan', 'none', 'null']:
-        return None
-        
-    # Sửa lỗi Excel tự động biến dãy số thành số thực (VD: MST "123456" thành "123456.0")
-    if val_str.endswith('.0'):
-        val_str = val_str[:-2]
-        
-    return val_str
 
-# ================================
-# TRANG CHỦ (DASHBOARD)
-# ================================
+# =========================================================
+# TIỆN ÍCH DỮ LIỆU
+# =========================================================
+def clean_empty_excel_value(value):
+    """Chuẩn hóa giá trị Excel: NaN, None, NBSP và chuỗi rỗng -> None."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+
+    text = str(value).replace("\xa0", " ").strip()
+    if not text or text.lower() in {"nan", "none", "null", "nat"}:
+        return None
+    if re.fullmatch(r"[-+]?\d+\.0", text):
+        text = text[:-2]
+    return text
+
+
+def parse_int(value, default=0):
+    value = clean_empty_excel_value(value)
+    if value is None:
+        return default
+    try:
+        return int(float(value))
+    except (ValueError, TypeError):
+        return default
+
+
+def parse_decimal(value, default=Decimal("0")):
+    value = clean_empty_excel_value(value)
+    if value is None:
+        return default
+    try:
+        normalized = value.replace(",", "").replace(" ", "")
+        return Decimal(normalized)
+    except (InvalidOperation, ValueError, TypeError):
+        return default
+
+
+def parse_date(value, default=None):
+    value = clean_empty_excel_value(value)
+    if value is None:
+        return default
+    try:
+        return pd.to_datetime(value, errors="raise").date()
+    except (ValueError, TypeError):
+        return default
+
+
+def normalized_columns(df):
+    df = df.copy()
+    df.columns = [str(col).replace("\xa0", " ").strip() for col in df.columns]
+    return df
+
+
+def get_excel_value(row, *names):
+    lookup = {str(col).replace("\xa0", " ").strip().lower(): col for col in row.index}
+    for name in names:
+        col = lookup.get(str(name).replace("\xa0", " ").strip().lower())
+        if col is not None:
+            return row[col]
+    return None
+
+
+def service_is_csxh(service):
+    return service == "CSXH"
+
+
+def calculate_expected_value(so_tre_phcn, so_buoi_phcn, dm_phcn, so_tre_cs, so_buoi_cs, dm_cs):
+    cong = Decimal(str(FinancialConfig.DON_GIA_CONG))
+    return (
+        Decimal(so_tre_phcn) * Decimal(so_buoi_phcn) * (cong + Decimal(dm_phcn))
+        + Decimal(so_tre_cs) * Decimal(so_buoi_cs) * (cong + Decimal(dm_cs))
+    )
+
+
+# =========================================================
+# DASHBOARD / AJAX
+# =========================================================
 @dashboard_required
 def trang_chu(request):
-    tong_tre = Tre.objects.count()
-    tong_can_bo = CanBo.objects.count()
-    tong_don_vi = DonVi.objects.count()
-    tong_nhom = NhomHD.objects.count()
-    tong_phan_cong = PhanCongTre.objects.count()
-
     context = {
-        'tong_tre': tong_tre,
-        'tong_can_bo': tong_can_bo,
-        'tong_don_vi': tong_don_vi,
-        'tong_nhom': tong_nhom,
+        "tong_tre": Tre.objects.filter(is_active=True).count(),
+        "tong_can_bo": CanBo.objects.filter(is_active=True).count(),
+        "tong_don_vi": DonVi.objects.filter(is_active=True).count(),
+        "tong_nhom": NhomHD.objects.filter(is_active=True).count(),
+        "tong_phan_cong": PhanCongTre.objects.count(),
+        "tong_de_xuat": DeXuatHopDong.objects.count(),
+        "tong_hop_dong": HopDong.objects.count(),
     }
-    return render(request, 'quanly/trang_chu.html', context)
+    return render(request, "quanly/trang_chu.html", context)
 
+
+@dashboard_required
 def lay_danh_sach_xa(request):
-    tinh_id = request.GET.get('tinh_id')
-    xas = Xa.objects.filter(tinh_id=tinh_id).values('id', 'ten_xa')
+    tinh_id = request.GET.get("tinh_id")
+    if not tinh_id:
+        return JsonResponse([], safe=False)
+    xas = Xa.objects.filter(tinh_id=tinh_id, is_active=True).values("id", "ma_xa", "ten_xa")
     return JsonResponse(list(xas), safe=False)
 
-# ================================
-# QUẢN LÝ NHÓM HỢP ĐỒNG
-# ================================
-@login_required
+
+# =========================================================
+# NHÓM HỢP ĐỒNG
+# =========================================================
+@hopdong_required
 def danh_sach_nhom_hd(request):
-    ds_nhom = NhomHD.objects.all().order_by('-id')
-    return render(request, 'quanly/danh_sach_nhom_hd.html', {'ds_nhom': ds_nhom})
+    ds_nhom = NhomHD.objects.all().order_by("ma_nhom_hd")
+    return render(request, "quanly/danh_sach_nhom_hd.html", {"ds_nhom": ds_nhom})
 
-@login_required
+
+@hopdong_required
 def them_nhom_hd(request):
-    if request.method == 'POST':
-        form = NhomHDForm(request.POST)
-        if form.is_valid():
-            form.save()
-            messages.success(request, 'Đã thêm Nhóm hợp đồng thành công!')
-            return redirect('danh_sach_nhom_hd')
-        else:
-            messages.error(request, 'Lưu thất bại! Vui lòng kiểm tra lại biểu mẫu.')
-    else:
-        form = NhomHDForm()
-    return render(request, 'quanly/them_nhom_hd.html', {'form': form})
+    form = NhomHDForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Đã thêm Nhóm hợp đồng thành công.")
+        return redirect("danh_sach_nhom_hd")
+    return render(request, "quanly/them_nhom_hd.html", {"form": form})
 
-@login_required
+
+@hopdong_required
 def sua_nhom_hd(request, id):
     nhom = get_object_or_404(NhomHD, pk=id)
-    if request.method == 'POST':
-        form = NhomHDForm(request.POST, instance=nhom)
-        if form.is_valid():
-            form.save()
-            messages.success(request, f'Đã cập nhật Nhóm: {nhom.ten_nhom_hd}')
-            return redirect('danh_sach_nhom_hd')
-        else:
-            messages.error(request, 'Cập nhật thất bại, vui lòng kiểm tra lại biểu mẫu.')
-    else:
-        form = NhomHDForm(instance=nhom)
-    return render(request, 'quanly/sua_nhom_hd.html', {'form': form, 'nhom': nhom})
+    form = NhomHDForm(request.POST or None, instance=nhom)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Đã cập nhật Nhóm hợp đồng.")
+        return redirect("danh_sach_nhom_hd")
+    return render(request, "quanly/sua_nhom_hd.html", {"form": form, "nhom": nhom})
 
-@login_required
+
+@admin_required
 def xoa_nhom_hd(request, id):
     nhom = get_object_or_404(NhomHD, pk=id)
-    ten = nhom.ten_nhom_hd
-    nhom.delete()
-    messages.success(request, f'Đã xóa Nhóm hợp đồng {ten} khỏi hệ thống.')
-    return redirect('danh_sach_nhom_hd')
+    try:
+        nhom.delete()
+        messages.success(request, "Đã xóa Nhóm hợp đồng.")
+    except Exception as exc:
+        messages.error(request, f"Không thể xóa nhóm: {exc}")
+    return redirect("danh_sach_nhom_hd")
 
-# QUẢN LÝ ĐƠN VỊ
-# ================================
-@login_required
+
+# =========================================================
+# ĐƠN VỊ
+# =========================================================
+@readonly_required
 def danh_sach_don_vi(request):
-    ds_don_vi = DonVi.objects.all().order_by('-id')
-    return render(request, 'quanly/danh_sach_don_vi.html', {'ds_don_vi': ds_don_vi})
+    query = request.GET.get("q", "").strip()
+    qs = DonVi.objects.all()
+    if query:
+        qs = qs.filter(Q(ma_don_vi__icontains=query) | Q(ten_don_vi__icontains=query) | Q(mstdv__icontains=query))
+    page_obj = Paginator(qs.order_by("ten_don_vi"), 15).get_page(request.GET.get("page"))
+    return render(request, "quanly/danh_sach_don_vi.html", {"page_obj": page_obj, "query": query})
 
-@login_required
+
+@admin_required
 def them_don_vi(request):
-    if request.method == 'POST':
-        form = DonViForm(request.POST)
-        if form.is_valid():
-            form.save()
-            messages.success(request, 'Đã thêm Đơn vị thành công!')
-            return redirect('danh_sach_don_vi')
-        else:
-            messages.error(request, 'Lưu thất bại! Vui lòng kiểm tra lại biểu mẫu.')
-    else:
-        form = DonViForm()
-    return render(request, 'quanly/them_don_vi.html', {'form': form})
+    form = DonViForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Đã thêm Đơn vị thành công.")
+        return redirect("danh_sach_don_vi")
+    return render(request, "quanly/them_don_vi.html", {"form": form})
 
-@login_required
+
+@admin_required
 def sua_don_vi(request, id):
     don_vi = get_object_or_404(DonVi, pk=id)
-    if request.method == 'POST':
-        form = DonViForm(request.POST, instance=don_vi)
-        if form.is_valid():
-            form.save()
-            messages.success(request, f'Đã cập nhật Đơn vị: {don_vi.ten_don_vi}')
-            return redirect('danh_sach_don_vi')
-        else:
-            messages.error(request, 'Cập nhật thất bại, vui lòng kiểm tra lại biểu mẫu.')
-    else:
-        form = DonViForm(instance=don_vi)
-    return render(request, 'quanly/sua_don_vi.html', {'form': form, 'don_vi': don_vi})
+    form = DonViForm(request.POST or None, instance=don_vi)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Đã cập nhật Đơn vị.")
+        return redirect("danh_sach_don_vi")
+    return render(request, "quanly/sua_don_vi.html", {"form": form, "don_vi": don_vi})
 
-@login_required
+
+@admin_required
 def xoa_don_vi(request, id):
     don_vi = get_object_or_404(DonVi, pk=id)
-    ten = don_vi.ten_don_vi
-    don_vi.delete()
-    messages.success(request, f'Đã xóa đơn vị {ten} khỏi hệ thống.')
-    return redirect('danh_sach_don_vi')
+    try:
+        don_vi.delete()
+        messages.success(request, "Đã xóa Đơn vị.")
+    except Exception as exc:
+        messages.error(request, f"Không thể xóa đơn vị: {exc}")
+    return redirect("danh_sach_don_vi")
 
-# 1. DANH SÁCH TRẺ
-@login_required
+
+# =========================================================
+# TRẺ
+# =========================================================
+@readonly_required
 def danh_sach_tre(request):
-    # 1. Xử lý tìm kiếm
-    query = request.GET.get('q', '')
+    query = request.GET.get("q", "").strip()
+    qs = Tre.objects.select_related("tinh", "xa")
     if query:
-        # Tìm kiếm tương đối (icontains) trên nhiều trường
-        danh_sach = Tre.objects.filter(
-            Q(ma_tre__icontains=query) |
-            Q(ho_ten__icontains=query) |
-            Q(ten_phu_huynh__icontains=query) |
-            Q(dien_thoai__icontains=query)
-        ).order_by('-ma_tre') # Sắp xếp theo mã hoặc ngày tạo tùy bạn
-    else:
-        danh_sach = Tre.objects.all().order_by('-ma_tre')
+        qs = qs.filter(
+            Q(ma_tre__icontains=query)
+            | Q(ho_ten__icontains=query)
+            | Q(ten_phu_huynh__icontains=query)
+            | Q(dien_thoai__icontains=query)
+        )
+    page_obj = Paginator(qs.order_by("ma_tre"), 15).get_page(request.GET.get("page"))
+    return render(request, "quanly/danh_sach_tre.html", {"page_obj": page_obj, "query": query})
 
-    # 2. Xử lý phân trang (15 dòng / trang)
-    paginator = Paginator(danh_sach, 15) 
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
 
-    context = {
-        'page_obj': page_obj,
-        'query': query,
-    }
-    return render(request, 'quanly/danh_sach_tre.html', context)
-
-# 2. THÊM TRẺ MỚI
-@login_required
+@admin_required
 def them_tre(request):
-    if request.method == 'POST':
-        form = TreForm(request.POST)
-        if form.is_valid():
-            form.save()
-            messages.success(request, 'Đã lưu hồ sơ Trẻ thành công!')
-            return redirect('danh_sach_tre')
-        else:
-            messages.error(request, 'Không thể lưu! Vui lòng kiểm tra lại biểu mẫu.')
-    else:
-        form = TreForm()
-    return render(request, 'quanly/them_tre.html', {'form': form})
+    form = TreForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Đã lưu hồ sơ Trẻ thành công.")
+        return redirect("danh_sach_tre")
+    return render(request, "quanly/them_tre.html", {"form": form})
 
-# 3. SỬA HỒ SƠ TRẺ
-@login_required
+
+@admin_required
 def sua_tre(request, id):
     tre = get_object_or_404(Tre, pk=id)
-    if request.method == 'POST':
-        form = TreForm(request.POST, instance=tre)
-        if form.is_valid():
-            form.save()
-            messages.success(request, f'Đã cập nhật thành công hồ sơ của {tre.ho_ten}!')
-            return redirect('danh_sach_tre')
-        else:
-            messages.error(request, 'Cập nhật thất bại, vui lòng kiểm tra lại lỗi trên form.')
-    else:
-        form = TreForm(instance=tre)
-    return render(request, 'quanly/sua_tre.html', {'form': form, 'tre': tre})
+    form = TreForm(request.POST or None, instance=tre)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, f"Đã cập nhật hồ sơ {tre.ho_ten}.")
+        return redirect("danh_sach_tre")
+    return render(request, "quanly/sua_tre.html", {"form": form, "tre": tre})
 
-# 4. XÓA TRẺ
-@login_required
+
+@admin_required
 def xoa_tre(request, id):
     tre = get_object_or_404(Tre, pk=id)
-    ten_tre = tre.ho_ten
-    tre.delete()
-    messages.success(request, f'Đã xóa dữ liệu của {ten_tre} khỏi hệ thống.')
-    return redirect('danh_sach_tre')
+    try:
+        tre.delete()
+        messages.success(request, "Đã xóa hồ sơ Trẻ.")
+    except Exception as exc:
+        messages.error(request, f"Không thể xóa trẻ: {exc}")
+    return redirect("danh_sach_tre")
 
-# 5. IMPORT TRẺ
+
 @admin_required
 def import_tre(request):
-  if request.method == 'POST' and request.FILES.get('file_excel'):
-    excel_file = request.FILES['file_excel']
+    if request.method != "POST" or not request.FILES.get("file_excel"):
+        return render(request, "quanly/import_tre.html")
+
     try:
-      df = pd.read_excel(excel_file)
-      count_created = 0
-      count_updated = 0
+        df = normalized_columns(pd.read_excel(request.FILES["file_excel"]))
+    except Exception as exc:
+        messages.error(request, f"Không đọc được file Excel: {exc}")
+        return render(request, "quanly/import_tre.html")
 
-      # Lấy danh sách tên các trường hợp lệ của model Tre trong cơ sở dữ liệu
-      valid_fields = [f.name for f in Tre._meta.get_fields()]
+    created = updated = skipped = 0
+    errors = []
+    for row_no, (_, row) in enumerate(df.iterrows(), start=2):
+        try:
+            ma_tre = clean_empty_excel_value(get_excel_value(row, "MaTre", "Mã trẻ", "IDChild"))
+            if not ma_tre:
+                skipped += 1
+                continue
+            defaults = {
+                "ho_ten": clean_empty_excel_value(get_excel_value(row, "HoTen", "Họ tên", "Tên trẻ")) or "Chưa cập nhật",
+                "ngay_sinh": parse_date(get_excel_value(row, "NgaySinh", "Ngày sinh"), date(2000, 1, 1)),
+                "gioi_tinh": clean_empty_excel_value(get_excel_value(row, "GioiTinh", "Giới tính")) or "Khác",
+                "ten_phu_huynh": clean_empty_excel_value(get_excel_value(row, "TenPhuHuynh", "Tên phụ huynh")),
+                "dien_thoai": clean_empty_excel_value(get_excel_value(row, "SdtPhuHuynh", "Điện thoại", "SĐT")),
+                "ten_tai_khoan": clean_empty_excel_value(get_excel_value(row, "TenTaiKhoanPH", "Tên tài khoản")),
+                "tai_khoan": clean_empty_excel_value(get_excel_value(row, "SoTaiKhoanPH", "Số tài khoản", "STK")),
+                "ngan_hang": clean_empty_excel_value(get_excel_value(row, "NganHangPH", "Ngân hàng")),
+                "chi_nhanh": clean_empty_excel_value(get_excel_value(row, "ChiNhanhPH", "Chi nhánh")),
+            }
+            obj, is_created = Tre.objects.update_or_create(ma_tre=ma_tre, defaults=defaults)
+            created += int(is_created)
+            updated += int(not is_created)
+        except Exception as exc:
+            skipped += 1
+            errors.append(f"Dòng {row_no}: {exc}")
 
-      for index, row in df.iterrows():
-        ma_tre = (
-            str(row['MaTre']).strip()
-            if pd.notna(row.get('MaTre'))
-            else None
-        )
-        if not ma_tre or ma_tre.lower() == 'nan':
-          continue
-
-        ho_ten = (
-            str(row['HoTen']).strip() if pd.notna(row.get('HoTen')) else ''
-        )
-        ngay_sinh = (
-            pd.to_datetime(row['NgaySinh']).date()
-            if pd.notna(row.get('NgaySinh'))
-            else '2015-01-01'
-        )
-        gioi_tinh = (
-            str(row['GioiTinh']).strip()
-            if pd.notna(row.get('GioiTinh'))
-            else 'Nam'
-        )
-
-        # Xây dựng từ điển dữ liệu, chỉ đưa vào các trường thực sự tồn tại trong model Tre
-        defaults = {}
-
-        if 'ho_ten' in valid_fields:
-          defaults['ho_ten'] = ho_ten
-        if 'ngay_sinh' in valid_fields:
-          defaults['ngay_sinh'] = ngay_sinh
-        if 'gioi_tinh' in valid_fields:
-          defaults['gioi_tinh'] = gioi_tinh
-
-        # Các trường phụ huynh / liên lạc nếu có trong file và model
-        if pd.notna(row.get('TenPhuHuynh')):
-          val = str(row['TenPhuHuynh']).strip()
-          for f in ['ten_phu_huynh', 'phu_huynh']:
-            if f in valid_fields:
-              defaults[f] = val
-
-        if pd.notna(row.get('SdtPhuHuynh')):
-          val = str(row['SdtPhuHuynh']).strip()
-          # Xử lý trường hợp số điện thoại bị Excel chuyển thành dạng số thập phân (VD: 358115767.0)
-          if val.endswith('.0'):
-            val = val[:-2]
-          for f in ['dien_thoai', 'sdt', 'sdt_phu_huynh']:
-            if f in valid_fields:
-              defaults[f] = val
-
-        # Bổ sung an toàn cho các trường tài khoản nếu có trong file Excel
-        if pd.notna(row.get('TenTaiKhoanPH')):
-          val = str(row['TenTaiKhoanPH']).strip()
-          if 'ten_tai_khoan' in valid_fields:
-            defaults['ten_tai_khoan'] = val
-            
-        if pd.notna(row.get('SoTaiKhoanPH')):
-          val = str(row['SoTaiKhoanPH']).strip()
-          for f in ['so_tai_khoan', 'tai_khoan']:
-            if f in valid_fields:
-              defaults[f] = val
-              
-        if pd.notna(row.get('NganHangPH')):
-          val = str(row['NganHangPH']).strip()
-          if 'ngan_hang' in valid_fields:
-            defaults['ngan_hang'] = val
-            
-        if pd.notna(row.get('ChiNhanhPH')):
-          val = str(row['ChiNhanhPH']).strip()
-          if 'chi_nhanh' in valid_fields:
-            defaults['chi_nhanh'] = val
-
-        # Cập nhật đè nếu trùng mã trẻ, hoặc tạo mới nếu chưa có
-        obj, created = Tre.objects.update_or_create(
-            ma_tre=ma_tre, 
-            defaults=defaults
-        )
-        
-        if created:
-          count_created += 1
-        else:
-          count_updated += 1
-
-      messages.success(
-          request, 
-          f'Import hoàn tất! Đã thêm mới {count_created} trẻ và cập nhật thông tin cho {count_updated} trẻ hiện có.'
-      )
-      return redirect('danh_sach_tre')
-
-    except Exception as e:
-      messages.error(request, f'Lỗi xử lý file Trẻ: {str(e)}')
-
-  return render(request, 'quanly/import_tre.html')
+    msg = f"Import trẻ hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
+    if errors:
+        msg += " " + " | ".join(errors[:5])
+    messages.success(request, msg)
+    return redirect("danh_sach_tre")
 
 
-# QUẢN LÝ CÁN BỘ
-# ================================
-@login_required
+# =========================================================
+# CÁN BỘ
+# =========================================================
+@readonly_required
 def danh_sach_can_bo(request):
-    query = request.GET.get('q', '')
-    
-    # Tìm kiếm
+    query = request.GET.get("q", "").strip()
+    qs = CanBo.objects.select_related("don_vi", "tinh", "xa")
     if query:
-        ds = CanBo.objects.filter(
-            Q(ma_can_bo__icontains=query) |
-            Q(ho_ten__icontains=query) |
-            Q(cccd__icontains=query) |
-            Q(dien_thoai__icontains=query) |
-            Q(don_vi__ten_don_vi__icontains=query)
-        ).order_by('-id')
-    else:
-        ds = CanBo.objects.all().order_by('-id')
+        qs = qs.filter(
+            Q(ma_can_bo__icontains=query)
+            | Q(ho_ten__icontains=query)
+            | Q(cccd__icontains=query)
+            | Q(dien_thoai__icontains=query)
+            | Q(don_vi__ten_don_vi__icontains=query)
+        )
+    page_obj = Paginator(qs.order_by("ho_ten"), 15).get_page(request.GET.get("page"))
+    return render(request, "quanly/danh_sach_can_bo.html", {"page_obj": page_obj, "query": query})
 
-    # Phân trang (15 dòng / trang)
-    paginator = Paginator(ds, 15)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
 
-    context = {
-        'page_obj': page_obj,
-        'query': query,
-    }
-    return render(request, 'quanly/danh_sach_can_bo.html', context)
-
-@login_required
+@admin_required
 def them_can_bo(request):
-    if request.method == 'POST':
-        form = CanBoForm(request.POST)
-        if form.is_valid():
-            form.save()
-            messages.success(request, 'Đã thêm hồ sơ Cán bộ thành công!')
-            return redirect('danh_sach_can_bo')
-        else:
-            messages.error(request, 'Lưu thất bại! Vui lòng kiểm tra lại biểu mẫu.')
-    else:
-        form = CanBoForm()
-    return render(request, 'quanly/them_can_bo.html', {'form': form})
+    form = CanBoForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Đã thêm hồ sơ Cán bộ thành công.")
+        return redirect("danh_sach_can_bo")
+    return render(request, "quanly/them_can_bo.html", {"form": form})
 
-@login_required
+
+@admin_required
 def sua_can_bo(request, id):
     can_bo = get_object_or_404(CanBo, pk=id)
-    if request.method == 'POST':
-        form = CanBoForm(request.POST, instance=can_bo)
-        if form.is_valid():
-            form.save()
-            messages.success(request, f'Đã cập nhật hồ sơ cán bộ: {can_bo.ho_ten}')
-            return redirect('danh_sach_can_bo')
-        else:
-            messages.error(request, 'Cập nhật thất bại, vui lòng kiểm tra lại biểu mẫu.')
-    else:
-        form = CanBoForm(instance=can_bo)
-    return render(request, 'quanly/sua_can_bo.html', {'form': form, 'can_bo': can_bo})
+    form = CanBoForm(request.POST or None, instance=can_bo)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Đã cập nhật hồ sơ Cán bộ.")
+        return redirect("danh_sach_can_bo")
+    return render(request, "quanly/sua_can_bo.html", {"form": form, "can_bo": can_bo})
 
-@login_required
+
+@admin_required
 def xoa_can_bo(request, id):
     can_bo = get_object_or_404(CanBo, pk=id)
-    ten = can_bo.ho_ten
-    can_bo.delete()
-    messages.success(request, f'Đã xóa dữ liệu cán bộ {ten} khỏi hệ thống.')
-    return redirect('danh_sach_can_bo')
+    try:
+        can_bo.delete()
+        messages.success(request, "Đã xóa hồ sơ Cán bộ.")
+    except Exception as exc:
+        messages.error(request, f"Không thể xóa cán bộ: {exc}")
+    return redirect("danh_sach_can_bo")
+
 
 @admin_required
 def import_can_bo(request):
-    if request.method == 'POST' and request.FILES.get('file_excel'):
-        excel_file = request.FILES['file_excel']
-        try:
-            df = pd.read_excel(excel_file)
-            count_created = 0
-            count_updated = 0
-            count_skipped = 0
+    if request.method != "POST" or not request.FILES.get("file_excel"):
+        return render(request, "quanly/import_can_bo.html")
 
-            if df.empty:
-                messages.warning(request, 'File Excel không có dữ liệu!')
-                return redirect('danh_sach_can_bo')
-
-            # 1. Phát hiện dòng tiêu đề linh hoạt
-            cols_str = " ".join([str(c) for c in df.columns]).lower()
-            if not any(k in cols_str for k in ['mã', 'macb', 'họ', 'tencb', 'cccd', 'cbct', 'điện thoại']):
-                for idx in range(min(10, len(df))):
-                    row_vals = [str(v).strip().lower() for v in df.iloc[idx].values if pd.notna(v)]
-                    row_str = " ".join(row_vals)
-                    if any(k in row_str for k in ['mã', 'macb', 'họ', 'tencb', 'cccd', 'cbct', 'điện thoại']):
-                        df.columns = df.iloc[idx]
-                        df = df.iloc[idx+1:].reset_index(drop=True)
-                        break
-
-            # 2. Hàm lấy giá trị ô Excel
-            def get_val(row, possible_names):
-                for col in row.index:
-                    clean_col = str(col).strip().lower()
-                    for name in possible_names:
-                        if clean_col == name.strip().lower():
-                            return row[col]
-                return None
-
-            # 3. Hàm làm sạch dữ liệu ô
-            def clean_empty_excel_value(val):
-                if pd.isna(val):
-                    return None
-                val_str = str(val).strip()
-                if val_str == "" or val_str.lower() in ['nan', 'none', 'null']:
-                    return None
-                if val_str.endswith('.0'):
-                    val_str = val_str[:-2]
-                return val_str
-
-            # 4. Hàm xử lý tự động cấp bản ghi liên kết (Tỉnh, Xã, Đơn vị) không bao giờ bị dính ràng buộc DB
-            def get_or_create_related_obj(related_model, search_val, field_name_hint):
-                rel_fields = [f.name for f in related_model._meta.get_fields() if not f.is_relation]
-                
-                target_field = None
-                for candidate in [f'ten_{field_name_hint}', 'ten', 'name', f'ten_{related_model._meta.model_name}']:
-                    if candidate in rel_fields:
-                        target_field = candidate
-                        break
-                if not target_field:
-                    target_field = rel_fields[0] if rel_fields else 'id'
-
-                val_to_use = search_val if search_val else "Chưa xác định"
-
-                # Tìm bản ghi đã có hoặc tạo mới
-                obj = related_model.objects.filter(**{target_field: val_to_use}).first()
-                if obj:
-                    return obj
-
-                create_kwargs = {target_field: val_to_use}
-                for rf in related_model._meta.get_fields():
-                    if not rf.is_relation and rf.name != target_field and not getattr(rf, 'primary_key', False):
-                        if getattr(rf, 'unique', False):
-                            create_kwargs[rf.name] = f"AUTO_{uuid.uuid4().hex[:6].upper()}"
-                        elif not getattr(rf, 'null', True):
-                            if rf.get_internal_type() in ['CharField', 'TextField']:
-                                create_kwargs[rf.name] = ""
-                            elif rf.get_internal_type() in ['IntegerField', 'BigIntegerField', 'SmallIntegerField']:
-                                create_kwargs[rf.name] = 0
-                            elif rf.get_internal_type() in ['DateField', 'DateTimeField']:
-                                create_kwargs[rf.name] = date(2000, 1, 1)
-
-                return related_model.objects.create(**create_kwargs)
-
-            valid_fields = [f.name for f in CanBo._meta.get_fields()]
-
-            for idx, (_, row) in enumerate(df.iterrows(), start=1):
-                try:
-                    # LẤY MÃ CÁN BỘ & TÊN
-                    ma_raw = get_val(row, ['MaCB', 'Mã CBCT', 'Ma CBCT', 'Mã cán bộ', 'Ma_CBCT', 'MÃ CBCT', 'Mã CB', 'STT', 'Mã'])
-                    ten_raw = get_val(row, ['TenCB', 'Họ tên', 'Họ và tên', 'Ho ten', 'Họ và Tên', 'Tên CB'])
-                    cccd_raw = get_val(row, ['CCCD', 'Số CCCD', 'CMND', 'Số CMND'])
-                    
-                    ma_cbct = clean_empty_excel_value(ma_raw)
-                    ho_ten = clean_empty_excel_value(ten_raw)
-                    cccd = clean_empty_excel_value(cccd_raw)
-
-                    if not ma_cbct and not ho_ten:
-                        continue
-
-                    if not ma_cbct:
-                        ma_cbct = f"CB_{cccd}" if cccd else f"CB_{idx:04d}"
-
-                    defaults = {}
-
-                    mapping = {
-                        'ho_ten': ['TenCB', 'tencb', 'Họ tên', 'Họ và tên', 'Ho ten'],
-                        'gioi_tinh': ['GioiTinh', 'gioitinh', 'Danh xưng', 'Giới tính', 'Gioi tinh'],
-                        'cccd': ['CCCD', 'Số CCCD', 'CMND'],
-                        'dien_thoai': ['DienThoai', 'dienthoai', 'Điện thoại', 'SĐT', 'Số điện thoại'],
-                        'email': ['Email', 'Hòm thư'],
-                        'mst': ['MSTCN', 'mstcn', 'MST', 'Mã số thuế'],
-                        'tinh': ['Tinh', 'Tỉnh', 'Tỉnh/Thành phố'],
-                        'xa': ['Xa', 'Xã', 'Xã/Phường'],
-                        'dia_chi': ['DiaChi', 'diachi', 'Địa chỉ', 'Dia chi'],
-                        'so_tai_khoan': ['TaiKhoanNH', 'taikhoannh', 'Số tài khoản', 'STK'],
-                        'ngan_hang': ['TenNH', 'tennh', 'Ngân hàng', 'Ngan hang'],
-                        'chi_nhanh': ['ChiNhanhNH', 'chinhanhnh', 'Chi nhánh', 'Chi nhanh'],
-                        'don_vi': ['DonViCongTac', 'donvicongtac', 'Đơn vị công tác', 'Đơn vị']
-                    }
-
-                    for db_field, col_candidates in mapping.items():
-                        if db_field in valid_fields:
-                            val_raw = get_val(row, col_candidates)
-                            clean_val = clean_empty_excel_value(val_raw)
-                            field_obj = CanBo._meta.get_field(db_field)
-                            is_null_allowed = getattr(field_obj, 'null', True)
-
-                            # 1. Nếu là Cột Khóa Ngoại (Foreign Key như Tỉnh, Xã, Đơn vị)
-                            if field_obj.is_relation and field_obj.related_model is not None:
-                                related_model = field_obj.related_model
-                                if clean_val is not None:
-                                    defaults[db_field] = get_or_create_related_obj(related_model, clean_val, db_field)
-                                else:
-                                    if is_null_allowed:
-                                        defaults[db_field] = None
-                                    else:
-                                        # Bắt buộc phải có FK -> Tự động gắn vào "Chưa xác định"
-                                        defaults[db_field] = get_or_create_related_obj(related_model, "Chưa xác định", db_field)
-
-                            # 2. Nếu là Cột Dữ Liệu Thường (Text, Số, Ngày)
-                            else:
-                                if clean_val is not None:
-                                    defaults[db_field] = clean_val
-                                else:
-                                    if is_null_allowed:
-                                        defaults[db_field] = None
-                                    else:
-                                        internal_type = field_obj.get_internal_type()
-                                        if internal_type in ['CharField', 'TextField']:
-                                            defaults[db_field] = ""
-                                        elif internal_type in ['IntegerField', 'BigIntegerField', 'SmallIntegerField']:
-                                            defaults[db_field] = 0
-                                        elif internal_type in ['DateField', 'DateTimeField']:
-                                            defaults[db_field] = date(2000, 1, 1)
-                                        else:
-                                            defaults[db_field] = None
-
-                    # Xử lý Ngày cấp & Nơi cấp CCCD
-                    ngay_cap_raw = get_val(row, ['NgayCapCCCD', 'ngaycapcccd', 'Ngày cấp CCCD', 'Ngày cấp'])
-                    ngay_cap_clean = clean_empty_excel_value(ngay_cap_raw)
-                    if 'ngay_cap_cccd' in valid_fields:
-                        field_ngay = CanBo._meta.get_field('ngay_cap_cccd')
-                        is_null_ngay = getattr(field_ngay, 'null', True)
-                        if ngay_cap_clean:
-                            try:
-                                defaults['ngay_cap_cccd'] = pd.to_datetime(ngay_cap_clean).date()
-                            except Exception:
-                                defaults['ngay_cap_cccd'] = None if is_null_ngay else date(2000, 1, 1)
-                        else:
-                            defaults['ngay_cap_cccd'] = None if is_null_ngay else date(2000, 1, 1)
-
-                    noi_cap_raw = get_val(row, ['NoiCapCCCD', 'noicapcccd', 'Nơi cấp CCCD', 'Nơi cấp'])
-                    noi_cap_clean = clean_empty_excel_value(noi_cap_raw)
-                    if 'noi_cap_cccd' in valid_fields:
-                        field_noi = CanBo._meta.get_field('noi_cap_cccd')
-                        is_null_noi = getattr(field_noi, 'null', True)
-                        if noi_cap_clean:
-                            defaults['noi_cap_cccd'] = noi_cap_clean
-                        else:
-                            defaults['noi_cap_cccd'] = None if is_null_noi else ""
-
-                    # Lưu hoặc cập nhật Cán bộ
-                    obj, created = CanBo.objects.update_or_create(
-                        ma_can_bo=ma_cbct,
-                        defaults=defaults
-                    )
-
-                    if created:
-                        count_created += 1
-                    else:
-                        count_updated += 1
-
-                except Exception:
-                    # Bỏ qua dòng bị lỗi để toàn bộ file vẫn tiếp tục import bình thường
-                    count_skipped += 1
-                    continue
-
-            msg = f'Import hoàn tất! Thêm mới: {count_created}, Cập nhật: {count_updated}.'
-            if count_skipped > 0:
-                msg += f' (Bỏ qua {count_skipped} dòng lỗi)'
-            messages.success(request, msg)
-            return redirect('danh_sach_can_bo')
-
-        except Exception as e:
-            messages.error(request, f'Lỗi xử lý file Excel: {str(e)}')
-
-    return render(request, 'quanly/import_can_bo.html')
-
-# CÁC HÀM XỬ LÝ HỢP ĐỒNG & PHÂN CÔNG
-# ==========================================
-@admin_required
-def import_phan_cong(request):
-  if request.method == 'POST' and request.FILES.get('file_excel'):
-    excel_file = request.FILES['file_excel']
     try:
-      df = pd.read_excel(excel_file)
+        df = normalized_columns(pd.read_excel(request.FILES["file_excel"]))
+    except Exception as exc:
+        messages.error(request, f"Không đọc được file Excel: {exc}")
+        return render(request, "quanly/import_can_bo.html")
 
-      for index, row in df.iterrows():
-        # 1. Xử lý thông tin Trẻ (Lấy theo IDChild)
-        ma_tre = str(row['IDChild']).strip()
-        ten_tre = (
-            str(row['Tên trẻ']).strip() if pd.notna(row['Tên trẻ']) else ''
-        )
-        tre, _ = Tre.objects.get_or_create(
-            ma_tre=ma_tre, defaults={'ho_ten': ten_tre}
-        )
+    created = updated = skipped = 0
+    errors = []
+    for row_no, (_, row) in enumerate(df.iterrows(), start=2):
+        try:
+            ma_cb = clean_empty_excel_value(get_excel_value(row, "MaCB", "MaCBCT", "Mã CBCT", "Mã CB"))
+            ho_ten = clean_empty_excel_value(get_excel_value(row, "TenCB", "Họ tên", "Họ và tên"))
+            if not ma_cb or not ho_ten:
+                skipped += 1
+                continue
 
-        # 2. Xử lý Cán bộ can thiệp (Mã CB)
-        ma_cb = str(row['Mã CB']).strip()
-        ten_cb = str(row['Tên CB']).strip() if pd.notna(row['Tên CB']) else ''
-        can_bo, _ = CanBo.objects.get_or_create(
-            ma_can_bo=ma_cb,
-            defaults={
-                'ho_ten': ten_cb,
-                'ngay_cap': '2025-01-01',  # Giá trị mặc định tránh lỗi NOT NULL
-                'noi_cap': 'Chưa cập nhật',
-                'cccd': f'CCCD_{ma_cb}',
-            },
-        )
+            defaults = {
+                "ho_ten": ho_ten,
+                "gioi_tinh": clean_empty_excel_value(get_excel_value(row, "GioiTinh", "Giới tính")),
+                "cccd": clean_empty_excel_value(get_excel_value(row, "CCCD", "Số CCCD", "CMND")),
+                "mst": clean_empty_excel_value(get_excel_value(row, "MST", "MSTCN", "Mã số thuế")),
+                "dien_thoai": clean_empty_excel_value(get_excel_value(row, "DienThoai", "Điện thoại", "SĐT")),
+                "email": clean_empty_excel_value(get_excel_value(row, "Email")),
+                "dia_chi": clean_empty_excel_value(get_excel_value(row, "DiaChi", "Địa chỉ")),
+                "tai_khoan": clean_empty_excel_value(get_excel_value(row, "TaiKhoanNH", "Số tài khoản", "STK")),
+                "ngan_hang": clean_empty_excel_value(get_excel_value(row, "TenNH", "Ngân hàng")),
+                "chi_nhanh": clean_empty_excel_value(get_excel_value(row, "ChiNhanhNH", "Chi nhánh")),
+                "ngay_cap": parse_date(get_excel_value(row, "NgayCapCCCD", "Ngày cấp CCCD", "Ngày cấp")),
+                "noi_cap": clean_empty_excel_value(get_excel_value(row, "NoiCapCCCD", "Nơi cấp CCCD", "Nơi cấp")),
+            }
+            don_vi_name = clean_empty_excel_value(get_excel_value(row, "DonViCongTac", "Đơn vị công tác", "Đơn vị"))
+            if don_vi_name:
+                don_vi = DonVi.objects.filter(Q(ma_don_vi=don_vi_name) | Q(ten_don_vi__iexact=don_vi_name)).first()
+                if don_vi:
+                    defaults["don_vi"] = don_vi
+                else:
+                    raise ValueError(f"Không tìm thấy Đơn vị '{don_vi_name}'")
+            elif not CanBo.objects.filter(ma_can_bo=ma_cb).exists():
+                raise ValueError("Thiếu Đơn vị công tác cho cán bộ mới")
 
-        # 3. Xử lý Nhóm Hợp đồng
-        ten_nhom = (
-            str(row['Nhóm HĐ']).strip() if pd.notna(row['Nhóm HĐ']) else 'Mặc định'
-        )
-        nhom_hd, _ = NhomHD.objects.get_or_create(
-            ten_nhom=ten_nhom, defaults={'mo_ta': f'Nhóm {ten_nhom}'}
-        )
+            obj, is_created = CanBo.objects.update_or_create(ma_can_bo=ma_cb, defaults=defaults)
+            created += int(is_created)
+            updated += int(not is_created)
+        except Exception as exc:
+            skipped += 1
+            errors.append(f"Dòng {row_no}: {exc}")
 
-        # 4. Xử lý Hợp đồng
-        so_hop_dong = (
-            str(row['Số HĐ']).strip() if pd.notna(row['Số HĐ']) else 'HD_CHUACAT'
-        )
-        ngay_ky = (
-            pd.to_datetime(row['Ngày ký']).date()
-            if pd.notna(row['Ngày ký'])
-            else '2025-01-01'
-        )
-        hop_dong, _ = PhanBoChiTieu.objects.get_or_create(
-            so_hop_dong=so_hop_dong,
-            defaults={
-                'can_bo': can_bo,
-                'nhom_hd': nhom_hd,
-                'ngay_ky': ngay_ky,
-                'trang_thai': 'dang_thuc_hien',
-            },
-        )
+    msg = f"Import cán bộ hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
+    if errors:
+        msg += " " + " | ".join(errors[:5])
+    messages.success(request, msg)
+    return redirect("danh_sach_can_bo")
 
-        # 5. Lưu thông tin Phân công chi tiết
-        PhanCongTre.objects.create(
-            hop_dong=hop_dong,
-            tre=tre,
-            chi_dinh_ct=(
-                row['Chỉ định CT'] if pd.notna(row['Chỉ định CT']) else ''
-            ),
-            so_buoi_du_kien=(
-                row['Số buổi dự kiến']
-                if pd.notna(row['Số buổi dự kiến'])
-                else 0
-            ),
-            dia_diem_ct=(
-                row['Địa điểm CT'] if pd.notna(row['Địa điểm CT']) else ''
-            ),
-            hinh_thuc_ct=(
-                row['Hình thức CT'] if pd.notna(row['Hình thức CT']) else ''
-            ),
-            dot_phan_cong=(
-                row['Đợt phân công'] if pd.notna(row['Đợt phân công']) else 1
-            ),
-            ky_phan_cong=(
-                row['Kỳ phân công'] if pd.notna(row['Kỳ phân công']) else 1
-            ),
-            ngay_phan_cong=(
-                pd.to_datetime(row['Ngày phân công']).date()
-                if pd.notna(row['Ngày phân công'])
-                else '2025-01-01'
-            ),
-            dinh_muc_di_lai=(
-                row['Định mức đi lại'] if pd.notna(row['Định mức đi lại']) else 0
-            ),
-        )
-
-      messages.success(
-          request, 'Import file Excel phân công và danh mục thành công!'
-      )
-      return redirect('danh_sach_hop_dong')
-
-    except Exception as e:
-      messages.error(request, f'Lỗi khi import file: {str(e)}')
-
-  return render(request, 'quanly/import_phan_cong.html')
 
 # =========================================================
-# QUY TRÌNH HỢP ĐỒNG: PHÂN BỔ -> ĐỀ XUẤT -> CHÍNH THỨC
+# PHÂN CÔNG TRẺ
+# =========================================================
+@hopdong_required
+def danh_sach_phan_cong(request):
+    query = request.GET.get("q", "").strip()
+    qs = PhanCongTre.objects.select_related("tre", "phan_bo__can_bo", "phan_bo__nhom_hd")
+    if query:
+        qs = qs.filter(
+            Q(tre__ma_tre__icontains=query)
+            | Q(tre__ho_ten__icontains=query)
+            | Q(phan_bo__can_bo__ma_can_bo__icontains=query)
+            | Q(phan_bo__can_bo__ho_ten__icontains=query)
+        )
+    page_obj = Paginator(qs.order_by("-ngay_phan_cong", "-id"), 20).get_page(request.GET.get("page"))
+    return render(request, "quanly/danh_sach_phan_cong.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query})
+
+
+@hopdong_required
+def them_phan_cong(request):
+    form = PhanCongTreForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Đã thêm phân công trẻ.")
+        return redirect("danh_sach_phan_cong")
+    return render(request, "quanly/them_phan_cong.html", {"form": form})
+
+
+@hopdong_required
+def sua_phan_cong(request, pk):
+    item = get_object_or_404(PhanCongTre, pk=pk)
+    form = PhanCongTreForm(request.POST or None, instance=item)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Đã cập nhật phân công trẻ.")
+        return redirect("danh_sach_phan_cong")
+    return render(request, "quanly/sua_phan_cong.html", {"form": form, "item": item})
+
+
+@admin_required
+def import_phan_cong(request):
+    if request.method != "POST" or not request.FILES.get("file_excel"):
+        return render(request, "quanly/import_phan_cong.html")
+
+    try:
+        df = normalized_columns(pd.read_excel(request.FILES["file_excel"]))
+    except Exception as exc:
+        messages.error(request, f"Không đọc được file Excel: {exc}")
+        return render(request, "quanly/import_phan_cong.html")
+
+    created = skipped = 0
+    errors = []
+    for row_no, (_, row) in enumerate(df.iterrows(), start=2):
+        try:
+            ma_tre = clean_empty_excel_value(get_excel_value(row, "IDChild", "MaTre", "Mã trẻ"))
+            ma_cb = clean_empty_excel_value(get_excel_value(row, "Mã CB", "MaCB", "MaCBCT", "Mã CBCT"))
+            if not ma_tre or not ma_cb:
+                raise ValueError("Thiếu mã trẻ hoặc mã CBCT")
+
+            tre, _ = Tre.objects.get_or_create(
+                ma_tre=ma_tre,
+                defaults={
+                    "ho_ten": clean_empty_excel_value(get_excel_value(row, "Tên trẻ", "HoTen")) or "Chưa cập nhật",
+                    "ngay_sinh": date(2000, 1, 1),
+                    "gioi_tinh": "Khác",
+                },
+            )
+            can_bo = CanBo.objects.filter(ma_can_bo=ma_cb).first()
+            if not can_bo:
+                raise ValueError(f"Không tìm thấy cán bộ '{ma_cb}'")
+
+            nhom_value = clean_empty_excel_value(get_excel_value(row, "Nhóm HĐ", "NhomHD", "Mã nhóm HĐ"))
+            nhom = None
+            if nhom_value:
+                nhom = NhomHD.objects.filter(Q(ma_nhom_hd=nhom_value) | Q(ten_nhom_hd__iexact=nhom_value)).first()
+            if not nhom:
+                nhom = PhanBoChiTieu.objects.filter(can_bo=can_bo).order_by("-ngay_lap", "-id").values_list("nhom_hd", flat=True).first()
+                nhom = NhomHD.objects.filter(pk=nhom).first() if nhom else None
+            if not nhom:
+                raise ValueError(f"Không tìm thấy Nhóm HĐ cho cán bộ '{ma_cb}'")
+
+            phan_bo = PhanBoChiTieu.objects.filter(can_bo=can_bo, nhom_hd=nhom).order_by("-ngay_lap", "-id").first()
+            if not phan_bo:
+                raise ValueError("Chưa có Phân bổ chỉ tiêu tương ứng; không tự tạo phân bổ từ file phân công")
+
+            service = clean_empty_excel_value(get_excel_value(row, "Loại dịch vụ", "LoaiDichVu", "Chỉ định CT")) or "CSXH"
+            service_upper = service.upper()
+            service_map = {"VLTL": "VLTL", "HDTL": "HDTL", "NNTL": "NNTL", "GDDB": "GDDB", "CSXH": "CSXH", "CSYT": "CSYT"}
+            service = service_map.get(service_upper, "CSXH" if "CS" in service_upper else "VLTL")
+
+            item = PhanCongTre.objects.create(
+                phan_bo=phan_bo,
+                tre=tre,
+                loai_dich_vu=service,
+                so_buoi_du_kien=parse_int(get_excel_value(row, "Số buổi dự kiến", "SoBuoi"), 0),
+                dinh_muc_di_lai=parse_decimal(get_excel_value(row, "Định mức đi lại", "DMDL"), phan_bo.dinh_muc_di_lai_cs if service == "CSXH" else phan_bo.dinh_muc_di_lai_phcn),
+                dia_diem_ct=clean_empty_excel_value(get_excel_value(row, "Địa điểm CT", "DiaDiemCT")),
+                hinh_thuc_ct=clean_empty_excel_value(get_excel_value(row, "Hình thức CT", "HinhThucCT")),
+                dot_phan_cong=parse_int(get_excel_value(row, "Đợt phân công", "DotPhanCong"), 1),
+                ky_phan_cong=parse_int(get_excel_value(row, "Kỳ phân công", "KyPhanCong"), 1),
+                ngay_phan_cong=parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong")),
+                ghi_chu=clean_empty_excel_value(get_excel_value(row, "Ghi chú", "GhiChu")),
+            )
+            if item.so_buoi_du_kien <= 0:
+                item.delete()
+                raise ValueError("Số buổi dự kiến phải lớn hơn 0")
+            created += 1
+        except Exception as exc:
+            skipped += 1
+            errors.append(f"Dòng {row_no}: {exc}")
+
+    msg = f"Import phân công hoàn tất: thêm {created}, bỏ qua {skipped}."
+    if errors:
+        msg += " " + " | ".join(errors[:8])
+    messages.success(request, msg)
+    return redirect("danh_sach_phan_cong")
+
+
+# =========================================================
+# PHÂN BỔ CHỈ TIÊU
 # =========================================================
 @hopdong_required
 def phan_bo_chi_tieu(request):
-    """
-    BƯỚC 1: Cán bộ tạo Phân bổ chỉ tiêu (Lưu và chuyển thẳng sang Đề xuất Hợp đồng)
-    """
-    if request.method == 'POST':
-        form = PhanBoChiTieuForm(request.POST)
-        if form.is_valid():
-            hop_dong = form.save(commit=False)
-            
-            # Gán thống nhất trạng thái chữ thường 'de_xuat'
-            hop_dong.trang_thai = 'de_xuat'
-            
-            # Tự động sinh mã tạm nếu chưa có Số HĐ
-            if not hop_dong.so_hop_dong:
-                hop_dong.so_hop_dong = f"DX_{uuid.uuid4().hex[:6].upper()}"
-                
-            hop_dong.save()
-            messages.success(request, f"Đã lưu và chuyển đề xuất cho cán bộ {hop_dong.can_bo} thành công!")
-            return redirect('danh_sach_de_xuat')
-        else:
-            messages.error(request, "Lưu thất bại! Vui lòng kiểm tra lại thông tin biểu mẫu.")
-    else:
-        form = PhanBoChiTieuForm()
+    form = PhanBoChiTieuForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        obj = form.save()
+        messages.success(request, f"Đã lưu Phân bổ chỉ tiêu #{obj.pk}. Bước tiếp theo là phân công trẻ; chưa tạo đề xuất hợp đồng.")
+        return redirect("danh_sach_phan_bo")
+    return render(request, "quanly/phan_bo_chi_tieu.html", {"form": form})
 
-    return render(request, 'quanly/phan_bo_chi_tieu.html', {'form': form})
-
-@admin_required
-def import_phan_bo(request):
-  if request.method == 'POST':
-    if 'excel_file' in request.FILES:
-      excel_file = request.FILES['excel_file']
-      try:
-        df = pd.read_excel(excel_file)
-
-        # 1. CHUẨN HÓA TIÊU ĐỀ CỘT: Xóa sạch khoảng trắng ẩn, \xa0, xuống dòng
-        df.columns = [
-            str(col).strip().replace('\xa0', '').replace(' ', '')
-            for col in df.columns
-        ]
-
-        preview_data = []
-        valid_count = 0
-        invalid_count = 0
-
-        # Hàm đọc giá trị an toàn từ row
-        def get_column_value(row, col_name):
-          val = row.get(col_name)
-          if pd.isna(val) or val is None:
-            return None
-          val_str = str(val).strip()
-          return val_str if val_str != '' and val_str.lower() != 'nan' else None
-
-        for idx, (_, row) in enumerate(df.iterrows()):
-          row_num = idx + 2
-          errors = []
-
-          # Bắt lỗi Mã CBCT
-          ma_cb = get_column_value(row, 'MaCBCT')
-          can_bo = None
-          if not ma_cb:
-            errors.append('Thiếu mã CBCT')
-          else:
-            try:
-              can_bo = CanBo.objects.get(ma_can_bo=ma_cb)
-            except CanBo.DoesNotExist:
-              errors.append(f"Không tìm thấy cán bộ mã '{ma_cb}'")
-
-          # Xử lý ThamGiaCt (Có / Không)
-          raw_tham_gia = get_column_value(row, 'ThamGiaCt')
-          if raw_tham_gia is None:
-            tham_gia_ct = True
-          else:
-            tham_gia_ct = raw_tham_gia.lower() in [
-                '1',
-                '1.0',
-                'có',
-                'co',
-                'true',
-                'x',
-                'yes',
-            ]
-
-          # BẮT LỖI SỐ BUỔI PHCN
-          val_buoi_phcn = get_column_value(row, 'SoBuoiPHCN')
-          if val_buoi_phcn is None:
-            errors.append('Thiếu số buổi PHCN')
-            so_buoi_phcn = 0
-          else:
-            try:
-              so_buoi_phcn = int(float(val_buoi_phcn))
-            except (ValueError, TypeError):
-              errors.append('Số buổi PHCN không hợp lệ')
-              so_buoi_phcn = 0
-
-          # BẮT LỖI SỐ BUỔI CSXH
-          val_buoi_cs = get_column_value(row, 'SoBuoiCS')
-          if val_buoi_cs is None:
-            errors.append('Thiếu số buổi CSXH')
-            so_buoi_cs = 0
-          else:
-            try:
-              so_buoi_cs = int(float(val_buoi_cs))
-            except (ValueError, TypeError):
-              errors.append('Số buổi CSXH không hợp lệ')
-              so_buoi_cs = 0
-
-          # Số trẻ PHCN & CSXH
-          val_tre_phcn = get_column_value(row, 'SoTrePHCN')
-          so_tre_phcn = int(float(val_tre_phcn)) if val_tre_phcn else 0
-
-          val_tre_cs = get_column_value(row, 'SoTreCS')
-          so_tre_cs = int(float(val_tre_cs)) if val_tre_cs else 0
-
-          # Định mức đi lại
-          dmdl_phcn_code = get_column_value(row, 'DMDL_PHCN') or '1'
-          dmdl_cs_code = get_column_value(row, 'DMDL_CS') or '1'
-
-          dmdl_phcn_val = (
-              FinancialConfig.DON_GIA_DI_LAI_DM1
-              if dmdl_phcn_code in ['1', '1.0']
-              else FinancialConfig.DON_GIA_DI_LAI_DM2
-          )
-          dmdl_cs_val = (
-              FinancialConfig.DON_GIA_DI_LAI_DM1
-              if dmdl_cs_code in ['1', '1.0']
-              else FinancialConfig.DON_GIA_DI_LAI_DM2
-          )
-
-          # Tính toán giá trị dự kiến
-          cong_phcn = so_tre_phcn * so_buoi_phcn * FinancialConfig.DON_GIA_CONG
-          di_lai_phcn = so_tre_phcn * so_buoi_phcn * dmdl_phcn_val
-
-          cong_cs = so_tre_cs * so_buoi_cs * FinancialConfig.DON_GIA_CONG
-          di_lai_cs = so_tre_cs * so_buoi_cs * dmdl_cs_val
-
-          gia_tri_du_kien = cong_phcn + di_lai_phcn + cong_cs + di_lai_cs
-
-          is_valid = len(errors) == 0
-          if is_valid:
-            valid_count += 1
-          else:
-            invalid_count += 1
-
-          preview_data.append({
-              'row_num': row_num,
-              'ma_cb': ma_cb or 'N/A',
-              'ten_cb': can_bo.ho_ten if can_bo else 'N/A',
-              'can_bo_id': can_bo.pk if can_bo else None,
-              'nhom_hd': int(float(get_column_value(row, 'NhomHD') or 1)),
-              'tham_gia_ct': tham_gia_ct,
-              'so_tre_phcn': so_tre_phcn,
-              'so_buoi_phcn': so_buoi_phcn,
-              'dmdl_phcn_val': dmdl_phcn_val,
-              'so_tre_cs': so_tre_cs,
-              'so_buoi_cs': so_buoi_cs,
-              'dmdl_cs_val': dmdl_cs_val,
-              'gia_tri_du_kien': gia_tri_du_kien,
-              'is_valid': is_valid,
-              'error_msg': '; '.join(errors),
-          })
-
-        request.session['import_phan_bo_valid_data'] = [
-            item for item in preview_data if item['is_valid']
-        ]
-
-        return render(
-            request,
-            'quanly/import_phan_bo.html',
-            {
-                'preview_data': preview_data,
-                'valid_count': valid_count,
-                'invalid_count': invalid_count,
-                'has_preview': True,
-            },
-        )
-
-      except Exception as e:
-        messages.error(request, f'Lỗi đọc file Excel: {e}')
-        return redirect('import_phan_bo')
-
-    elif 'confirm_save' in request.POST:
-      valid_items = request.session.get('import_phan_bo_valid_data', [])
-      if not valid_items:
-        messages.error(request, 'Không có dữ liệu hợp lệ để lưu!')
-        return redirect('import_phan_bo')
-
-      records_to_create = []
-      for item in valid_items:
-        records_to_create.append(
-            PhanBoChiTieu(
-                can_bo_id=item['can_bo_id'],
-                nhom_hd=item['nhom_hd'],
-                tham_gia_ct=item['tham_gia_ct'],
-                so_tre_phcn=item['so_tre_phcn'],
-                so_buoi_phcn=item['so_buoi_phcn'],
-                dinh_muc_di_lai_phcn=item['dmdl_phcn_val'],
-                so_tre_cs=item['so_tre_cs'],
-                so_buoi_cs=item['so_buoi_cs'],
-                dinh_muc_di_lai_cs=item['dmdl_cs_val'],
-                gia_tri_hd_du_kien=item['gia_tri_du_kien'],
-                trang_thai='DE_XUAT',
-            )
-        )
-
-      PhanBoChiTieu.objects.bulk_create(records_to_create)
-      if 'import_phan_bo_valid_data' in request.session:
-        del request.session['import_phan_bo_valid_data']
-
-      messages.success(
-          request,
-          f'Đã lưu thành công {len(records_to_create)} bản ghi vào Database!',
-      )
-      return redirect('danh_sach_de_xuat')
-
-  return render(request, 'quanly/import_phan_bo.html', {'has_preview': False})
-
-@admin_required
-def sua_phan_bo_chi_tieu(request, pk):
-  item = get_object_or_404(PhanBoChiTieu, pk=pk)
-
-  if request.method == 'POST':
-    try:
-      # Lấy số buổi điều chỉnh từ Form
-      so_buoi_phcn = int(request.POST.get('so_buoi_phcn', item.so_buoi_phcn))
-      so_buoi_cs = int(request.POST.get('so_buoi_cs', item.so_buoi_cs))
-
-      item.so_buoi_phcn = so_buoi_phcn
-      item.so_buoi_cs = so_buoi_cs
-
-      # Tự động tính lại Giá trị hợp đồng dự kiến dựa trên số buổi mới
-      cong_phcn = (
-          item.so_tre_phcn * item.so_buoi_phcn * FinancialConfig.DON_GIA_CONG
-      )
-      di_lai_phcn = (
-          item.so_tre_phcn * item.so_buoi_phcn * item.dinh_muc_di_lai_phcn
-      )
-
-      cong_cs = (
-          item.so_tre_cs * item.so_buoi_cs * FinancialConfig.DON_GIA_CONG
-      )
-      di_lai_cs = item.so_tre_cs * item.so_buoi_cs * item.dinh_muc_di_lai_cs
-
-      item.gia_tri_hd_du_kien = cong_phcn + di_lai_phcn + cong_cs + di_lai_cs
-      item.save()
-
-      messages.success(
-          request,
-          f'Đã cập nhật số buổi & tính lại Giá trị HĐ cho CBCT {item.can_bo.ho_ten}!',
-      )
-    except Exception as e:
-      messages.error(request, f'Lỗi khi cập nhật dữ liệu: {e}')
-
-  return redirect('danh_sach_de_xuat')
 
 @hopdong_required
 def danh_sach_phan_bo(request):
-    danh_sach = PhanBoChiTieu.objects.select_related('can_bo').all().order_by('-id')
-    return render(request, 'quanly/danh_sach_phan_bo.html', {'danh_sach': danh_sach})
+    query = request.GET.get("q", "").strip()
+    qs = PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd").prefetch_related("danh_sach_phan_cong")
+    if query:
+        qs = qs.filter(Q(can_bo__ho_ten__icontains=query) | Q(can_bo__ma_can_bo__icontains=query) | Q(nhom_hd__ten_nhom_hd__icontains=query))
+    page_obj = Paginator(qs.order_by("-ngay_lap", "-id"), 15).get_page(request.GET.get("page"))
+    return render(request, "quanly/danh_sach_phan_bo.html", {"danh_sach": page_obj, "page_obj": page_obj, "query": query})
+
+
+@admin_required
+def sua_phan_bo_chi_tieu(request, pk):
+    item = get_object_or_404(PhanBoChiTieu, pk=pk)
+    if item.is_locked:
+        messages.error(request, "Phân bổ đã khóa, không thể sửa.")
+        return redirect("danh_sach_phan_bo")
+    form = PhanBoChiTieuForm(request.POST or None, instance=item)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Đã cập nhật Phân bổ chỉ tiêu.")
+        return redirect("danh_sach_phan_bo")
+    return render(request, "quanly/phan_bo_chi_tieu.html", {"form": form, "item": item})
+
+
+@admin_required
+def khoa_phan_bo(request, pk):
+    item = get_object_or_404(PhanBoChiTieu, pk=pk)
+    item.is_locked = True
+    item.save(update_fields=["is_locked", "updated_at"])
+    messages.success(request, f"Đã khóa Phân bổ #{item.pk}.")
+    return redirect("danh_sach_phan_bo")
+
+
+@admin_required
+def import_phan_bo(request):
+    if request.method != "POST" or "excel_file" not in request.FILES:
+        return render(request, "quanly/import_phan_bo.html", {"has_preview": False})
+
+    try:
+        df = normalized_columns(pd.read_excel(request.FILES["excel_file"]))
+    except Exception as exc:
+        messages.error(request, f"Lỗi đọc file Excel: {exc}")
+        return render(request, "quanly/import_phan_bo.html", {"has_preview": False})
+
+    preview = []
+    for row_no, (_, row) in enumerate(df.iterrows(), start=2):
+        errors = []
+        ma_cb = clean_empty_excel_value(get_excel_value(row, "MaCBCT", "Mã CBCT", "MaCB", "Mã CB"))
+        can_bo = CanBo.objects.filter(ma_can_bo=ma_cb).first() if ma_cb else None
+        if not can_bo:
+            errors.append("Không tìm thấy cán bộ")
+
+        nhom_raw = clean_empty_excel_value(get_excel_value(row, "NhomHD", "Mã nhóm HĐ", "Nhóm HĐ"))
+        nhom = NhomHD.objects.filter(Q(ma_nhom_hd=nhom_raw) | Q(ten_nhom_hd__iexact=nhom_raw)).first() if nhom_raw else None
+        if not nhom:
+            errors.append("Không tìm thấy nhóm hợp đồng")
+
+        so_tre_phcn = parse_int(get_excel_value(row, "SoTrePHCN"))
+        so_buoi_phcn = parse_int(get_excel_value(row, "SoBuoiPHCN"))
+        so_tre_cs = parse_int(get_excel_value(row, "SoTreCS"))
+        so_buoi_cs = parse_int(get_excel_value(row, "SoBuoiCS"))
+        dm_phcn_code = clean_empty_excel_value(get_excel_value(row, "DMDL_PHCN")) or "1"
+        dm_cs_code = clean_empty_excel_value(get_excel_value(row, "DMDL_CS")) or "1"
+        dm_phcn = Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1 if dm_phcn_code in {"1", "1.0"} else FinancialConfig.DON_GIA_DI_LAI_DM2))
+        dm_cs = Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1 if dm_cs_code in {"1", "1.0"} else FinancialConfig.DON_GIA_DI_LAI_DM2))
+        if so_tre_phcn and not so_buoi_phcn:
+            errors.append("Số buổi PHCN phải > 0")
+        if so_tre_cs and not so_buoi_cs:
+            errors.append("Số buổi CSXH phải > 0")
+
+        preview.append({
+            "row_num": row_no,
+            "ma_cb": ma_cb or "",
+            "ten_cb": can_bo.ho_ten if can_bo else "",
+            "can_bo_id": can_bo.pk if can_bo else None,
+            "nhom_hd_id": nhom.pk if nhom else None,
+            "nhom_hd": nhom.ten_nhom_hd if nhom else (nhom_raw or ""),
+            "tham_gia_ct": clean_empty_excel_value(get_excel_value(row, "ThamGiaCt")) not in {"0", "0.0", "không", "khong", "false"},
+            "ngay_lap": parse_date(get_excel_value(row, "NgayLap", "Ngày lập"), timezone.localdate()),
+            "so_tre_phcn": so_tre_phcn,
+            "so_buoi_phcn": so_buoi_phcn,
+            "dmdl_phcn_val": dm_phcn,
+            "so_tre_cs": so_tre_cs,
+            "so_buoi_cs": so_buoi_cs,
+            "dmdl_cs_val": dm_cs,
+            "gia_tri_du_kien": calculate_expected_value(so_tre_phcn, so_buoi_phcn, dm_phcn, so_tre_cs, so_buoi_cs, dm_cs),
+            "is_valid": not errors,
+            "error_msg": "; ".join(errors),
+        })
+
+    request.session["import_phan_bo_valid_data"] = [x for x in preview if x["is_valid"]]
+    return render(request, "quanly/import_phan_bo.html", {
+        "preview_data": preview,
+        "valid_count": sum(x["is_valid"] for x in preview),
+        "invalid_count": sum(not x["is_valid"] for x in preview),
+        "has_preview": True,
+    })
+
+
+@admin_required
+def confirm_import_phan_bo(request):
+    if request.method != "POST":
+        return redirect("import_phan_bo")
+    items = request.session.pop("import_phan_bo_valid_data", [])
+    if not items:
+        messages.error(request, "Không có dữ liệu hợp lệ để lưu.")
+        return redirect("import_phan_bo")
+
+    records = []
+    for item in items:
+        records.append(PhanBoChiTieu(
+            can_bo_id=item["can_bo_id"],
+            nhom_hd_id=item["nhom_hd_id"],
+            tham_gia_ct=item["tham_gia_ct"],
+            ngay_lap=item["ngay_lap"],
+            so_tre_phcn=item["so_tre_phcn"],
+            so_buoi_phcn=item["so_buoi_phcn"],
+            dinh_muc_di_lai_phcn=item["dmdl_phcn_val"],
+            so_tre_cs=item["so_tre_cs"],
+            so_buoi_cs=item["so_buoi_cs"],
+            dinh_muc_di_lai_cs=item["dmdl_cs_val"],
+        ))
+    PhanBoChiTieu.objects.bulk_create(records)
+    messages.success(request, f"Đã lưu {len(records)} Phân bổ chỉ tiêu.")
+    return redirect("danh_sach_phan_bo")
+
+
+# =========================================================
+# ĐỀ XUẤT HỢP ĐỒNG
+# =========================================================
+def build_proposal_from_allocation(phan_bo):
+    assignments = phan_bo.danh_sach_phan_cong.select_related("tre")
+    if not assignments.exists():
+        raise ValueError("Phân bổ chưa có phân công trẻ; không đủ điều kiện tạo đề xuất hợp đồng.")
+
+    phcn = assignments.exclude(loai_dich_vu="CSXH")
+    cs = assignments.filter(loai_dich_vu="CSXH")
+    so_tre_phcn = phcn.values("tre_id").distinct().count()
+    so_tre_cs = cs.values("tre_id").distinct().count()
+    so_buoi_phcn = sum(item.so_buoi_du_kien for item in phcn)
+    so_buoi_cs = sum(item.so_buoi_du_kien for item in cs)
+    gia_tri = sum(
+        Decimal(item.so_buoi_du_kien) * (Decimal(str(FinancialConfig.DON_GIA_CONG)) + Decimal(item.dinh_muc_di_lai))
+        for item in assignments
+    )
+    lan = (phan_bo.de_xuat_hop_dong.order_by("-lan_de_xuat").values_list("lan_de_xuat", flat=True).first() or 0) + 1
+    return DeXuatHopDong.objects.create(
+        phan_bo=phan_bo,
+        lan_de_xuat=lan,
+        ngay_de_xuat=timezone.localdate(),
+        so_tre_phcn=so_tre_phcn,
+        so_buoi_phcn=so_buoi_phcn,
+        so_tre_cs=so_tre_cs,
+        so_buoi_cs=so_buoi_cs,
+        gia_tri_du_kien=gia_tri,
+        trang_thai="CHO_KIEM_TRA",
+    )
+
+
+@hopdong_required
+def tao_de_xuat_hop_dong(request, pk):
+    phan_bo = get_object_or_404(PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd"), pk=pk)
+    if request.method == "POST":
+        try:
+            with transaction.atomic():
+                proposal = build_proposal_from_allocation(phan_bo)
+                phan_bo.is_locked = True
+                phan_bo.save(update_fields=["is_locked", "updated_at"])
+            messages.success(request, f"Đã tạo Đề xuất HĐ #{proposal.pk} cho {phan_bo.can_bo.ho_ten}.")
+            return redirect("danh_sach_de_xuat")
+        except ValueError as exc:
+            messages.error(request, str(exc))
+    return render(request, "quanly/xac_nhan_tao_de_xuat.html", {"phan_bo": phan_bo})
+
 
 @hopdong_required
 def danh_sach_de_xuat(request):
-    query = request.GET.get('q', '').strip()
-    
-    ds_de_xuat = PhanBoChiTieu.objects.filter(
-        trang_thai__in=['de_xuat', 'DE_XUAT']
-    ).order_by('-id')
-    
+    query = request.GET.get("q", "").strip()
+    qs = DeXuatHopDong.objects.select_related("phan_bo__can_bo", "phan_bo__nhom_hd").order_by("-ngay_de_xuat", "-id")
     if query:
-        ds_de_xuat = ds_de_xuat.filter(
-            Q(so_hop_dong__icontains=query) |
-            Q(can_bo__ho_ten__icontains=query) |
-            Q(can_bo__ma_can_bo__icontains=query)
-        )
+        qs = qs.filter(Q(phan_bo__can_bo__ho_ten__icontains=query) | Q(phan_bo__can_bo__ma_can_bo__icontains=query))
+    page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
+    return render(request, "quanly/danh_sach_de_xuat.html", {"danh_sach": page_obj, "page_obj": page_obj, "query": query})
 
-    paginator = Paginator(ds_de_xuat, 15)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
-
-    context = {
-        'danh_sach': page_obj,   # Khớp chính xác với {% for item in danh_sach %} trong HTML
-        'page_obj': page_obj,
-        'query': query,
-    }
-    return render(request, 'quanly/danh_sach_de_xuat.html', context)
 
 @hopdong_required
+def duyet_de_xuat(request, pk):
+    proposal = get_object_or_404(DeXuatHopDong, pk=pk)
+    if request.method == "POST":
+        proposal.trang_thai = "DA_DUYET"
+        proposal.save(update_fields=["trang_thai", "updated_at"])
+        messages.success(request, f"Đã duyệt Đề xuất HĐ #{proposal.pk}.")
+        return redirect("danh_sach_de_xuat")
+    return render(request, "quanly/xac_nhan_duyet_de_xuat.html", {"de_xuat": proposal})
+
+
+# =========================================================
+# HỢP ĐỒNG CHÍNH THỨC + PHỤ LỤC KỲ 1
+# =========================================================
+@hopdong_required
 def tao_hop_dong_chinh_thuc(request, pk):
-    hop_dong = get_object_or_404(PhanBoChiTieu, pk=pk)
+    proposal = get_object_or_404(DeXuatHopDong.objects.select_related("phan_bo__can_bo", "phan_bo__nhom_hd"), pk=pk)
+    if proposal.trang_thai not in {"DA_DUYET", "CHO_KIEM_TRA", "DU_DIEU_KIEN"}:
+        messages.error(request, "Đề xuất không ở trạng thái cho phép tạo hợp đồng.")
+        return redirect("danh_sach_de_xuat")
 
-    if request.method == 'POST':
-        so_hop_dong_moi = request.POST.get('so_hop_dong')
-        ngay_ky = request.POST.get('ngay_ky')
-        tu_ngay = request.POST.get('tu_ngay')
-        den_ngay = request.POST.get('den_ngay')
+    initial = {
+        "de_xuat": proposal.pk,
+        "can_bo": proposal.phan_bo.can_bo_id,
+        "nhom_hd": proposal.phan_bo.nhom_hd_id,
+        "tu_ngay": timezone.localdate(),
+        "den_ngay": timezone.localdate().replace(month=12, day=31),
+        "don_gia_cong": FinancialConfig.DON_GIA_CONG,
+        "dinh_muc_di_lai_phcn": proposal.phan_bo.dinh_muc_di_lai_phcn,
+        "dinh_muc_di_lai_cs": proposal.phan_bo.dinh_muc_di_lai_cs,
+        "gia_tri_hop_dong": proposal.gia_tri_du_kien,
+        "trang_thai": "DA_KY",
+    }
+    form = HopDongForm(request.POST or None, initial=initial)
+    if request.method == "POST" and form.is_valid():
+        try:
+            with transaction.atomic():
+                hop_dong = form.save(commit=False)
+                hop_dong.de_xuat = proposal
+                hop_dong.can_bo = proposal.phan_bo.can_bo
+                hop_dong.nhom_hd = proposal.phan_bo.nhom_hd
+                hop_dong.full_clean()
+                hop_dong.save()
 
-        if so_hop_dong_moi:
-            hop_dong.so_hop_dong = so_hop_dong_moi
-        if ngay_ky:
-            hop_dong.ngay_ky = ngay_ky
-        if tu_ngay:
-            hop_dong.tu_ngay = tu_ngay
-        if den_ngay:
-            hop_dong.den_ngay = den_ngay
-            
-        # Gán trạng thái chuẩn là 'chinh_thuc'
-        hop_dong.trang_thai = 'chinh_thuc'
-        hop_dong.save()
+                assignments = list(proposal.phan_bo.danh_sach_phan_cong.select_related("tre", "phan_bo__can_bo"))
+                if not assignments:
+                    raise ValueError("Không thể tạo hợp đồng vì Phân bổ chưa có phân công.")
 
-        messages.success(request, f"Đã duyệt thành công! Hợp đồng {hop_dong.so_hop_dong} đã chính thức có hiệu lực.")
-        return redirect('danh_sach_hop_dong')
+                # Khối lượng hợp đồng theo dịch vụ, snapshot đơn giá tại thời điểm ký.
+                grouped = {}
+                for item in assignments:
+                    grouped.setdefault(item.loai_dich_vu, []).append(item)
+                for service, rows in grouped.items():
+                    so_tre = len({row.tre_id for row in rows})
+                    so_buoi = sum(row.so_buoi_du_kien for row in rows)
+                    dm = hop_dong.dinh_muc_di_lai_cs if service == "CSXH" else hop_dong.dinh_muc_di_lai_phcn
+                    ChiTietKhoiLuongHopDong.objects.create(
+                        hop_dong=hop_dong,
+                        loai_dich_vu=service,
+                        so_tre=so_tre,
+                        so_buoi=so_buoi,
+                        don_gia_cong=hop_dong.don_gia_cong,
+                        dinh_muc_di_lai=dm,
+                    )
 
-    context = {'hop_dong': hop_dong}
-    return render(request, 'quanly/xac_nhan_tao_hop_dong.html', context)
+                # Snapshot Phụ lục Kỳ 1: dữ liệu ký HĐ độc lập với phân công về sau.
+                phu_luc = PhuLucHopDong.objects.create(
+                    hop_dong=hop_dong,
+                    loai_phu_luc="KY_1",
+                    so_phu_luc=f"PL-K1-{hop_dong.so_hop_dong}",
+                    ngay_lap=hop_dong.ngay_ky or timezone.localdate(),
+                    is_signed=bool(hop_dong.ngay_ky),
+                    ghi_chu="Snapshot phân công Kỳ 1 tại thời điểm tạo hợp đồng.",
+                )
+                ky1 = [row for row in assignments if row.ky_phan_cong == 1]
+                for item in ky1:
+                    ChiTietPhuLucPhanCong.objects.create(
+                        phu_luc=phu_luc,
+                        source_phan_cong=item,
+                        ma_tre=item.tre.ma_tre,
+                        ten_tre=item.tre.ho_ten,
+                        ma_can_bo=item.phan_bo.can_bo.ma_can_bo,
+                        ten_can_bo=item.phan_bo.can_bo.ho_ten,
+                        loai_dich_vu=item.loai_dich_vu,
+                        dot_phan_cong=item.dot_phan_cong,
+                        ky_phan_cong=item.ky_phan_cong,
+                        ngay_phan_cong=item.ngay_phan_cong,
+                        so_buoi_du_kien=item.so_buoi_du_kien,
+                        dinh_muc_di_lai=item.dinh_muc_di_lai,
+                        dia_diem_ct=item.dia_diem_ct,
+                        hinh_thuc_ct=item.hinh_thuc_ct,
+                        ghi_chu=item.ghi_chu,
+                    )
+
+                proposal.trang_thai = "DA_TAO_HOP_DONG"
+                proposal.save(update_fields=["trang_thai", "updated_at"])
+                proposal.phan_bo.is_locked = True
+                proposal.phan_bo.save(update_fields=["is_locked", "updated_at"])
+
+            messages.success(request, f"Đã tạo Hợp đồng {hop_dong.so_hop_dong} và snapshot Phụ lục Kỳ 1.")
+            return redirect("danh_sach_hop_dong")
+        except Exception as exc:
+            messages.error(request, f"Không thể tạo hợp đồng: {exc}")
+
+    return render(request, "quanly/xac_nhan_tao_hop_dong.html", {"de_xuat": proposal, "form": form})
+
 
 @readonly_required
 def danh_sach_hop_dong(request):
-    query = request.GET.get('q', '').strip()
-    
-    # Lấy danh sách các hợp đồng chính thức
-    ds_hop_dong = PhanBoChiTieu.objects.exclude(
-        trang_thai__in=['de_xuat', 'DE_XUAT']
-    ).order_by('-id')
-    
+    query = request.GET.get("q", "").strip()
+    qs = HopDong.objects.select_related("can_bo", "nhom_hd", "de_xuat").order_by("-ngay_ky", "-id")
     if query:
-        ds_hop_dong = ds_hop_dong.filter(
-            Q(so_hop_dong__icontains=query) |
-            Q(can_bo__ho_ten__icontains=query)
-        )
+        qs = qs.filter(Q(so_hop_dong__icontains=query) | Q(can_bo__ho_ten__icontains=query) | Q(can_bo__ma_can_bo__icontains=query))
+    page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
+    return render(request, "quanly/danh_sach_hop_dong.html", {
+        "hop_dongs": page_obj,
+        "danh_sach": page_obj,
+        "page_obj": page_obj,
+        "query": query,
+    })
 
-    paginator = Paginator(ds_hop_dong, 15)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
 
-    context = {
-        'hop_dongs': page_obj,     # <--- Khớp chính xác với {% for hd in hop_dongs %} trong HTML
-        'page_obj': page_obj,
-        'danh_sach': page_obj,
-        'hop_dong_list': page_obj,
-        'query': query,
-    }
-    return render(request, 'quanly/danh_sach_hop_dong.html', context)
+@readonly_required
+def chi_tiet_hop_dong(request, pk):
+    hop_dong = get_object_or_404(
+        HopDong.objects.select_related("can_bo", "nhom_hd", "de_xuat").prefetch_related("chi_tiet_khoi_luong", "phu_luc"),
+        pk=pk,
+    )
+    return render(request, "quanly/chi_tiet_hop_dong.html", {"hop_dong": hop_dong})
+
+
+@hopdong_required
+def them_khoi_luong_hop_dong(request, hop_dong_id):
+    hop_dong = get_object_or_404(HopDong, pk=hop_dong_id)
+    if hop_dong.is_locked:
+        messages.error(request, "Hợp đồng đã khóa, không thể sửa khối lượng.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+    form = ChiTietKhoiLuongHopDongForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        item = form.save(commit=False)
+        item.hop_dong = hop_dong
+        item.save()
+        hop_dong.gia_tri_hop_dong = sum(x.thanh_tien for x in hop_dong.chi_tiet_khoi_luong.all())
+        hop_dong.save(update_fields=["gia_tri_hop_dong", "updated_at"])
+        messages.success(request, "Đã thêm khối lượng hợp đồng.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+    return render(request, "quanly/them_khoi_luong_hop_dong.html", {"form": form, "hop_dong": hop_dong})
+
+
+@hopdong_required
+def them_phu_luc_hop_dong(request, hop_dong_id):
+    hop_dong = get_object_or_404(HopDong, pk=hop_dong_id)
+    form = PhuLucHopDongForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        with transaction.atomic():
+            phu_luc = form.save(commit=False)
+            phu_luc.hop_dong = hop_dong
+            phu_luc.save()
+            # Bổ sung/điều chỉnh phải snapshot tại thời điểm lập phụ lục.
+            if phu_luc.loai_phu_luc in {"BO_SUNG", "DIEU_CHINH"}:
+                for item in hop_dong.de_xuat.phan_bo.danh_sach_phan_cong.select_related("tre", "phan_bo__can_bo"):
+                    ChiTietPhuLucPhanCong.objects.create(
+                        phu_luc=phu_luc,
+                        source_phan_cong=item,
+                        ma_tre=item.tre.ma_tre,
+                        ten_tre=item.tre.ho_ten,
+                        ma_can_bo=item.phan_bo.can_bo.ma_can_bo,
+                        ten_can_bo=item.phan_bo.can_bo.ho_ten,
+                        loai_dich_vu=item.loai_dich_vu,
+                        dot_phan_cong=item.dot_phan_cong,
+                        ky_phan_cong=item.ky_phan_cong,
+                        ngay_phan_cong=item.ngay_phan_cong,
+                        so_buoi_du_kien=item.so_buoi_du_kien,
+                        dinh_muc_di_lai=item.dinh_muc_di_lai,
+                        dia_diem_ct=item.dia_diem_ct,
+                        hinh_thuc_ct=item.hinh_thuc_ct,
+                        ghi_chu=item.ghi_chu,
+                    )
+        messages.success(request, "Đã tạo phụ lục và snapshot dữ liệu phân công.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+    return render(request, "quanly/them_phu_luc_hop_dong.html", {"form": form, "hop_dong": hop_dong})
