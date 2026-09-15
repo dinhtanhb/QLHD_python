@@ -1,0 +1,138 @@
+{% extends 'quanly/base.html' %}
+{% load number_format %}
+{% block title %}Tạo Hợp đồng chính thức{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="card shadow">
+        <div class="card-header bg-success text-white">
+            <h4 class="mb-0">Tạo Hợp đồng chính thức</h4>
+        </div>
+
+        <div class="card-body">
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <div class="alert alert-info">
+                <div class="fw-bold mb-2">Thông tin Đề xuất hợp đồng</div>
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <strong>CBCT:</strong>
+                        {{ proposal.phan_bo.can_bo.ma_can_bo }} - {{ proposal.phan_bo.can_bo.ho_ten }}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Nhóm HĐ:</strong>
+                        {{ proposal.phan_bo.nhom_hd.ma_nhom_hd }} - {{ proposal.phan_bo.nhom_hd.ten_nhom_hd }}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Giá trị HĐ dự kiến:</strong>
+                        <span class="fw-bold text-success">{{ proposal.gia_tri_du_kien|vn_number }} đ</span>
+                    </div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-md-6">
+                        PHCN: {{ proposal.so_tre_phcn|vn_number }} trẻ / {{ proposal.so_buoi_phcn|vn_number }} buổi
+                    </div>
+                    <div class="col-md-6">
+                        CSXH: {{ proposal.so_tre_cs|vn_number }} trẻ / {{ proposal.so_buoi_cs|vn_number }} buổi
+                    </div>
+                </div>
+            </div>
+
+            <form method="post" novalidate>
+                {% csrf_token %}
+
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Đề xuất</label>
+                        {{ form.de_xuat }}
+                        {% for error in form.de_xuat.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Cán bộ chuyên trách</label>
+                        {{ form.can_bo }}
+                        {% for error in form.can_bo.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Nhóm hợp đồng</label>
+                        {{ form.nhom_hd }}
+                        {% for error in form.nhom_hd.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">Số hợp đồng <span class="text-danger">*</span></label>
+                        {{ form.so_hop_dong }}
+                        {% for error in form.so_hop_dong.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Ngày ký</label>
+                        {{ form.ngay_ky }}
+                        {% for error in form.ngay_ky.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Trạng thái</label>
+                        {{ form.trang_thai }}
+                        {% for error in form.trang_thai.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Từ ngày <span class="text-danger">*</span></label>
+                        {{ form.tu_ngay }}
+                        {% for error in form.tu_ngay.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Đến ngày <span class="text-danger">*</span></label>
+                        {{ form.den_ngay }}
+                        {% for error in form.den_ngay.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">Đơn giá công</label>
+                        {{ form.don_gia_cong }}
+                        {% for error in form.don_gia_cong.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Định mức đi lại PHCN</label>
+                        {{ form.dinh_muc_di_lai_phcn }}
+                        {% for error in form.dinh_muc_di_lai_phcn.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Định mức đi lại CSXH</label>
+                        {{ form.dinh_muc_di_lai_cs }}
+                        {% for error in form.dinh_muc_di_lai_cs.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Giá trị hợp đồng</label>
+                        {{ form.gia_tri_hop_dong }}
+                        <div class="form-text">Giá trị được lấy theo Phân bổ chỉ tiêu, không tính lại theo số trẻ phân công.</div>
+                        {% for error in form.gia_tri_hop_dong.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Ghi chú</label>
+                        {{ form.ghi_chu }}
+                        {% for error in form.ghi_chu.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between mt-4">
+                    <a href="{% url 'danh_sach_de_xuat' %}" class="btn btn-secondary">Quay lại</a>
+                    <button type="submit" class="btn btn-success">
+                        Lưu Hợp đồng chính thức
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
