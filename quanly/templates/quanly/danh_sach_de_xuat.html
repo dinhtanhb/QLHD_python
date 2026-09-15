@@ -1,210 +1,50 @@
 {% extends 'quanly/base.html' %}
-{% block title %}Danh sách Đề xuất Hợp đồng{% endblock %}
+{% block title %}Đề xuất hợp đồng{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
     <div class="card shadow">
-        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center py-3">
-            <h4 class="mb-0 fw-bold">Danh Sách Đề Xuất Hợp Đồng (Chờ Tạo HĐ)</h4>
+        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+            <h4 class="mb-0">Danh sách Đề xuất hợp đồng</h4>
         </div>
         <div class="card-body">
-            {% if messages %}
-                {% for message in messages %}
-                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show mb-3" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">{{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+            {% endfor %}
+            <form method="get" class="row g-2 mb-3">
+                <div class="col-md-5"><input class="form-control" name="q" value="{{ query }}" placeholder="Mã CBCT hoặc họ tên..."></div>
+                <div class="col-auto"><button class="btn btn-primary">Tìm kiếm</button></div>
+            </form>
             <div class="table-responsive">
-                <table class="table table-bordered table-hover align-middle mb-0">
-                    <thead class="table-dark text-center align-middle">
-                        <tr>
-                            <th style="width: 20%;">Cán bộ chuyên trách</th>
-                            <th style="width: 26%;">Chỉ tiêu & Định mức đi lại</th>
-                            <th style="width: 12%;">Giá trị dự kiến</th>
-                            <th style="width: 10%;">Số HĐ</th>
-                            <th style="width: 9%;">Ngày ký</th>
-                            <th style="width: 13%;">Thời gian thực hiện</th>
-                            <th style="width: 10%;">Thao tác</th>
-                        </tr>
+                <table class="table table-bordered table-hover align-middle">
+                    <thead class="table-dark text-center">
+                        <tr><th>#</th><th>CBCT</th><th>Nhóm HĐ</th><th>Ngày đề xuất</th><th>Khối lượng</th><th>Giá trị dự kiến</th><th>Trạng thái</th><th>Thao tác</th></tr>
                     </thead>
                     <tbody>
-                        {% for item in danh_sach %}
+                    {% for item in danh_sach %}
                         <tr>
-                            <!-- Cột 1: Cán bộ chuyên trách (2 dòng) -->
-                            <td>
-                                <!-- Thẻ form ẩn hợp lệ chuẩn HTML5 -->
-                                <form id="form-tao-hd-{{ item.pk }}" method="POST" action="{% url 'tao_hop_dong_chinh_thuc' item.pk %}">
-                                    {% csrf_token %}
-                                </form>
-
-                                <div class="fw-bold text-dark mb-1">
-                                    {{ item.can_bo.ma_can_bo }} - {{ item.can_bo.ho_ten }}
-                                </div>
-                                <div class="text-muted small">
-                                    Nhóm HĐ: <span class="fw-semibold text-secondary">{{ item.nhom_hd|default:"1" }}</span>
-                                </div>
-                            </td>
-
-                            <!-- Cột 2: Chỉ tiêu & Định mức (2 dòng rõ ràng) -->
-                            <td>
-                                <div class="pb-1 mb-1 border-bottom">
-                                    <strong class="text-primary">PHCN:</strong> {{ item.so_tre_phcn }} trẻ (<strong>{{ item.so_buoi_phcn }} buổi</strong>) - ĐM: {{ item.dinh_muc_di_lai_phcn|floatformat:0 }} đ
-                                </div>
-                                <div>
-                                    <strong class="text-success">CSXH:</strong> {{ item.so_tre_cs }} trẻ (<strong>{{ item.so_buoi_cs }} buổi</strong>) - ĐM: {{ item.dinh_muc_di_lai_cs|floatformat:0 }} đ
-                                </div>
-                            </td>
-
-                            <!-- Cột 3: Giá trị dự kiến -->
-                            <td class="text-center fw-bold text-success fs-6">
-                                {{ item.gia_tri_hd_du_kien|floatformat:"0" }} VNĐ
-                            </td>
-
-                            <!-- Cột 4: Số HĐ -->
-                            <td>
-                                <input type="text" name="so_hop_dong" form="form-tao-hd-{{ item.pk }}" class="form-control form-control-sm text-center" required placeholder="Số HĐ">
-                            </td>
-
-                            <!-- Cột 5: Ngày ký -->
-                            <td>
-                                <input type="date" name="ngay_ky" form="form-tao-hd-{{ item.pk }}" class="form-control form-control-sm px-1" required>
-                            </td>
-
-                            <!-- Cột 6: Thời gian thực hiện (2 dòng xếp dọc) -->
-                            <td>
-                                <div class="mb-1">
-                                    <input type="date" name="tu_ngay" form="form-tao-hd-{{ item.pk }}" class="form-control form-control-sm px-1" title="Từ ngày" required>
-                                </div>
-                                <div>
-                                    <input type="date" name="den_ngay" form="form-tao-hd-{{ item.pk }}" class="form-control form-control-sm px-1" title="Đến ngày" required>
-                                </div>
-                            </td>
-
-                            <!-- Cột 7: Thao tác (2 nút xếp dọc khớp 2 dòng) -->
+                            <td>{{ forloop.counter }}</td>
+                            <td><strong>{{ item.phan_bo.can_bo.ma_can_bo }}</strong><br>{{ item.phan_bo.can_bo.ho_ten }}</td>
+                            <td>{{ item.phan_bo.nhom_hd.ma_nhom_hd }} - {{ item.phan_bo.nhom_hd.ten_nhom_hd }}</td>
+                            <td>{{ item.ngay_de_xuat|date:"d/m/Y" }}</td>
+                            <td>PHCN: {{ item.so_tre_phcn }} trẻ / {{ item.so_buoi_phcn }} buổi<br>CSXH: {{ item.so_tre_cs }} trẻ / {{ item.so_buoi_cs }} buổi</td>
+                            <td class="fw-bold text-success">{{ item.gia_tri_du_kien|floatformat:0 }} đ</td>
+                            <td class="text-center">{{ item.get_trang_thai_display }}</td>
                             <td class="text-center">
-                                <div class="d-flex flex-column gap-1">
-                                    <!-- Nút Sửa kích hoạt Modal qua hàm JS trực tiếp -->
-                                    <button type="button" 
-                                            class="btn btn-warning btn-sm fw-bold text-dark py-1" 
-                                            onclick="openEditModal('editModal-{{ forloop.counter }}')">
-                                        ✏️ Sửa
-                                    </button>
-
-                                    <!-- Nút Submit Tạo HĐ -->
-                                    <button type="submit" 
-                                            form="form-tao-hd-{{ item.pk }}" 
-                                            class="btn btn-success btn-sm fw-bold py-1">
-                                        ✔️ Tạo HĐ
-                                    </button>
-                                </div>
+                                {% if item.trang_thai != 'DA_TAO_HOP_DONG' and item.trang_thai != 'HUY' and item.trang_thai != 'TU_CHOI' %}
+                                <a href="{% url 'duyet_de_xuat' item.pk %}" class="btn btn-sm btn-warning">Duyệt</a>
+                                <a href="{% url 'tao_hop_dong_chinh_thuc' item.pk %}" class="btn btn-sm btn-success">Tạo HĐ</a>
+                                {% endif %}
                             </td>
                         </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="7" class="text-center text-muted py-4">Không có đề xuất nào đang chờ xử lý.</td>
-                        </tr>
-                        {% endfor %}
+                    {% empty %}
+                        <tr><td colspan="8" class="text-center text-muted py-4">Chưa có đề xuất hợp đồng.</td></tr>
+                    {% endfor %}
                     </tbody>
                 </table>
             </div>
+            {% include 'quanly/_pagination.html' with page_obj=page_obj query=query %}
         </div>
     </div>
 </div>
-
-<!-- ========================================== -->
-<!-- CÁC MODAL SỬA SỐ BUỔI (ĐẶT NGOÀI BẢNG TABLE) -->
-<!-- ========================================== -->
-{% for item in danh_sach %}
-<div class="modal fade" id="editModal-{{ forloop.counter }}" tabindex="-1" aria-labelledby="editModalLabel-{{ forloop.counter }}" aria-hidden="true" style="display: none;">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <form method="POST" action="{% url 'sua_phan_bo_chi_tieu' item.pk %}">
-                {% csrf_token %}
-                <div class="modal-header bg-warning text-dark">
-                    <h5 class="modal-title fw-bold" id="editModalLabel-{{ forloop.counter }}">
-                        ✏️ Điều chỉnh số buổi: {{ item.can_bo.ho_ten }}
-                    </h5>
-                    <button type="button" class="btn-close" onclick="closeEditModal('editModal-{{ forloop.counter }}')" aria-label="Close"></button>
-                </div>
-                <div class="modal-body text-start">
-                    <div class="alert alert-secondary py-2 mb-3" style="font-size: 0.9rem;">
-                        <strong>Mã CB:</strong> {{ item.can_bo.ma_can_bo }} | <strong>Nhóm HĐ:</strong> {{ item.nhom_hd|default:"1" }}
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold text-primary">Số buổi PHCN (Chỉ tiêu: {{ item.so_tre_phcn }} trẻ)</label>
-                        <input type="number" name="so_buoi_phcn" class="form-control" value="{{ item.so_buoi_phcn }}" min="0" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold text-success">Số buổi CSXH (Chỉ tiêu: {{ item.so_tre_cs }} trẻ)</label>
-                        <input type="number" name="so_buoi_cs" class="form-control" value="{{ item.so_buoi_cs }}" min="0" required>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeEditModal('editModal-{{ forloop.counter }}')">Hủy</button>
-                    <button type="submit" class="btn btn-primary fw-bold">💾 Lưu & Tính lại Giá trị HĐ</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-{% endfor %}
-
-<!-- Script xử lý mở Modal an toàn -->
-<script>
-function openEditModal(modalId) {
-    var modalEl = document.getElementById(modalId);
-    if (!modalEl) return;
-
-    // 1. Nếu có Bootstrap 5
-    if (window.bootstrap && window.bootstrap.Modal) {
-        var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-        modal.show();
-        return;
-    }
-
-    // 2. Nếu có Bootstrap 4 / jQuery
-    if (window.jQuery && jQuery.fn.modal) {
-        jQuery('#' + modalId).modal('show');
-        return;
-    }
-
-    // 3. Hiển thị thuần JS (Trường hợp trang chưa nạp thư viện Bootstrap JS)
-    modalEl.classList.add('show');
-    modalEl.style.display = 'block';
-    modalEl.removeAttribute('aria-hidden');
-    modalEl.setAttribute('aria-modal', 'true');
-
-    if (!document.getElementById('custom-backdrop-' + modalId)) {
-        var backdrop = document.createElement('div');
-        backdrop.id = 'custom-backdrop-' + modalId;
-        backdrop.className = 'modal-backdrop fade show';
-        document.body.appendChild(backdrop);
-    }
-}
-
-function closeEditModal(modalId) {
-    var modalEl = document.getElementById(modalId);
-    if (!modalEl) return;
-
-    if (window.bootstrap && window.bootstrap.Modal) {
-        var modal = bootstrap.Modal.getInstance(modalEl);
-        if (modal) modal.hide();
-    }
-    if (window.jQuery && jQuery.fn.modal) {
-        jQuery('#' + modalId).modal('hide');
-    }
-
-    modalEl.classList.remove('show');
-    modalEl.style.display = 'none';
-    modalEl.setAttribute('aria-hidden', 'true');
-    modalEl.removeAttribute('aria-modal');
-
-    var backdrop = document.getElementById('custom-backdrop-' + modalId);
-    if (backdrop) backdrop.remove();
-}
-</script>
-
 {% endblock %}
