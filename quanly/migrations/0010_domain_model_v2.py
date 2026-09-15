@@ -27,7 +27,7 @@ class Migration(migrations.Migration):
         migrations.AddField(model_name="xa", name="created_at", field=models.DateTimeField(auto_now_add=True, default=timezone.now, verbose_name="Ngày tạo"), preserve_default=False),
         migrations.AddField(model_name="xa", name="updated_at", field=models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")),
         migrations.AddField(model_name="xa", name="is_active", field=models.BooleanField(default=True, verbose_name="Đang sử dụng")),
-        migrations.AlterField(model_name="xa", name="tinh", field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="quanly.tinh", verbose_name="Thuộc Tỉnh")),
+        migrations.AlterField(model_name="xa", name="tinh", field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="danh_sach_xa", to="quanly.tinh", verbose_name="Thuộc Tỉnh")),
         migrations.AddField(model_name="donvi", name="created_at", field=models.DateTimeField(auto_now_add=True, default=timezone.now, verbose_name="Ngày tạo"), preserve_default=False),
         migrations.AddField(model_name="donvi", name="updated_at", field=models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")),
         migrations.AddField(model_name="donvi", name="is_active", field=models.BooleanField(default=True, verbose_name="Đang sử dụng")),
