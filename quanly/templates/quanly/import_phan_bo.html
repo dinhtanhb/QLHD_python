@@ -1,86 +1,13 @@
 {% extends 'quanly/base.html' %}
-
+{% block title %}Import Phân bổ chỉ tiêu{% endblock %}
 {% block content %}
-<div class="container-fluid mt-4">
-    <div class="card shadow">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <h4 class="mb-0"><i class="bi bi-file-earmark-excel"></i> Import Phân Bổ Chỉ Tiêu</h4>
-            <a href="{% url 'danh_sach_phan_bo' %}" class="btn btn-light btn-sm"><i class="bi bi-arrow-left"></i> Danh sách phân bổ</a>
-        </div>
-        <div class="card-body">
-            
-            {% if not has_preview %}
-            <!-- FORM TẢI FILE EXCEL -->
-            <form method="post" enctype="multipart/form-data">
-                {% csrf_token %}
-                <div class="mb-3">
-                    <label class="form-label fw-bold">Chọn file Excel dữ liệu Phân bổ:</label>
-                    <input type="file" name="excel_file" class="form-control" accept=".xlsx, .xls" required>
-                </div>
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-search"></i> Kiểm tra & Validate Dữ liệu
-                </button>
-            </form>
-            {% else %}
-
-            <!-- KẾT QUẢ KIỂM TRA & BẢNG PREVIEW -->
-            <div class="alert alert-info d-flex justify-content-between align-items-center">
-                <div>
-                    <strong>Kết quả kiểm tra:</strong> 
-                    <span class="badge bg-success fs-6 me-2">Hợp lệ: {{ valid_count }}</span>
-                    <span class="badge bg-danger fs-6">Không hợp lệ: {{ invalid_count }}</span>
-                </div>
-                <form method="post" class="d-inline">
-                    {% csrf_token %}
-                    <input type="hidden" name="confirm_save" value="1">
-                    <button type="submit" class="btn btn-success fw-bold" {% if valid_count == 0 %}disabled{% endif %}>
-                        <i class="bi bi-box-arrow-down"></i> Lưu {{ valid_count }} bản ghi hợp lệ vào Database
-                    </button>
-                    <a href="{% url 'import_phan_bo' %}" class="btn btn-outline-secondary">Hủy / Tải file khác</a>
-                </form>
-            </div>
-
-            <div class="table-responsive">
-                <table class="table table-bordered table-hover align-middle">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Dòng</th>
-                            <th>Mã CB</th>
-                            <th>Tên Cán Bộ</th>
-                            <th>Nhóm HĐ</th>
-                            <th>PHCN (Trẻ x Buổi)</th>
-                            <th>CSXH (Trẻ x Buổi)</th>
-                            <th>Giá trị dự kiến</th>
-                            <th>Trạng thái</th>
-                            <th>Lỗi</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in preview_data %}
-                        <tr class="{% if not row.is_valid %}table-danger{% else %}table-success{% endif %}">
-                            <td>{{ row.row_num }}</td>
-                            <td><strong>{{ row.ma_cb }}</strong></td>
-                            <td>{{ row.ten_cb }}</td>
-                            <td>{{ row.nhom_hd }}</td>
-                            <td>{{ row.so_tre_phcn }} trẻ ({{ row.so_buoi_phcn }} buổi)</td>
-                            <td>{{ row.so_tre_cs }} trẻ ({{ row.so_buoi_cs }} buổi)</td>
-                            <td class="fw-bold text-primary">{{ row.gia_tri_du_kien|floatformat:0 }} VNĐ</td>
-                            <td>
-                                {% if row.is_valid %}
-                                    <span class="badge bg-success"><i class="bi bi-check-circle"></i> Hợp lệ</span>
-                                {% else %}
-                                    <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Không hợp lệ</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-danger fw-semibold">{{ row.error_msg }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
-
-        </div>
-    </div>
-</div>
+<div class="container-fluid mt-4"><div class="card shadow"><div class="card-header bg-primary text-white d-flex justify-content-between"><h4 class="mb-0">Import Phân bổ chỉ tiêu</h4><a href="{% url 'danh_sach_phan_bo' %}" class="btn btn-light btn-sm">Danh sách phân bổ</a></div><div class="card-body">
+{% for message in messages %}<div class="alert alert-{{ message.tags }}">{{ message }}</div>{% endfor %}
+{% if not has_preview %}
+<form method="post" enctype="multipart/form-data">{% csrf_token %}<div class="mb-3"><label class="form-label fw-bold">File Excel</label><input type="file" name="excel_file" class="form-control" accept=".xlsx,.xls" required></div><button class="btn btn-primary">Kiểm tra dữ liệu</button></form>
+{% else %}
+<div class="alert alert-info d-flex justify-content-between align-items-center"><div><strong>Kết quả:</strong> <span class="badge bg-success">Hợp lệ {{ valid_count }}</span> <span class="badge bg-danger">Lỗi {{ invalid_count }}</span></div><div><form method="post" action="{% url 'confirm_import_phan_bo' %}" class="d-inline">{% csrf_token %}<button class="btn btn-success" {% if valid_count == 0 %}disabled{% endif %}>Lưu dữ liệu hợp lệ</button></form> <a href="{% url 'import_phan_bo' %}" class="btn btn-outline-secondary">Tải file khác</a></div></div>
+<div class="table-responsive"><table class="table table-bordered table-hover align-middle"><thead class="table-dark"><tr><th>Dòng</th><th>CBCT</th><th>Nhóm</th><th>PHCN</th><th>CSXH</th><th>Giá trị dự kiến</th><th>Trạng thái</th><th>Lỗi</th></tr></thead><tbody>{% for row in preview_data %}<tr class="{% if row.is_valid %}table-success{% else %}table-danger{% endif %}"><td>{{ row.row_num }}</td><td>{{ row.ma_cb }}<br>{{ row.ten_cb }}</td><td>{{ row.nhom_hd }}</td><td>{{ row.so_tre_phcn }} / {{ row.so_buoi_phcn }}</td><td>{{ row.so_tre_cs }} / {{ row.so_buoi_cs }}</td><td>{{ row.gia_tri_du_kien|floatformat:0 }} đ</td><td>{% if row.is_valid %}Hợp lệ{% else %}Không hợp lệ{% endif %}</td><td class="text-danger">{{ row.error_msg }}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div></div></div>
 {% endblock %}
