@@ -1,0 +1,10 @@
+{% extends 'quanly/base.html' %}
+{% block title %}Tạo đề xuất hợp đồng{% endblock %}
+{% block content %}
+<div class="container mt-4"><div class="card shadow"><div class="card-header bg-info text-white"><h5 class="mb-0">Tạo Đề xuất hợp đồng</h5></div><div class="card-body">
+<p><strong>CBCT:</strong> {{ phan_bo.can_bo.ma_can_bo }} - {{ phan_bo.can_bo.ho_ten }}</p>
+<p><strong>Nhóm HĐ:</strong> {{ phan_bo.nhom_hd.ma_nhom_hd }} - {{ phan_bo.nhom_hd.ten_nhom_hd }}</p>
+<p class="text-muted">Hệ thống sẽ lấy dữ liệu phân công trẻ hiện có để tạo snapshot đề xuất. Phân bổ không có phân công sẽ không được tạo đề xuất.</p>
+<form method="post">{% csrf_token %}<a href="{% url 'danh_sach_phan_bo' %}" class="btn btn-secondary">Hủy</a> <button class="btn btn-success">Xác nhận tạo đề xuất</button></form>
+</div></div></div>
+{% endblock %}
