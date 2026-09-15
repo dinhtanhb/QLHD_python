@@ -8,6 +8,7 @@
             <h4 class="mb-0">Danh sách Phân bổ chỉ tiêu</h4>
             <div class="d-flex gap-2">
                 <a href="{% url 'phan_bo_chi_tieu' %}" class="btn btn-light btn-sm fw-bold">+ Phân bổ mới</a>
+                <a href="{% url 'danh_sach_phan_cong' %}" class="btn btn-light btn-sm fw-bold">Danh sách phân công</a>
                 <a href="{% url 'import_phan_bo' %}" class="btn btn-light btn-sm fw-bold">Import Excel</a>
             </div>
         </div>
@@ -42,14 +43,26 @@
                             <td>{{ item.ngay_lap|date:"d/m/Y" }}</td>
                             <td>{{ item.so_tre_phcn }} trẻ / {{ item.so_buoi_phcn }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_phcn|floatformat:0 }} đ</td>
                             <td>{{ item.so_tre_cs }} trẻ / {{ item.so_buoi_cs }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_cs|floatformat:0 }} đ</td>
-                            <td class="text-center">{{ item.danh_sach_phan_cong.count }}</td>
+                            <td class="text-center">
+                                {% if item.danh_sach_phan_cong.count > 0 %}
+                                    <span class="badge bg-success">{{ item.danh_sach_phan_cong.count }}</span>
+                                    <a href="{% url 'danh_sach_phan_cong' %}?phan_bo_id={{ item.pk }}" class="btn btn-sm btn-outline-primary ms-1">Xem</a>
+                                {% else %}
+                                    <span class="badge bg-secondary">0</span>
+                                {% endif %}
+                            </td>
                             <td class="text-center">
                                 {% if item.is_locked %}<span class="badge bg-secondary">Đã khóa</span>{% else %}<span class="badge bg-warning text-dark">Đang mở</span>{% endif %}
                             </td>
                             <td class="text-center">
-                                {% if not item.is_locked %}<a href="{% url 'sua_phan_bo_chi_tieu' item.pk %}" class="btn btn-sm btn-warning">Sửa</a>{% endif %}
-                                {% if not item.is_locked and item.danh_sach_phan_cong.exists %}<a href="{% url 'tao_de_xuat_hop_dong' item.pk %}" class="btn btn-sm btn-success">Tạo đề xuất</a>{% endif %}
-                                {% if not item.is_locked %}<a href="{% url 'khoa_phan_bo' item.pk %}" class="btn btn-sm btn-secondary">Khóa</a>{% endif %}
+                                {% if not item.is_locked %}
+                                    <a href="{% url 'them_phan_cong' %}?phan_bo_id={{ item.pk }}" class="btn btn-sm btn-primary">Phân công</a>
+                                    <a href="{% url 'sua_phan_bo_chi_tieu' item.pk %}" class="btn btn-sm btn-warning">Sửa</a>
+                                    {% if item.danh_sach_phan_cong.exists %}<a href="{% url 'tao_de_xuat_hop_dong' item.pk %}" class="btn btn-sm btn-success">Tạo đề xuất</a>{% endif %}
+                                    <a href="{% url 'khoa_phan_bo' item.pk %}" class="btn btn-sm btn-secondary">Khóa</a>
+                                {% else %}
+                                    {% if item.danh_sach_phan_cong.exists %}<a href="{% url 'danh_sach_phan_cong' %}?phan_bo_id={{ item.pk }}" class="btn btn-sm btn-outline-primary">Xem phân công</a>{% endif %}
+                                {% endif %}
                             </td>
                         </tr>
                     {% empty %}
