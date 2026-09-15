@@ -443,7 +443,12 @@ def import_can_bo(request):
 @hopdong_required
 def danh_sach_phan_cong(request):
     query = request.GET.get("q", "").strip()
+    phan_bo_id = request.GET.get("phan_bo_id", "").strip()
     qs = PhanCongTre.objects.select_related("tre", "phan_bo__can_bo", "phan_bo__nhom_hd")
+
+    if phan_bo_id.isdigit():
+        qs = qs.filter(phan_bo_id=int(phan_bo_id))
+
     if query:
         qs = qs.filter(
             Q(tre__ma_tre__icontains=query)
@@ -451,18 +456,56 @@ def danh_sach_phan_cong(request):
             | Q(phan_bo__can_bo__ma_can_bo__icontains=query)
             | Q(phan_bo__can_bo__ho_ten__icontains=query)
         )
+
     page_obj = Paginator(qs.order_by("-ngay_phan_cong", "-id"), 20).get_page(request.GET.get("page"))
-    return render(request, "quanly/danh_sach_phan_cong.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query})
+    phan_bo = None
+    if phan_bo_id.isdigit():
+        phan_bo = PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd").filter(pk=int(phan_bo_id)).first()
+
+    return render(
+        request,
+        "quanly/danh_sach_phan_cong.html",
+        {
+            "page_obj": page_obj,
+            "danh_sach": page_obj,
+            "query": query,
+            "phan_bo": phan_bo,
+            "phan_bo_id": phan_bo_id,
+        },
+    )
 
 
 @hopdong_required
 def them_phan_cong(request):
-    form = PhanCongTreForm(request.POST or None)
+    phan_bo_id = request.GET.get("phan_bo_id") or request.POST.get("phan_bo")
+    phan_bo = None
+    if phan_bo_id and str(phan_bo_id).isdigit():
+        phan_bo = get_object_or_404(
+            PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd"),
+            pk=int(phan_bo_id),
+        )
+        if phan_bo.is_locked:
+            messages.error(request, f"Phân bổ #{phan_bo.pk} đã khóa, không thể thêm phân công.")
+            return redirect("danh_sach_phan_bo")
+
+    if request.method == "POST":
+        form = PhanCongTreForm(request.POST)
+    else:
+        initial = {"phan_bo": phan_bo} if phan_bo else {}
+        form = PhanCongTreForm(initial=initial)
+
     if request.method == "POST" and form.is_valid():
-        form.save()
-        messages.success(request, "Đã thêm phân công trẻ.")
+        obj = form.save()
+        messages.success(request, f"Đã thêm phân công trẻ #{obj.pk} cho phân bổ #{obj.phan_bo_id}.")
+        if phan_bo:
+            return redirect("danh_sach_phan_cong")
         return redirect("danh_sach_phan_cong")
-    return render(request, "quanly/them_phan_cong.html", {"form": form})
+
+    return render(
+        request,
+        "quanly/them_phan_cong.html",
+        {"form": form, "phan_bo": phan_bo},
+    )
 
 
 @hopdong_required
@@ -750,88 +793,83 @@ def danh_sach_de_xuat(request):
     if query:
         qs = qs.filter(Q(phan_bo__can_bo__ho_ten__icontains=query) | Q(phan_bo__can_bo__ma_can_bo__icontains=query))
     page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
-    return render(request, "quanly/danh_sach_de_xuat.html", {"danh_sach": page_obj, "page_obj": page_obj, "query": query})
+    return render(request, "quanly/danh_sach_de_xuat.html", {"page_obj": page_obj, "query": query})
+
+
+@hopdong_required
+def tao_de_xuat_hop_dong(request, pk):
+    phan_bo = get_object_or_404(PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd"), pk=pk)
+    if request.method == "POST":
+        try:
+            with transaction.atomic():
+                proposal = build_proposal_from_allocation(phan_bo)
+                phan_bo.is_locked = True
+                phan_bo.save(update_fields=["is_locked", "updated_at"])
+            messages.success(request, f"Đã tạo Đề xuất HĐ #{proposal.pk} cho {phan_bo.can_bo.ho_ten}.")
+            return redirect("danh_sach_de_xuat")
+        except ValueError as exc:
+            messages.error(request, str(exc))
+    return render(request, "quanly/xac_nhan_tao_de_xuat.html", {"phan_bo": phan_bo})
+
+
+@hopdong_required
+def danh_sach_de_xuat(request):
+    query = request.GET.get("q", "").strip()
+    qs = DeXuatHopDong.objects.select_related("phan_bo__can_bo", "phan_bo__nhom_hd").order_by("-ngay_de_xuat", "-id")
+    if query:
+        qs = qs.filter(Q(phan_bo__can_bo__ho_ten__icontains=query) | Q(phan_bo__can_bo__ma_can_bo__icontains=query))
+    page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
+    return render(request, "quanly/danh_sach_de_xuat.html", {"page_obj": page_obj, "query": query})
 
 
 @hopdong_required
 def duyet_de_xuat(request, pk):
     proposal = get_object_or_404(DeXuatHopDong, pk=pk)
     if request.method == "POST":
-        proposal.trang_thai = "DA_DUYET"
+        proposal.trang_thai = "DUYET"
         proposal.save(update_fields=["trang_thai", "updated_at"])
-        messages.success(request, f"Đã duyệt Đề xuất HĐ #{proposal.pk}.")
-        return redirect("danh_sach_de_xuat")
-    return render(request, "quanly/xac_nhan_duyet_de_xuat.html", {"de_xuat": proposal})
+        messages.success(request, "Đã duyệt đề xuất hợp đồng.")
+    return redirect("danh_sach_de_xuat")
 
 
-# =========================================================
-# HỢP ĐỒNG CHÍNH THỨC + PHỤ LỤC KỲ 1
-# =========================================================
 @hopdong_required
 def tao_hop_dong_chinh_thuc(request, pk):
     proposal = get_object_or_404(DeXuatHopDong.objects.select_related("phan_bo__can_bo", "phan_bo__nhom_hd"), pk=pk)
-    if proposal.trang_thai not in {"DA_DUYET", "CHO_KIEM_TRA", "DU_DIEU_KIEN"}:
-        messages.error(request, "Đề xuất không ở trạng thái cho phép tạo hợp đồng.")
-        return redirect("danh_sach_de_xuat")
-
-    initial = {
-        "de_xuat": proposal.pk,
-        "can_bo": proposal.phan_bo.can_bo_id,
-        "nhom_hd": proposal.phan_bo.nhom_hd_id,
-        "tu_ngay": timezone.localdate(),
-        "den_ngay": timezone.localdate().replace(month=12, day=31),
-        "don_gia_cong": FinancialConfig.DON_GIA_CONG,
-        "dinh_muc_di_lai_phcn": proposal.phan_bo.dinh_muc_di_lai_phcn,
-        "dinh_muc_di_lai_cs": proposal.phan_bo.dinh_muc_di_lai_cs,
-        "gia_tri_hop_dong": proposal.gia_tri_du_kien,
-        "trang_thai": "DA_KY",
-    }
-    form = HopDongForm(request.POST or None, initial=initial)
-    if request.method == "POST" and form.is_valid():
-        try:
+    if request.method == "POST":
+        form = HopDongForm(request.POST)
+        if form.is_valid():
             with transaction.atomic():
-                hop_dong = form.save(commit=False)
-                hop_dong.de_xuat = proposal
-                hop_dong.can_bo = proposal.phan_bo.can_bo
-                hop_dong.nhom_hd = proposal.phan_bo.nhom_hd
-                hop_dong.full_clean()
-                hop_dong.save()
-
-                assignments = list(proposal.phan_bo.danh_sach_phan_cong.select_related("tre", "phan_bo__can_bo"))
-                if not assignments:
-                    raise ValueError("Không thể tạo hợp đồng vì Phân bổ chưa có phân công.")
-
-                # Khối lượng hợp đồng theo dịch vụ, snapshot đơn giá tại thời điểm ký.
+                hop_dong = form.save()
+                # Tự động tạo chi tiết khối lượng từ dữ liệu phân công.
+                assignments = proposal.phan_bo.danh_sach_phan_cong.all()
                 grouped = {}
                 for item in assignments:
-                    grouped.setdefault(item.loai_dich_vu, []).append(item)
-                for service, rows in grouped.items():
-                    so_tre = len({row.tre_id for row in rows})
-                    so_buoi = sum(row.so_buoi_du_kien for row in rows)
-                    dm = hop_dong.dinh_muc_di_lai_cs if service == "CSXH" else hop_dong.dinh_muc_di_lai_phcn
+                    grouped.setdefault(item.loai_dich_vu, {"so_tre": set(), "so_buoi": 0, "dinh_muc": item.dinh_muc_di_lai})
+                    grouped[item.loai_dich_vu]["so_tre"].add(item.tre_id)
+                    grouped[item.loai_dich_vu]["so_buoi"] += item.so_buoi_du_kien
+                for service, data in grouped.items():
+                    so_tre = len(data["so_tre"])
+                    so_buoi = data["so_buoi"]
                     ChiTietKhoiLuongHopDong.objects.create(
                         hop_dong=hop_dong,
                         loai_dich_vu=service,
                         so_tre=so_tre,
                         so_buoi=so_buoi,
                         don_gia_cong=hop_dong.don_gia_cong,
-                        dinh_muc_di_lai=dm,
+                        dinh_muc_di_lai=data["dinh_muc"],
                     )
 
-                # Snapshot Phụ lục Kỳ 1: dữ liệu ký HĐ độc lập với phân công về sau.
+                # Snapshot phụ lục Kỳ 1 tại thời điểm tạo hợp đồng.
                 phu_luc = PhuLucHopDong.objects.create(
                     hop_dong=hop_dong,
                     loai_phu_luc="KY_1",
                     so_phu_luc=f"PL-K1-{hop_dong.so_hop_dong}",
-                    ngay_lap=hop_dong.ngay_ky or timezone.localdate(),
-                    is_signed=bool(hop_dong.ngay_ky),
-                    ghi_chu="Snapshot phân công Kỳ 1 tại thời điểm tạo hợp đồng.",
+                    ngay_lap=timezone.localdate(),
                 )
-                ky1 = [row for row in assignments if row.ky_phan_cong == 1]
-                for item in ky1:
+                for item in assignments.select_related("tre", "phan_bo__can_bo"):
                     ChiTietPhuLucPhanCong.objects.create(
                         phu_luc=phu_luc,
-                        source_phan_cong=item,
+                        phan_cong=item,
                         ma_tre=item.tre.ma_tre,
                         ten_tre=item.tre.ho_ten,
                         ma_can_bo=item.phan_bo.can_bo.ma_can_bo,
@@ -846,42 +884,34 @@ def tao_hop_dong_chinh_thuc(request, pk):
                         hinh_thuc_ct=item.hinh_thuc_ct,
                         ghi_chu=item.ghi_chu,
                     )
+            messages.success(request, f"Đã tạo Hợp đồng {hop_dong.so_hop_dong} và Phụ lục Kỳ 1.")
+            return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+    else:
+        form = HopDongForm(initial={
+            "de_xuat": proposal,
+            "can_bo": proposal.phan_bo.can_bo,
+            "nhom_hd": proposal.phan_bo.nhom_hd,
+            "don_gia_cong": FinancialConfig.DON_GIA_CONG,
+            "dinh_muc_di_lai_phcn": proposal.phan_bo.dinh_muc_di_lai_phcn,
+            "dinh_muc_di_lai_cs": proposal.phan_bo.dinh_muc_di_lai_cs,
+            "gia_tri_hop_dong": proposal.gia_tri_du_kien,
+            "trang_thai": "DU_THAO",
+        })
+    return render(request, "quanly/tao_hop_dong_chinh_thuc.html", {"form": form, "proposal": proposal})
 
-                proposal.trang_thai = "DA_TAO_HOP_DONG"
-                proposal.save(update_fields=["trang_thai", "updated_at"])
-                proposal.phan_bo.is_locked = True
-                proposal.phan_bo.save(update_fields=["is_locked", "updated_at"])
 
-            messages.success(request, f"Đã tạo Hợp đồng {hop_dong.so_hop_dong} và snapshot Phụ lục Kỳ 1.")
-            return redirect("danh_sach_hop_dong")
-        except Exception as exc:
-            messages.error(request, f"Không thể tạo hợp đồng: {exc}")
-
-    return render(request, "quanly/xac_nhan_tao_hop_dong.html", {"de_xuat": proposal, "form": form})
-
-
-@readonly_required
+@hopdong_required
 def danh_sach_hop_dong(request):
-    query = request.GET.get("q", "").strip()
     qs = HopDong.objects.select_related("can_bo", "nhom_hd", "de_xuat").order_by("-ngay_ky", "-id")
-    if query:
-        qs = qs.filter(Q(so_hop_dong__icontains=query) | Q(can_bo__ho_ten__icontains=query) | Q(can_bo__ma_can_bo__icontains=query))
-    page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
-    return render(request, "quanly/danh_sach_hop_dong.html", {
-        "hop_dongs": page_obj,
-        "danh_sach": page_obj,
-        "page_obj": page_obj,
-        "query": query,
-    })
+    return render(request, "quanly/danh_sach_hop_dong.html", {"danh_sach": qs})
 
 
-@readonly_required
+@hopdong_required
 def chi_tiet_hop_dong(request, pk):
-    hop_dong = get_object_or_404(
-        HopDong.objects.select_related("can_bo", "nhom_hd", "de_xuat").prefetch_related("chi_tiet_khoi_luong", "phu_luc"),
-        pk=pk,
-    )
-    return render(request, "quanly/chi_tiet_hop_dong.html", {"hop_dong": hop_dong})
+    hop_dong = get_object_or_404(HopDong.objects.select_related("can_bo", "nhom_hd", "de_xuat"), pk=pk)
+    khoi_luong = hop_dong.chi_tiet_khoi_luong.all().order_by("loai_dich_vu")
+    phu_luc = hop_dong.phu_luc_hop_dong.all().prefetch_related("chi_tiet_phan_cong").order_by("-ngay_lap", "-id")
+    return render(request, "quanly/chi_tiet_hop_dong.html", {"hop_dong": hop_dong, "khoi_luong": khoi_luong, "phu_luc": phu_luc})
 
 
 @hopdong_required
@@ -895,9 +925,7 @@ def them_khoi_luong_hop_dong(request, hop_dong_id):
         item = form.save(commit=False)
         item.hop_dong = hop_dong
         item.save()
-        hop_dong.gia_tri_hop_dong = sum(x.thanh_tien for x in hop_dong.chi_tiet_khoi_luong.all())
-        hop_dong.save(update_fields=["gia_tri_hop_dong", "updated_at"])
-        messages.success(request, "Đã thêm khối lượng hợp đồng.")
+        messages.success(request, "Đã thêm chi tiết khối lượng hợp đồng.")
         return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     return render(request, "quanly/them_khoi_luong_hop_dong.html", {"form": form, "hop_dong": hop_dong})
 
@@ -905,32 +933,14 @@ def them_khoi_luong_hop_dong(request, hop_dong_id):
 @hopdong_required
 def them_phu_luc_hop_dong(request, hop_dong_id):
     hop_dong = get_object_or_404(HopDong, pk=hop_dong_id)
+    if hop_dong.is_locked:
+        messages.error(request, "Hợp đồng đã khóa, không thể thêm phụ lục.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     form = PhuLucHopDongForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        with transaction.atomic():
-            phu_luc = form.save(commit=False)
-            phu_luc.hop_dong = hop_dong
-            phu_luc.save()
-            # Bổ sung/điều chỉnh phải snapshot tại thời điểm lập phụ lục.
-            if phu_luc.loai_phu_luc in {"BO_SUNG", "DIEU_CHINH"}:
-                for item in hop_dong.de_xuat.phan_bo.danh_sach_phan_cong.select_related("tre", "phan_bo__can_bo"):
-                    ChiTietPhuLucPhanCong.objects.create(
-                        phu_luc=phu_luc,
-                        source_phan_cong=item,
-                        ma_tre=item.tre.ma_tre,
-                        ten_tre=item.tre.ho_ten,
-                        ma_can_bo=item.phan_bo.can_bo.ma_can_bo,
-                        ten_can_bo=item.phan_bo.can_bo.ho_ten,
-                        loai_dich_vu=item.loai_dich_vu,
-                        dot_phan_cong=item.dot_phan_cong,
-                        ky_phan_cong=item.ky_phan_cong,
-                        ngay_phan_cong=item.ngay_phan_cong,
-                        so_buoi_du_kien=item.so_buoi_du_kien,
-                        dinh_muc_di_lai=item.dinh_muc_di_lai,
-                        dia_diem_ct=item.dia_diem_ct,
-                        hinh_thuc_ct=item.hinh_thuc_ct,
-                        ghi_chu=item.ghi_chu,
-                    )
-        messages.success(request, "Đã tạo phụ lục và snapshot dữ liệu phân công.")
+        item = form.save(commit=False)
+        item.hop_dong = hop_dong
+        item.save()
+        messages.success(request, "Đã thêm phụ lục hợp đồng.")
         return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     return render(request, "quanly/them_phu_luc_hop_dong.html", {"form": form, "hop_dong": hop_dong})
