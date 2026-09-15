@@ -1,189 +1,475 @@
 from decimal import Decimal
+
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+
 from .financial import FinancialConfig
 
-class Tinh(models.Model):
+
+class TimeStampedModel(models.Model):
+    """Base model dùng chung cho các bảng nghiệp vụ."""
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
+
+    class Meta:
+        abstract = True
+
+
+class Tinh(TimeStampedModel):
     ma_tinh = models.CharField(max_length=20, unique=True, verbose_name="Mã Tỉnh")
     ten_tinh = models.CharField(max_length=100, verbose_name="Tên Tỉnh/Thành phố")
+    is_active = models.BooleanField(default=True, verbose_name="Đang sử dụng")
+
+    class Meta:
+        ordering = ["ten_tinh"]
+        verbose_name = "Tỉnh/Thành phố"
+        verbose_name_plural = "Tỉnh/Thành phố"
 
     def __str__(self):
-        return self.ten_tinh
+        return f"{self.ma_tinh} - {self.ten_tinh}"
 
 
-class Xa(models.Model):
+class Xa(TimeStampedModel):
     ma_xa = models.CharField(max_length=20, unique=True, verbose_name="Mã Xã")
     ten_xa = models.CharField(max_length=100, verbose_name="Tên Xã/Phường")
-    tinh = models.ForeignKey(Tinh, on_delete=models.CASCADE, verbose_name="Thuộc Tỉnh")
+    tinh = models.ForeignKey(
+        Tinh,
+        on_delete=models.PROTECT,
+        related_name="danh_sach_xa",
+        verbose_name="Thuộc Tỉnh",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Đang sử dụng")
+
+    class Meta:
+        ordering = ["ten_xa"]
+        verbose_name = "Xã/Phường"
+        verbose_name_plural = "Xã/Phường"
+        constraints = [
+            models.UniqueConstraint(fields=["tinh", "ten_xa"], name="uq_xa_tinh_ten"),
+        ]
 
     def __str__(self):
-        return self.ten_xa
+        return f"{self.ma_xa} - {self.ten_xa}"
 
-class DonVi(models.Model):
+
+class DonVi(TimeStampedModel):
     ma_don_vi = models.CharField(max_length=20, unique=True, verbose_name="Mã Đơn Vị")
     ten_don_vi = models.CharField(max_length=200, verbose_name="Tên Đơn Vị")
     dia_chi = models.CharField(max_length=500, blank=True, null=True, verbose_name="Địa chỉ")
-    mstdv = models.CharField(max_length=20, unique=True, verbose_name="Mã số thuế")
+    mstdv = models.CharField(max_length=20, blank=True, null=True, unique=True, verbose_name="Mã số thuế")
     nguoi_dai_dien = models.CharField(max_length=100, verbose_name="Người đại diện")
     dien_thoai = models.CharField(max_length=15, blank=True, null=True, verbose_name="Điện thoại")
     email = models.EmailField(max_length=100, blank=True, null=True, verbose_name="Email")
-    
+    is_active = models.BooleanField(default=True, verbose_name="Đang sử dụng")
+
+    class Meta:
+        ordering = ["ten_don_vi"]
+        verbose_name = "Đơn vị"
+        verbose_name_plural = "Đơn vị"
+
     def __str__(self):
         return f"{self.ma_don_vi} - {self.ten_don_vi}"
 
-class CanBo(models.Model):
+
+class CanBo(TimeStampedModel):
+    GIOI_TINH_CHOICES = [
+        ("Nam", "Nam"),
+        ("Nữ", "Nữ"),
+        ("Khác", "Khác"),
+    ]
+
     ma_can_bo = models.CharField(max_length=20, unique=True, verbose_name="Mã CBCT")
     ho_ten = models.CharField(max_length=100, verbose_name="Họ và tên")
-    gioi_tinh_choices = [
-        ('Nam', 'Nam'),
-        ('Nữ', 'Nữ'),
-        ('Khác', 'Khác'),
-    ]
-    tinh = models.ForeignKey(Tinh, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Tỉnh/Thành phố")
-    xa = models.ForeignKey(Xa, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Xã/Phường")
+    gioi_tinh = models.CharField(max_length=10, choices=GIOI_TINH_CHOICES, blank=True, null=True, verbose_name="Giới tính")
+    tinh = models.ForeignKey(Tinh, on_delete=models.PROTECT, null=True, blank=True, verbose_name="Tỉnh/Thành phố")
+    xa = models.ForeignKey(Xa, on_delete=models.PROTECT, null=True, blank=True, verbose_name="Xã/Phường")
     dia_chi = models.CharField(max_length=500, blank=True, null=True, verbose_name="Địa chỉ")
     dien_thoai = models.CharField(max_length=15, blank=True, null=True, verbose_name="Điện thoại")
     email = models.EmailField(max_length=100, blank=True, null=True, verbose_name="Email")
     cccd = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name="Số CCCD")
     mst = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="Mã số thuế")
-    gioi_tinh = models.CharField(max_length=10, null=True, blank=True, verbose_name="Giới tính")
     ngay_cap = models.DateField(null=True, blank=True, verbose_name="Ngày cấp CCCD")
-    noi_cap = models.CharField(max_length=200, verbose_name="Nơi cấp")
+    noi_cap = models.CharField(max_length=200, blank=True, null=True, verbose_name="Nơi cấp")
     tai_khoan = models.CharField(max_length=50, blank=True, null=True, verbose_name="Tài khoản")
     ngan_hang = models.CharField(max_length=100, blank=True, null=True, verbose_name="Ngân hàng")
     chi_nhanh = models.CharField(max_length=100, blank=True, null=True, verbose_name="Chi nhánh")
-    don_vi = models.ForeignKey(DonVi, on_delete=models.CASCADE, verbose_name="Đơn vị trực thuộc")
-        
+    don_vi = models.ForeignKey(DonVi, on_delete=models.PROTECT, verbose_name="Đơn vị trực thuộc")
+    is_active = models.BooleanField(default=True, verbose_name="Đang hoạt động")
+
+    class Meta:
+        ordering = ["ho_ten"]
+        verbose_name = "Cán bộ chuyên trách"
+        verbose_name_plural = "Cán bộ chuyên trách"
+
     def __str__(self):
         return f"{self.ma_can_bo} - {self.ho_ten}"
 
-class NhomHD(models.Model):
+
+class NhomHD(TimeStampedModel):
     ma_nhom_hd = models.CharField(max_length=20, unique=True, verbose_name="Mã nhóm hợp đồng")
     ten_nhom_hd = models.CharField(max_length=200, verbose_name="Tên nhóm hợp đồng")
+    is_active = models.BooleanField(default=True, verbose_name="Đang sử dụng")
+
+    class Meta:
+        ordering = ["ma_nhom_hd"]
+        verbose_name = "Nhóm hợp đồng"
+        verbose_name_plural = "Nhóm hợp đồng"
 
     def __str__(self):
         return f"{self.ma_nhom_hd} - {self.ten_nhom_hd}"
 
-class Tre(models.Model):
+
+class Tre(TimeStampedModel):
+    GIOI_TINH_CHOICES = [
+        ("Nam", "Nam"),
+        ("Nữ", "Nữ"),
+        ("Khác", "Khác"),
+    ]
+
     ma_tre = models.CharField(max_length=20, unique=True, verbose_name="Mã trẻ")
     ho_ten = models.CharField(max_length=100, verbose_name="Họ và tên")
     ngay_sinh = models.DateField(verbose_name="Ngày sinh")
-    gioi_tinh_choices = [
-            ('Nam', 'Nam'),
-            ('Nữ', 'Nữ'),
-            ('Khác', 'Khác'),
-        ]
-    gioi_tinh = models.CharField(max_length=10, choices=gioi_tinh_choices, verbose_name="Giới tính")
-    tinh = models.ForeignKey(Tinh, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Tỉnh/Thành phố")
-    xa = models.ForeignKey(Xa, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Xã/Phường")
-    ma_tinh = models.CharField(max_length=10, verbose_name="Mã tỉnh")
-    ten_phu_huynh = models.CharField(max_length=100, verbose_name="Tên phụ huynh")
+    gioi_tinh = models.CharField(max_length=10, choices=GIOI_TINH_CHOICES, verbose_name="Giới tính")
+    tinh = models.ForeignKey(Tinh, on_delete=models.PROTECT, null=True, blank=True, verbose_name="Tỉnh/Thành phố")
+    xa = models.ForeignKey(Xa, on_delete=models.PROTECT, null=True, blank=True, verbose_name="Xã/Phường")
+    ma_tinh = models.CharField(max_length=10, blank=True, null=True, verbose_name="Mã tỉnh")
+    ten_phu_huynh = models.CharField(max_length=100, blank=True, null=True, verbose_name="Tên phụ huynh")
     dien_thoai = models.CharField(max_length=15, blank=True, null=True, verbose_name="Điện thoại")
     ten_tai_khoan = models.CharField(max_length=100, blank=True, null=True, verbose_name="Tên tài khoản")
     tai_khoan = models.CharField(max_length=50, blank=True, null=True, verbose_name="Tài khoản")
     ngan_hang = models.CharField(max_length=100, blank=True, null=True, verbose_name="Ngân hàng")
     chi_nhanh = models.CharField(max_length=100, blank=True, null=True, verbose_name="Chi nhánh")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+    is_active = models.BooleanField(default=True, verbose_name="Đang sử dụng")
 
-# ==========================================
-# CÁC MODEL CHO NGHIỆP VỤ HỢP ĐỒNG & PHÂN CÔNG
-# ==========================================
-
-class ChiTieuHopDong(models.Model):
-    """Bảng lưu chỉ tiêu phân bổ cho CBCT để tính giá trị hợp đồng khung"""
-    can_bo = models.ForeignKey(CanBo, on_delete=models.CASCADE, verbose_name="Cán bộ can thiệp")
-    nhom_hd = models.ForeignKey(NhomHD, on_delete=models.CASCADE, verbose_name="Nhóm hợp đồng")
-    
-    so_tre_phcn = models.PositiveIntegerField(default=0, verbose_name="Số trẻ PHCN")
-    so_buoi_phcn = models.PositiveIntegerField(default=20, verbose_name="Số buổi/trẻ PHCN mặc định")
-    
-    so_tre_cs = models.PositiveIntegerField(default=0, verbose_name="Số trẻ Chăm sóc")
-    so_buoi_cs = models.PositiveIntegerField(default=10, verbose_name="Số buổi/trẻ CS mặc định")
-    
-    ngay_tao = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        ordering = ["ma_tre"]
+        verbose_name = "Trẻ"
+        verbose_name_plural = "Trẻ"
 
     def __str__(self):
-        return f"Chỉ tiêu {self.can_bo.ho_ten} - {self.nhom_hd}"
+        return f"{self.ma_tre} - {self.ho_ten}"
 
 
-class PhanBoChiTieu(models.Model):
-    TRANG_THAI_CHOICES = [
-        ('DE_XUAT', 'Chờ đề xuất HĐ'),
-        ('DA_TAO', 'Đã tạo Hợp đồng'),
-    ]
+class PhanBoChiTieu(TimeStampedModel):
+    """Phân bổ chỉ tiêu. Không chứa thông tin hợp đồng chính thức."""
 
-    DINH_MUC_CHOICES = [
-        (FinancialConfig.DON_GIA_DI_LAI_DM1, f"Định mức 1 ({FinancialConfig.DON_GIA_DI_LAI_DM1:,.0f} đ)"),
-        (FinancialConfig.DON_GIA_DI_LAI_DM2, f"Định mức 2 ({FinancialConfig.DON_GIA_DI_LAI_DM2:,.0f} đ)"),
-    ]
-
-    can_bo = models.ForeignKey('CanBo', on_delete=models.CASCADE, verbose_name="Cán bộ can thiệp")
+    can_bo = models.ForeignKey(CanBo, on_delete=models.PROTECT, related_name="phan_bo_chi_tieu", verbose_name="Cán bộ chuyên trách")
+    nhom_hd = models.ForeignKey(NhomHD, on_delete=models.PROTECT, related_name="phan_bo_chi_tieu", verbose_name="Nhóm hợp đồng")
     tham_gia_ct = models.BooleanField(default=True, verbose_name="Tham gia can thiệp")
-    ngay_lap_de_xuat = models.DateField(default=timezone.now, verbose_name="Ngày lập đề xuất")
-    nhom_hd = models.IntegerField(default=1, verbose_name="Nhóm hợp đồng")
-    
-    # Chỉ tiêu PHCN & Định mức đi lại PHCN (Lấy mặc định là DM1 = 50000 từ FinancialConfig)
-    so_tre_phcn = models.IntegerField(default=0)
-    so_buoi_phcn = models.IntegerField(default=20)
+    ngay_lap = models.DateField(default=timezone.now, verbose_name="Ngày lập phân bổ")
+
+    so_tre_phcn = models.PositiveIntegerField(default=0, verbose_name="Số trẻ PHCN")
+    so_buoi_phcn = models.PositiveIntegerField(default=20, verbose_name="Số buổi/trẻ PHCN")
     dinh_muc_di_lai_phcn = models.DecimalField(
-        max_digits=12, decimal_places=0, 
+        max_digits=12,
+        decimal_places=0,
         default=Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)),
-        verbose_name="Định mức đi lại PHCN"
+        verbose_name="Định mức đi lại PHCN",
     )
-    
-    # Chỉ tiêu CSXH & Định mức đi lại CSXH (Lấy mặc định là DM1 = 50000 từ FinancialConfig)
-    so_tre_cs = models.IntegerField(default=0)
-    so_buoi_cs = models.IntegerField(default=10)
+
+    so_tre_cs = models.PositiveIntegerField(default=0, verbose_name="Số trẻ CSXH")
+    so_buoi_cs = models.PositiveIntegerField(default=10, verbose_name="Số buổi/trẻ CSXH")
     dinh_muc_di_lai_cs = models.DecimalField(
-        max_digits=12, decimal_places=0, 
+        max_digits=12,
+        decimal_places=0,
         default=Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)),
-        verbose_name="Định mức đi lại CSXH"
+        verbose_name="Định mức đi lại CSXH",
     )
-    
-    # Giá trị HĐ dự kiến
-    gia_tri_hd_du_kien = models.DecimalField(max_digits=15, decimal_places=0, default=Decimal('0'))
-    
-    # Thông tin hợp đồng chính thức
-    so_hop_dong = models.CharField(max_length=50, blank=True, null=True)
-    ngay_ky = models.DateField(blank=True, null=True)
-    tu_ngay = models.DateField(blank=True, null=True)
-    den_ngay = models.DateField(blank=True, null=True)
-    
-    trang_thai = models.CharField(max_length=20, choices=TRANG_THAI_CHOICES, default='DE_XUAT', verbose_name="Trạng thái HĐ")
-    is_locked = models.BooleanField(default=False)
+
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+    is_locked = models.BooleanField(default=False, verbose_name="Đã khóa")
+
+    class Meta:
+        ordering = ["-ngay_lap", "-id"]
+        indexes = [
+            models.Index(fields=["can_bo", "ngay_lap"], name="idx_pbct_cb_ngay"),
+            models.Index(fields=["nhom_hd", "ngay_lap"], name="idx_pbct_nhom_ngay"),
+        ]
+
+    def __str__(self):
+        return f"PBCT #{self.pk} - {self.can_bo.ho_ten}"
 
 
-class PhanCongTre(models.Model):
-    """Danh sách trẻ được phân công cho CBCT trong đợt/kỳ can thiệp"""
-    hop_dong = models.ForeignKey(PhanBoChiTieu, on_delete=models.CASCADE, related_name='danh_sach_phan_cong', verbose_name="Hợp đồng")
-    tre = models.ForeignKey(Tre, on_delete=models.CASCADE, verbose_name="Trẻ")
-    
+class PhanCongTre(TimeStampedModel):
+    """Phân công trẻ theo phân bổ; chưa đồng nghĩa với thực tế thực hiện."""
+
     LOAI_DV_CHOICES = [
-        ('VLTL', 'Vật lý trị liệu'),
-        ('HDTL', 'Hoạt động trị liệu'),
-        ('NNTL', 'Ngôn ngữ trị liệu'),
-        ('GDDB', 'Giáo dục đặc biệt'),
-        ('CSXH', 'Chăm sóc xã hội'),
-        ('CSYT', 'Chăm sóc y tế'),
+        ("VLTL", "Vật lý trị liệu"),
+        ("HDTL", "Hoạt động trị liệu"),
+        ("NNTL", "Ngôn ngữ trị liệu"),
+        ("GDDB", "Giáo dục đặc biệt"),
+        ("CSXH", "Chăm sóc xã hội"),
+        ("CSYT", "Chăm sóc y tế"),
     ]
+    TRANG_THAI_CHOICES = [
+        ("DANG_CAN_THIEP", "Đang can thiệp"),
+        ("DA_HOAN_THANH", "Đã hoàn thành"),
+        ("KHONG_CAN_THIEP", "Không can thiệp"),
+    ]
+
+    phan_bo = models.ForeignKey(
+        PhanBoChiTieu,
+        on_delete=models.PROTECT,
+        related_name="danh_sach_phan_cong",
+        verbose_name="Phân bổ chỉ tiêu",
+    )
+    tre = models.ForeignKey(Tre, on_delete=models.PROTECT, related_name="danh_sach_phan_cong", verbose_name="Trẻ")
     loai_dich_vu = models.CharField(max_length=10, choices=LOAI_DV_CHOICES, verbose_name="Loại dịch vụ")
-    
-    so_buoi_du_kien = models.PositiveIntegerField(default=20, verbose_name="Số buổi dự kiến")
-    dinh_muc_di_lai = models.DecimalField(max_digits=10, decimal_places=0, default=Decimal('50000'), verbose_name="Định mức đi lại (VNĐ)")
-    
+    so_buoi_du_kien = models.PositiveIntegerField(default=0, verbose_name="Số buổi dự kiến")
+    dinh_muc_di_lai = models.DecimalField(max_digits=12, decimal_places=0, default=Decimal("0"), verbose_name="Định mức đi lại")
     dia_diem_ct = models.CharField(max_length=255, blank=True, null=True, verbose_name="Địa điểm can thiệp")
     hinh_thuc_ct = models.CharField(max_length=100, blank=True, null=True, verbose_name="Hình thức can thiệp")
-    dot_phan_cong = models.CharField(max_length=50, blank=True, null=True, verbose_name="Đợt phân công")
-    ky_phan_cong = models.CharField(max_length=50, blank=True, null=True, verbose_name="Kỳ phân công")
+    dot_phan_cong = models.PositiveIntegerField(default=1, verbose_name="Đợt phân công")
+    ky_phan_cong = models.PositiveIntegerField(default=1, verbose_name="Kỳ phân công")
     ngay_phan_cong = models.DateField(blank=True, null=True, verbose_name="Ngày phân công")
-    
-    TRANG_THAI_TRE = [
-        ('dang_can_thiệp', 'Đang can thiệp'),
-        ('da_hoan_thanh', 'Đã hoàn thành'),
-        ('khong_can_thiệp', 'Không can thiệp'),
-    ]
-    trang_thai = models.CharField(max_length=20, choices=TRANG_THAI_TRE, default='dang_can_thiệp', verbose_name="Trạng thái trẻ")
+    trang_thai = models.CharField(max_length=20, choices=TRANG_THAI_CHOICES, default="DANG_CAN_THIEP", verbose_name="Trạng thái")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    class Meta:
+        ordering = ["-ngay_phan_cong", "-id"]
+        indexes = [
+            models.Index(fields=["phan_bo", "dot_phan_cong"], name="idx_pct_pb_dot"),
+            models.Index(fields=["tre", "ky_phan_cong"], name="idx_pct_tre_ky"),
+            models.Index(fields=["loai_dich_vu", "ngay_phan_cong"], name="idx_pct_dv_ngay"),
+        ]
 
     def __str__(self):
-        return f"Phân công {self.tre.ho_ten} cho {self.hop_dong.can_bo.ho_ten if self.hop_dong else ''}"
+        return f"Phân công {self.tre.ho_ten} - {self.loai_dich_vu}"
 
+
+class DeXuatHopDong(TimeStampedModel):
+    """Đề xuất hợp đồng được tạo từ phân bổ + dữ liệu phân công thực tế."""
+
+    TRANG_THAI_CHOICES = [
+        ("CHO_KIEM_TRA", "Chờ kiểm tra"),
+        ("DU_DIEU_KIEN", "Đủ điều kiện"),
+        ("DA_DUYET", "Đã duyệt"),
+        ("DA_TAO_HOP_DONG", "Đã tạo hợp đồng"),
+        ("TU_CHOI", "Từ chối"),
+        ("HUY", "Hủy"),
+    ]
+
+    phan_bo = models.ForeignKey(PhanBoChiTieu, on_delete=models.PROTECT, related_name="de_xuat_hop_dong", verbose_name="Phân bổ chỉ tiêu")
+    lan_de_xuat = models.PositiveIntegerField(default=1, verbose_name="Lần đề xuất")
+    ngay_de_xuat = models.DateField(default=timezone.now, verbose_name="Ngày đề xuất")
+    so_tre_phcn = models.PositiveIntegerField(default=0, verbose_name="Số trẻ PHCN")
+    so_buoi_phcn = models.PositiveIntegerField(default=0, verbose_name="Số buổi PHCN")
+    so_tre_cs = models.PositiveIntegerField(default=0, verbose_name="Số trẻ CSXH")
+    so_buoi_cs = models.PositiveIntegerField(default=0, verbose_name="Số buổi CSXH")
+    gia_tri_du_kien = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Giá trị dự kiến")
+    trang_thai = models.CharField(max_length=30, choices=TRANG_THAI_CHOICES, default="CHO_KIEM_TRA", verbose_name="Trạng thái")
+    ly_do = models.TextField(blank=True, null=True, verbose_name="Lý do/Ghi chú")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["phan_bo", "lan_de_xuat"], name="uq_dexuat_phanbo_lan"),
+        ]
+        indexes = [
+            models.Index(fields=["trang_thai", "ngay_de_xuat"], name="idx_dexuat_status_ngay"),
+        ]
+
+    def __str__(self):
+        return f"Đề xuất #{self.pk} - {self.phan_bo.can_bo.ho_ten}"
+
+
+class HopDong(TimeStampedModel):
+    """Hợp đồng chính thức, độc lập với phân bổ và đề xuất."""
+
+    TRANG_THAI_CHOICES = [
+        ("DU_THAO", "Dự thảo"),
+        ("DA_KY", "Đã ký"),
+        ("DANG_THUC_HIEN", "Đang thực hiện"),
+        ("TAM_DUNG", "Tạm dừng"),
+        ("HET_HAN", "Hết hạn"),
+        ("NGHIEM_THU", "Nghiệm thu"),
+        ("THANH_LY", "Thanh lý"),
+        ("HUY", "Hủy"),
+    ]
+
+    de_xuat = models.ForeignKey(DeXuatHopDong, on_delete=models.PROTECT, related_name="hop_dong", verbose_name="Đề xuất hợp đồng")
+    can_bo = models.ForeignKey(CanBo, on_delete=models.PROTECT, related_name="hop_dong", verbose_name="Cán bộ chuyên trách")
+    nhom_hd = models.ForeignKey(NhomHD, on_delete=models.PROTECT, related_name="hop_dong", verbose_name="Nhóm hợp đồng")
+    so_hop_dong = models.CharField(max_length=50, unique=True, verbose_name="Số hợp đồng")
+    ngay_ky = models.DateField(null=True, blank=True, verbose_name="Ngày ký")
+    tu_ngay = models.DateField(verbose_name="Từ ngày")
+    den_ngay = models.DateField(verbose_name="Đến ngày")
+    don_gia_cong = models.DecimalField(max_digits=12, decimal_places=0, default=Decimal(str(FinancialConfig.DON_GIA_CONG)), verbose_name="Đơn giá công")
+    dinh_muc_di_lai_phcn = models.DecimalField(max_digits=12, decimal_places=0, default=Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)), verbose_name="Định mức đi lại PHCN")
+    dinh_muc_di_lai_cs = models.DecimalField(max_digits=12, decimal_places=0, default=Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)), verbose_name="Định mức đi lại CSXH")
+    gia_tri_hop_dong = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Giá trị hợp đồng")
+    trang_thai = models.CharField(max_length=20, choices=TRANG_THAI_CHOICES, default="DU_THAO", verbose_name="Trạng thái")
+    is_locked = models.BooleanField(default=False, verbose_name="Đã khóa")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    class Meta:
+        ordering = ["-ngay_ky", "-id"]
+        indexes = [
+            models.Index(fields=["can_bo", "trang_thai"], name="idx_hd_cb_status"),
+            models.Index(fields=["tu_ngay", "den_ngay"], name="idx_hd_range"),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(den_ngay__gte=models.F("tu_ngay")), name="ck_hd_ngay_hop_le"),
+            models.CheckConstraint(condition=models.Q(gia_tri_hop_dong__gte=0), name="ck_hd_gia_tri_duong"),
+        ]
+
+    def clean(self):
+        errors = {}
+        if self.den_ngay and self.tu_ngay and self.den_ngay < self.tu_ngay:
+            errors["den_ngay"] = "Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu."
+        if self.de_xuat_id and self.can_bo_id and self.de_xuat.phan_bo.can_bo_id != self.can_bo_id:
+            errors["can_bo"] = "Cán bộ của hợp đồng phải khớp cán bộ của đề xuất."
+        if self.de_xuat_id and self.nhom_hd_id and self.de_xuat.phan_bo.nhom_hd_id != self.nhom_hd_id:
+            errors["nhom_hd"] = "Nhóm hợp đồng phải khớp nhóm của phân bổ."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return self.so_hop_dong
+
+
+class ChiTietKhoiLuongHopDong(TimeStampedModel):
+    """Khối lượng chính thức và đơn giá đã chốt tại thời điểm ký HĐ."""
+
+    hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, related_name="chi_tiet_khoi_luong", verbose_name="Hợp đồng")
+    loai_dich_vu = models.CharField(max_length=10, choices=PhanCongTre.LOAI_DV_CHOICES, verbose_name="Loại dịch vụ")
+    so_tre = models.PositiveIntegerField(default=0, verbose_name="Số trẻ")
+    so_buoi = models.PositiveIntegerField(default=0, verbose_name="Số buổi")
+    don_gia_cong = models.DecimalField(max_digits=12, decimal_places=0, verbose_name="Đơn giá công")
+    dinh_muc_di_lai = models.DecimalField(max_digits=12, decimal_places=0, verbose_name="Định mức đi lại")
+    thanh_tien = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Thành tiền")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["hop_dong", "loai_dich_vu"], name="uq_hd_khoiluong_dv"),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.thanh_tien = Decimal(self.so_tre) * Decimal(self.so_buoi) * (Decimal(self.don_gia_cong) + Decimal(self.dinh_muc_di_lai))
+        super().save(*args, **kwargs)
+
+
+class PhuLucHopDong(TimeStampedModel):
+    LOAI_PHU_LUC_CHOICES = [
+        ("KY_1", "Phụ lục phân công Kỳ 1"),
+        ("BO_SUNG", "Phụ lục bổ sung"),
+        ("DIEU_CHINH", "Phụ lục điều chỉnh"),
+        ("KHAC", "Phụ lục khác"),
+    ]
+
+    hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, related_name="phu_luc", verbose_name="Hợp đồng")
+    loai_phu_luc = models.CharField(max_length=20, choices=LOAI_PHU_LUC_CHOICES, verbose_name="Loại phụ lục")
+    so_phu_luc = models.CharField(max_length=50, blank=True, null=True, verbose_name="Số phụ lục")
+    ngay_lap = models.DateField(default=timezone.now, verbose_name="Ngày lập")
+    is_signed = models.BooleanField(default=False, verbose_name="Đã ký")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    class Meta:
+        ordering = ["-ngay_lap", "-id"]
+        indexes = [models.Index(fields=["hop_dong", "loai_phu_luc"], name="idx_pl_hd_loai")]
+
+    def __str__(self):
+        return f"{self.hop_dong.so_hop_dong} - {self.get_loai_phu_luc_display()}"
+
+
+class ChiTietPhuLucPhanCong(TimeStampedModel):
+    """Snapshot phân công tại thời điểm tạo/ký phụ lục."""
+
+    phu_luc = models.ForeignKey(PhuLucHopDong, on_delete=models.PROTECT, related_name="chi_tiet_phan_cong", verbose_name="Phụ lục")
+    source_phan_cong = models.ForeignKey(PhanCongTre, on_delete=models.SET_NULL, null=True, blank=True, related_name="snapshot_phu_luc", verbose_name="Phân công nguồn")
+    ma_tre = models.CharField(max_length=20, verbose_name="Mã trẻ")
+    ten_tre = models.CharField(max_length=100, verbose_name="Tên trẻ")
+    ma_can_bo = models.CharField(max_length=20, verbose_name="Mã CBCT")
+    ten_can_bo = models.CharField(max_length=100, verbose_name="Tên CBCT")
+    loai_dich_vu = models.CharField(max_length=10, choices=PhanCongTre.LOAI_DV_CHOICES, verbose_name="Loại dịch vụ")
+    dot_phan_cong = models.PositiveIntegerField(default=1, verbose_name="Đợt phân công")
+    ky_phan_cong = models.PositiveIntegerField(default=1, verbose_name="Kỳ phân công")
+    ngay_phan_cong = models.DateField(null=True, blank=True, verbose_name="Ngày phân công")
+    so_buoi_du_kien = models.PositiveIntegerField(default=0, verbose_name="Số buổi dự kiến")
+    dinh_muc_di_lai = models.DecimalField(max_digits=12, decimal_places=0, default=Decimal("0"), verbose_name="Định mức đi lại")
+    dia_diem_ct = models.CharField(max_length=255, blank=True, null=True, verbose_name="Địa điểm can thiệp")
+    hinh_thuc_ct = models.CharField(max_length=100, blank=True, null=True, verbose_name="Hình thức can thiệp")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["phu_luc", "ky_phan_cong"], name="idx_ctpl_ky"),
+            models.Index(fields=["ma_tre", "loai_dich_vu"], name="idx_ctpl_tre_dv"),
+        ]
+
+
+class NhatKyThucHien(TimeStampedModel):
+    """Ghi nhận thực tế thực hiện, tách khỏi khối lượng hợp đồng và thanh toán."""
+
+    hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, related_name="nhat_ky_thuc_hien", verbose_name="Hợp đồng")
+    phan_cong = models.ForeignKey(PhanCongTre, on_delete=models.PROTECT, related_name="nhat_ky_thuc_hien", verbose_name="Phân công")
+    ngay_thuc_hien = models.DateField(verbose_name="Ngày thực hiện")
+    so_buoi_thuc_hien = models.PositiveIntegerField(default=1, verbose_name="Số buổi thực hiện")
+    so_luot_di_lai = models.PositiveIntegerField(default=1, verbose_name="Số lượt đi lại")
+    don_gia_cong = models.DecimalField(max_digits=12, decimal_places=0, verbose_name="Đơn giá công")
+    dinh_muc_di_lai = models.DecimalField(max_digits=12, decimal_places=0, verbose_name="Định mức đi lại")
+    thanh_tien = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Thành tiền")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    class Meta:
+        ordering = ["-ngay_thuc_hien", "-id"]
+        indexes = [
+            models.Index(fields=["hop_dong", "ngay_thuc_hien"], name="idx_nk_hd_ngay"),
+            models.Index(fields=["phan_cong", "ngay_thuc_hien"], name="idx_nk_pc_ngay"),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(so_buoi_thuc_hien__gt=0), name="ck_nk_so_buoi_gt0"),
+            models.CheckConstraint(condition=models.Q(so_luot_di_lai__gte=0), name="ck_nk_di_lai_gte0"),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.thanh_tien = Decimal(self.so_buoi_thuc_hien) * Decimal(self.don_gia_cong) + Decimal(self.so_luot_di_lai) * Decimal(self.dinh_muc_di_lai)
+        super().save(*args, **kwargs)
+
+
+class DotThanhToan(TimeStampedModel):
+    hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, related_name="dot_thanh_toan", verbose_name="Hợp đồng")
+    nam = models.PositiveIntegerField(verbose_name="Năm")
+    thang = models.PositiveSmallIntegerField(verbose_name="Tháng")
+    ngay_de_nghi = models.DateField(default=timezone.now, verbose_name="Ngày đề nghị")
+    trang_thai = models.CharField(max_length=30, default="CHO_THANH_TOAN", verbose_name="Trạng thái")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    class Meta:
+        ordering = ["-nam", "-thang", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["hop_dong", "nam", "thang"], name="uq_dottt_hd_nam_thang"),
+            models.CheckConstraint(condition=models.Q(thang__gte=1, thang__lte=12), name="ck_dottt_thang"),
+        ]
+
+
+class ChiTietThanhToan(TimeStampedModel):
+    dot_thanh_toan = models.ForeignKey(DotThanhToan, on_delete=models.PROTECT, related_name="chi_tiet", verbose_name="Đợt thanh toán")
+    nhat_ky = models.OneToOneField(NhatKyThucHien, on_delete=models.PROTECT, related_name="chi_tiet_thanh_toan", verbose_name="Nhật ký thực hiện")
+    so_buoi_thanh_toan = models.PositiveIntegerField(default=0, verbose_name="Số buổi thanh toán")
+    so_luot_di_lai = models.PositiveIntegerField(default=0, verbose_name="Số lượt đi lại thanh toán")
+    thanh_tien = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Thành tiền")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    def save(self, *args, **kwargs):
+        self.thanh_tien = Decimal(self.so_buoi_thanh_toan) * Decimal(self.nhat_ky.don_gia_cong) + Decimal(self.so_luot_di_lai) * Decimal(self.nhat_ky.dinh_muc_di_lai)
+        super().save(*args, **kwargs)
+
+
+class NghiemThu(TimeStampedModel):
+    hop_dong = models.OneToOneField(HopDong, on_delete=models.PROTECT, related_name="nghiem_thu", verbose_name="Hợp đồng")
+    ngay_nghiem_thu = models.DateField(null=True, blank=True, verbose_name="Ngày nghiệm thu")
+    ket_qua = models.CharField(max_length=30, default="DAT", verbose_name="Kết quả")
+    gia_tri_nghiem_thu = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Giá trị nghiệm thu")
+    bien_ban_so = models.CharField(max_length=50, blank=True, null=True, verbose_name="Số biên bản")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+
+class ThanhLyHopDong(TimeStampedModel):
+    hop_dong = models.OneToOneField(HopDong, on_delete=models.PROTECT, related_name="thanh_ly", verbose_name="Hợp đồng")
+    ngay_thanh_ly = models.DateField(null=True, blank=True, verbose_name="Ngày thanh lý")
+    gia_tri_thanh_ly = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Giá trị thanh lý")
+    bien_ban_so = models.CharField(max_length=50, blank=True, null=True, verbose_name="Số biên bản")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
