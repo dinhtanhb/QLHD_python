@@ -129,11 +129,23 @@ class PhanCongTreForm(BootstrapModelForm):
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        phan_bo = self.initial.get("phan_bo")
+        if not phan_bo and self.instance and self.instance.pk:
+            phan_bo = self.instance.phan_bo
+
+        if phan_bo and not self.instance.pk and not self.initial.get("dinh_muc_di_lai"):
+            self.initial["dinh_muc_di_lai"] = phan_bo.dinh_muc_di_lai_phcn
+
     def clean(self):
         cleaned_data = super().clean()
         phan_bo = cleaned_data.get("phan_bo")
         tre = cleaned_data.get("tre")
         loai_dich_vu = cleaned_data.get("loai_dich_vu")
+        dinh_muc_di_lai = cleaned_data.get("dinh_muc_di_lai")
+
         if phan_bo and phan_bo.is_locked and not self.instance.pk:
             raise forms.ValidationError("Phân bổ đã khóa, không thể thêm phân công mới.")
         if (cleaned_data.get("so_buoi_du_kien") or 0) <= 0:
@@ -146,6 +158,14 @@ class PhanCongTreForm(BootstrapModelForm):
             self.add_error("loai_dich_vu", "Phân bổ không có chỉ tiêu CSXH.")
         if phan_bo and loai_dich_vu != "CSXH" and phan_bo.so_tre_phcn <= 0:
             self.add_error("loai_dich_vu", "Phân bổ không có chỉ tiêu PHCN.")
+
+        if phan_bo and (dinh_muc_di_lai is None or dinh_muc_di_lai <= 0):
+            cleaned_data["dinh_muc_di_lai"] = (
+                phan_bo.dinh_muc_di_lai_cs
+                if loai_dich_vu == "CSXH"
+                else phan_bo.dinh_muc_di_lai_phcn
+            )
+
         return cleaned_data
 
 
