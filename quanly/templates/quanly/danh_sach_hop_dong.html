@@ -6,46 +6,38 @@
 <div class="container-fluid mt-4">
     <div class="card shadow">
         <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-            <h4 class="mb-0">Danh Sách Hợp Đồng Chính Thức</h4>
-            <span class="badge bg-light text-dark"><i class="bi bi-lock-fill"></i> Đã Khóa</span>
+            <h4 class="mb-0">Danh sách Hợp đồng chính thức</h4>
+            <span class="badge bg-light text-dark">DB là nguồn dữ liệu gốc</span>
         </div>
         <div class="card-body">
-            <table class="table table-striped align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Số Hợp Đồng</th>
-                        <th>Cán Bộ Can Thiệp</th>
-                        <th>Giá trị hợp đồng</th>
-                        <th>Ngày Ký</th>
-                        <th>Thời Gian Hiệu Lực</th>
-                        <th>Trạng Thái</th>
-                        <th>Thao Tác</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <form method="get" class="row g-2 mb-3">
+                <div class="col-md-5"><input class="form-control" name="q" value="{{ query }}" placeholder="Số HĐ, mã CBCT, họ tên..."></div>
+                <div class="col-auto"><button class="btn btn-primary">Tìm kiếm</button></div>
+            </form>
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover align-middle">
+                    <thead class="table-dark text-center">
+                        <tr><th>Số HĐ</th><th>CBCT</th><th>Nhóm HĐ</th><th>Giá trị</th><th>Ngày ký</th><th>Thời hạn</th><th>Trạng thái</th><th></th></tr>
+                    </thead>
+                    <tbody>
                     {% for hd in hop_dongs %}
-                    <tr>
-                        <td class="fw-bold text-primary">{{ hd.so_hop_dong }}</td>
-                        <td>{{ hd.can_bo }}</td>
-                        <td class="fw-bold text-success">
-                            {{ hd.gia_tri_hd_du_kien|floatformat:"0"|intcomma }} VNĐ
-                        </td>
-                        <td>{{ hd.ngay_ky|date:"d/m/Y" }}</td>
-                        <td>{{ hd.tu_ngay|date:"d/m/Y" }} - {{ hd.den_ngay|date:"d/m/Y" }}</td>
-                        <td><span class="badge bg-success">Đã Tạo</span></td>
-                        <td>
-                            {% if user.is_staff %}
-                                <a href="#" class="btn btn-warning btn-sm"><i class="bi bi-pencil"></i> Sửa (Admin)</a>
-                            {% else %}
-                                <button class="btn btn-secondary btn-sm" disabled><i class="bi bi-lock-fill"></i> Đã Khóa</button>
-                            {% endif %}
-                        </td>
-                    </tr>
+                        <tr>
+                            <td class="fw-bold text-primary">{{ hd.so_hop_dong }}</td>
+                            <td>{{ hd.can_bo.ma_can_bo }}<br>{{ hd.can_bo.ho_ten }}</td>
+                            <td>{{ hd.nhom_hd.ma_nhom_hd }} - {{ hd.nhom_hd.ten_nhom_hd }}</td>
+                            <td class="fw-bold text-success">{{ hd.gia_tri_hop_dong|floatformat:0|intcomma }} đ</td>
+                            <td>{{ hd.ngay_ky|date:"d/m/Y" }}</td>
+                            <td>{{ hd.tu_ngay|date:"d/m/Y" }} - {{ hd.den_ngay|date:"d/m/Y" }}</td>
+                            <td><span class="badge bg-success">{{ hd.get_trang_thai_display }}</span></td>
+                            <td><a href="{% url 'chi_tiet_hop_dong' hd.pk %}" class="btn btn-sm btn-primary">Chi tiết</a></td>
+                        </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="text-center">Chưa có hợp đồng nào được khởi tạo.</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted py-4">Chưa có hợp đồng chính thức.</td></tr>
                     {% endfor %}
-                </tbody>
-            </table>
+                    </tbody>
+                </table>
+            </div>
+            {% include 'quanly/_pagination.html' with page_obj=page_obj query=query %}
         </div>
     </div>
 </div>
