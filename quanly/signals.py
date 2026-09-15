@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db.models.signals import pre_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
 from .financial import FinancialConfig
@@ -37,3 +37,15 @@ def set_proposal_value_from_allocation(sender, instance, **kwargs):
         * Decimal(phan_bo.so_buoi_cs)
         * (cong + dm_cs)
     )
+
+
+@receiver(post_save, sender=DeXuatHopDong)
+def normalize_legacy_approval_status(sender, instance, **kwargs):
+    """Chuẩn hóa trạng thái DUYET cũ về mã trạng thái chính thức DA_DUYET.
+
+    View duyệt hiện tại của phiên bản trước dùng mã DUYET. Chuẩn hóa ngay
+    sau khi lưu giúp dữ liệu luôn khớp với TRANG_THAI_CHOICES mà không cần
+    tạo migration hoặc sửa dữ liệu thủ công.
+    """
+    if instance.trang_thai == "DUYET":
+        DeXuatHopDong.objects.filter(pk=instance.pk, trang_thai="DUYET").update(trang_thai="DA_DUYET")
