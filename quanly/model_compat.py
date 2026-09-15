@@ -1,4 +1,4 @@
-from .models import ChiTietPhuLucPhanCong
+from .models import ChiTietPhuLucPhanCong, HopDong
 
 
 _original_chi_tiet_phu_luc_init = ChiTietPhuLucPhanCong.__init__
@@ -17,3 +17,10 @@ def _chi_tiet_phu_luc_init_compat(self, *args, **kwargs):
 
 
 ChiTietPhuLucPhanCong.__init__ = _chi_tiet_phu_luc_init_compat
+
+
+# Tương thích với view cũ đang truy cập related_name "phu_luc_hop_dong".
+# Quan hệ thực tế của PhuLucHopDong.hop_dong có related_name="phu_luc".
+# Đây chỉ là alias Python, không thay đổi model/schema/migration.
+if not hasattr(HopDong, "phu_luc_hop_dong"):
+    HopDong.phu_luc_hop_dong = property(lambda self: self.phu_luc)
