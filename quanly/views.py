@@ -10,9 +10,9 @@ from .forms import DonViForm, TreForm, CanBoForm, NhomHDForm, PhanBoChiTieuForm
 from datetime import date
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth.decorators import login_required
 from .financial import FinancialConfig
+from .decorators import (admin_required, dashboard_required, hopdong_required, readonly_required)
 
 def clean_empty_excel_value(val):
     """
@@ -40,7 +40,7 @@ def clean_empty_excel_value(val):
 # ================================
 # TRANG CHỦ (DASHBOARD)
 # ================================
-@login_required
+@dashboard_required
 def trang_chu(request):
     tong_tre = Tre.objects.count()
     tong_can_bo = CanBo.objects.count()
@@ -218,7 +218,7 @@ def xoa_tre(request, id):
     return redirect('danh_sach_tre')
 
 # 5. IMPORT TRẺ
-@login_required
+@admin_required
 def import_tre(request):
   if request.method == 'POST' and request.FILES.get('file_excel'):
     excel_file = request.FILES['file_excel']
@@ -390,7 +390,7 @@ def xoa_can_bo(request, id):
     messages.success(request, f'Đã xóa dữ liệu cán bộ {ten} khỏi hệ thống.')
     return redirect('danh_sach_can_bo')
 
-@login_required
+@admin_required
 def import_can_bo(request):
     if request.method == 'POST' and request.FILES.get('file_excel'):
         excel_file = request.FILES['file_excel']
@@ -596,7 +596,7 @@ def import_can_bo(request):
 
 # CÁC HÀM XỬ LÝ HỢP ĐỒNG & PHÂN CÔNG
 # ==========================================
-@login_required
+@admin_required
 def import_phan_cong(request):
   if request.method == 'POST' and request.FILES.get('file_excel'):
     excel_file = request.FILES['file_excel']
@@ -700,7 +700,7 @@ def import_phan_cong(request):
 # =========================================================
 # QUY TRÌNH HỢP ĐỒNG: PHÂN BỔ -> ĐỀ XUẤT -> CHÍNH THỨC
 # =========================================================
-@login_required
+@hopdong_required
 def phan_bo_chi_tieu(request):
     """
     BƯỚC 1: Cán bộ tạo Phân bổ chỉ tiêu (Lưu và chuyển thẳng sang Đề xuất Hợp đồng)
@@ -727,7 +727,7 @@ def phan_bo_chi_tieu(request):
 
     return render(request, 'quanly/phan_bo_chi_tieu.html', {'form': form})
 
-@staff_member_required
+@admin_required
 def import_phan_bo(request):
   if request.method == 'POST':
     if 'excel_file' in request.FILES:
@@ -917,7 +917,7 @@ def import_phan_bo(request):
 
   return render(request, 'quanly/import_phan_bo.html', {'has_preview': False})
 
-@staff_member_required
+@admin_required
 def sua_phan_bo_chi_tieu(request, pk):
   item = get_object_or_404(PhanBoChiTieu, pk=pk)
 
@@ -955,12 +955,12 @@ def sua_phan_bo_chi_tieu(request, pk):
 
   return redirect('danh_sach_de_xuat')
 
-@staff_member_required
+@hopdong_required
 def danh_sach_phan_bo(request):
     danh_sach = PhanBoChiTieu.objects.select_related('can_bo').all().order_by('-id')
     return render(request, 'quanly/danh_sach_phan_bo.html', {'danh_sach': danh_sach})
 
-@login_required
+@hopdong_required
 def danh_sach_de_xuat(request):
     query = request.GET.get('q', '').strip()
     
@@ -986,7 +986,7 @@ def danh_sach_de_xuat(request):
     }
     return render(request, 'quanly/danh_sach_de_xuat.html', context)
 
-@login_required
+@hopdong_required
 def tao_hop_dong_chinh_thuc(request, pk):
     hop_dong = get_object_or_404(PhanBoChiTieu, pk=pk)
 
@@ -1015,7 +1015,7 @@ def tao_hop_dong_chinh_thuc(request, pk):
     context = {'hop_dong': hop_dong}
     return render(request, 'quanly/xac_nhan_tao_hop_dong.html', context)
 
-@login_required
+@readonly_required
 def danh_sach_hop_dong(request):
     query = request.GET.get('q', '').strip()
     
