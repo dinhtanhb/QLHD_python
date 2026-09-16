@@ -753,10 +753,21 @@ def import_nhat_ky_can_thiep(request):
             nhom_value = clean_empty_excel_value(get_excel_value(row, "NhomHD", "Nhóm HĐ"))
             contracts = HopDong.objects.filter(can_bo=can_bo, tu_ngay__lte=ngay, den_ngay__gte=ngay).select_related("nhom_hd", "de_xuat")
             if nhom_value:
-                contracts = contracts.filter(Q(nhom_hd__ma_nhom_hd=nhom_value) | Q(nhom_hd__ten_nhom_hd__iexact=nhom_value))
+                group_filter = Q(nhom_hd__ma_nhom_hd=nhom_value) | Q(nhom_hd__ten_nhom_hd__iexact=nhom_value)
+                if str(nhom_value).replace(".0", "", 1).isdigit():
+                    group_filter |= Q(nhom_hd_id=int(float(nhom_value)))
+                contracts = contracts.filter(group_filter)
             hop_dong = contracts.order_by("-ngay_ky", "-id").first()
             if not hop_dong:
-                raise ValueError("Không tìm thấy hợp đồng đang hiệu lực")
+                available = HopDong.objects.filter(can_bo=can_bo).select_related("nhom_hd").order_by("-ngay_ky", "-id")
+                if nhom_value:
+                    group_filter = Q(nhom_hd__ma_nhom_hd=nhom_value) | Q(nhom_hd__ten_nhom_hd__iexact=nhom_value)
+                    if str(nhom_value).replace(".0", "", 1).isdigit():
+                        group_filter |= Q(nhom_hd_id=int(float(nhom_value)))
+                    available = available.filter(group_filter)
+                periods = ", ".join(f"{item.so_hop_dong} ({item.tu_ngay:%d/%m/%Y}-{item.den_ngay:%d/%m/%Y})" for item in available[:3])
+                detail = f"; hợp đồng cùng điều kiện: {periods}" if periods else "; chưa có hợp đồng cùng CBCT/Nhóm HĐ"
+                raise ValueError(f"Không có hợp đồng bao phủ ngày {ngay:%d/%m/%Y} cho CBCT {ma_cb}, Nhóm HĐ {nhom_value or 'chưa có'}{detail}")
             raw_service = (clean_empty_excel_value(get_excel_value(row, "MaLoaiDichVu", "Loại dịch vụ")) or "PHCN").upper()
             service_codes = {"PHCN": PhanCongTre.PHCN_SERVICE_CODES, "CS": PhanCongTre.CS_SERVICE_CODES}
             if raw_service in PhanCongTre.LOAI_DV_CHOICES:

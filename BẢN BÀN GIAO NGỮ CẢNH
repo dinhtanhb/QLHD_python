@@ -3529,3 +3529,14 @@ sóc, tách khỏi tiền công cán bộ:
 - Đưa KPI lên trước khu vực tìm kiếm; các bộ lọc Kỳ/Tháng/Năm chuyển thành
   dropdown, có tìm nhanh Select2; áp dụng cho Nhật ký và Thanh quyết toán.
 - Đã chạy migration 0015, system check, template check và 6 test.
+
+103. RÀ SOÁT CHỌN HỢP ĐỒNG KHI IMPORT NHẬT KÝ
+
+- Import Nhật ký đã ưu tiên xác định hợp đồng theo CBCT + Nhóm HĐ + ngày can
+  thiệp; hỗ trợ Nhóm HĐ dạng mã, tên hoặc ID số trong file Excel.
+- Khi không có hợp đồng bao phủ ngày, cảnh báo nay nêu rõ CBCT, Nhóm HĐ, ngày
+  can thiệp và tối đa 3 hợp đồng cùng điều kiện kèm thời hạn để người dùng sửa
+  file nhanh chóng.
+- Đối chiếu ABP0191 cho thấy HĐ Nhóm 17 hiệu lực năm 2026, còn HĐ Nhóm 6 đã
+  hết hạn ngày 31/12/2025; dòng Nhóm 6 trong file có ngày năm 2026 sẽ bị bỏ qua
+  là đúng nghiệp vụ, không phải do trùng số hợp đồng.
