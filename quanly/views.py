@@ -369,8 +369,11 @@ def import_tre(request):
 
     msg = f"Import trẻ hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
     if errors:
-        msg += " " + " | ".join(errors[:5])
-    messages.success(request, msg)
+        messages.warning(request, msg)
+        for error in errors:
+            messages.warning(request, error)
+    else:
+        messages.success(request, msg + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
     return redirect("danh_sach_tre")
 
 
@@ -481,8 +484,11 @@ def import_can_bo(request):
 
     msg = f"Import cán bộ hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
     if errors:
-        msg += " " + " | ".join(errors[:5])
-    messages.success(request, msg)
+        messages.warning(request, msg)
+        for error in errors:
+            messages.warning(request, error)
+    else:
+        messages.success(request, msg + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
     return redirect("danh_sach_can_bo")
 
 
@@ -493,7 +499,7 @@ def import_can_bo(request):
 def danh_sach_phan_cong(request):
     query = request.GET.get("q", "").strip()
     phan_bo_id = request.GET.get("phan_bo_id", "").strip()
-    qs = PhanCongTre.objects.select_related("tre", "phan_bo__can_bo", "phan_bo__nhom_hd")
+    qs = PhanCongTre.objects.select_related("tre", "phan_bo__can_bo", "phan_bo__nhom_hd", "nhom_hd")
 
     if phan_bo_id.isdigit():
         qs = qs.filter(phan_bo_id=int(phan_bo_id))
@@ -507,6 +513,9 @@ def danh_sach_phan_cong(request):
         )
 
     page_obj = Paginator(qs.order_by("-ngay_phan_cong", "-id"), 20).get_page(request.GET.get("page"))
+    total_count = qs.count()
+    phcn_count = qs.filter(loai_dich_vu__in=PhanCongTre.PHCN_SERVICE_CODES).count()
+    cs_count = qs.filter(loai_dich_vu__in=PhanCongTre.CS_SERVICE_CODES).count()
     phan_bo = None
     if phan_bo_id.isdigit():
         phan_bo = PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd").filter(pk=int(phan_bo_id)).first()
@@ -520,6 +529,9 @@ def danh_sach_phan_cong(request):
             "query": query,
             "phan_bo": phan_bo,
             "phan_bo_id": phan_bo_id,
+            "total_count": total_count,
+            "phcn_count": phcn_count,
+            "cs_count": cs_count,
         },
     )
 
@@ -583,6 +595,9 @@ def xoa_phan_cong(request, pk):
 @hopdong_required
 def dieu_chuyen_phan_cong(request, pk):
     item = get_object_or_404(PhanCongTre.objects.select_related("phan_bo__nhom_hd", "tre"), pk=pk)
+    if not item.phan_bo_id:
+        messages.error(request, "Phân công chưa thuộc Phân bổ; chưa thể điều chuyển CBCT.")
+        return redirect("danh_sach_phan_cong")
     queryset = PhanBoChiTieu.objects.filter(nhom_hd=item.phan_bo.nhom_hd).exclude(pk=item.phan_bo_id).select_related("can_bo", "nhom_hd")
     if request.method == "POST":
         form = DieuChuyenPhanCongForm(request.POST)
@@ -652,34 +667,34 @@ def import_phan_cong(request):
             if not nhom and can_bo:
                 nhom = PhanBoChiTieu.objects.filter(can_bo=can_bo).order_by("-ngay_lap", "-id").values_list("nhom_hd", flat=True).first()
                 nhom = NhomHD.objects.filter(pk=nhom).first() if nhom else None
-            if not nhom:
-                raise ValueError("Thiếu hoặc không tìm thấy Nhóm HĐ")
+            # Nhóm HĐ có thể để trống: đây là phân công chờ xếp nhóm/CBCT.
 
-            if can_bo:
+            if can_bo and nhom:
                 phan_bo = PhanBoChiTieu.objects.filter(can_bo=can_bo, nhom_hd=nhom).order_by("-ngay_lap", "-id").first()
-            else:
+            elif nhom:
                 phan_bo = PhanBoChiTieu.objects.filter(can_bo__isnull=True, nhom_hd=nhom, cbda_quan_ly=cbda).order_by("-ngay_lap", "-id").first()
                 if not phan_bo:
                     phan_bo = PhanBoChiTieu.objects.create(nhom_hd=nhom, cbda_quan_ly=cbda, ngay_lap=parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong"), timezone.localdate()))
-            if not phan_bo:
-                raise ValueError("Chưa có Phân bổ chỉ tiêu tương ứng")
 
             service = clean_empty_excel_value(get_excel_value(row, "Loại dịch vụ", "LoaiDichVu", "Chỉ định CT")) or "CSXH"
             service_upper = service.upper()
             service_map = {"VLTL": "VLTL", "HDTL": "HDTL", "NNTL": "NNTL", "GDDB": "GDDB", "CSXH": "CSXH", "CSYT": "CSYT"}
             service = service_map.get(service_upper, "CSXH" if "CS" in service_upper else "VLTL")
 
-            identity = PhanCongTre.objects.filter(phan_bo__nhom_hd=nhom, tre=tre, loai_dich_vu=service, dot_phan_cong=parse_int(get_excel_value(row, "Đợt phân công", "DotPhanCong"), 1), ky_phan_cong=parse_int(get_excel_value(row, "Kỳ phân công", "KyPhanCong"), 1)).order_by("-id").first()
+            identity_qs = PhanCongTre.objects.filter(tre=tre, loai_dich_vu=service, dot_phan_cong=parse_int(get_excel_value(row, "Đợt phân công", "DotPhanCong"), 1), ky_phan_cong=parse_int(get_excel_value(row, "Kỳ phân công", "KyPhanCong"), 1))
+            identity_qs = identity_qs.filter(nhom_hd=nhom) if nhom else identity_qs.filter(nhom_hd__isnull=True, phan_bo__isnull=True)
+            identity = identity_qs.order_by("-id").first()
             item = identity or PhanCongTre(
                 phan_bo=phan_bo,
+                nhom_hd=nhom,
                 tre=tre,
                 loai_dich_vu=service,
                 so_buoi_du_kien=parse_int(get_excel_value(row, "Số buổi dự kiến", "SoBuoi"), 0),
                 dinh_muc_di_lai=parse_decimal(
                     get_excel_value(row, "Định mức đi lại", "DMDL"),
-                    phan_bo.dinh_muc_di_lai_cs
+                    (phan_bo.dinh_muc_di_lai_cs if phan_bo else Decimal("0"))
                     if PhanCongTre.service_group(service) == "CS"
-                    else phan_bo.dinh_muc_di_lai_phcn,
+                    else (phan_bo.dinh_muc_di_lai_phcn if phan_bo else Decimal("0")),
                 ),
                 dia_diem_ct=clean_empty_excel_value(get_excel_value(row, "Địa điểm CT", "DiaDiemCT")),
                 hinh_thuc_ct=clean_empty_excel_value(get_excel_value(row, "Hình thức CT", "HinhThucCT")),
@@ -687,8 +702,10 @@ def import_phan_cong(request):
                 ky_phan_cong=parse_int(get_excel_value(row, "Kỳ phân công", "KyPhanCong"), 1),
                 ngay_phan_cong=parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong")),
                 ghi_chu=clean_empty_excel_value(get_excel_value(row, "Ghi chú", "GhiChu")),
+                cbda_quan_ly=cbda,
             )
             item.phan_bo = phan_bo
+            item.nhom_hd = nhom
             item.save()
             if item.so_buoi_du_kien <= 0:
                 item.delete()
@@ -703,7 +720,9 @@ def import_phan_cong(request):
 
     msg = f"Import phân công hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
     if errors:
-        messages.warning(request, msg + " Chi tiết: " + " | ".join(errors[:8]))
+        messages.warning(request, msg)
+        for error in errors:
+            messages.warning(request, error)
     elif created or updated:
         messages.success(request, msg + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
     else:
@@ -1095,8 +1114,11 @@ def import_hop_dong(request):
             errors.append(f"Dòng {row_no}: {exc}")
     msg = f"Import hợp đồng hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
     if errors:
-        msg += " " + " | ".join(errors[:5])
-    messages.success(request, msg)
+        messages.warning(request, msg)
+        for error in errors:
+            messages.warning(request, error)
+    else:
+        messages.success(request, msg + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
     return redirect("danh_sach_hop_dong")
 
 

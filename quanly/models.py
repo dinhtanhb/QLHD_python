@@ -218,9 +218,13 @@ class PhanCongTre(TimeStampedModel):
     phan_bo = models.ForeignKey(
         PhanBoChiTieu,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="danh_sach_phan_cong",
         verbose_name="Phân bổ chỉ tiêu",
     )
+    cbda_quan_ly = models.CharField(max_length=100, blank=True, null=True, verbose_name="CBDA quản lý")
+    nhom_hd = models.ForeignKey(NhomHD, on_delete=models.PROTECT, null=True, blank=True, related_name="phan_cong_tre", verbose_name="Nhóm hợp đồng")
     tre = models.ForeignKey(Tre, on_delete=models.PROTECT, related_name="danh_sach_phan_cong", verbose_name="Trẻ")
     loai_dich_vu = models.CharField(max_length=10, choices=LOAI_DV_CHOICES, verbose_name="Loại dịch vụ")
     so_buoi_du_kien = models.PositiveIntegerField(default=0, verbose_name="Số buổi dự kiến")

@@ -3456,3 +3456,18 @@ sóc, tách khỏi tiền công cán bộ:
   hợp đồng vẫn giữ nguyên Phân công và không bị xóa khỏi database.
 - Đã tạo migration 0013, chạy system check, migration check, template check
   và 6 test hiện có đều đạt.
+
+97. IMPORT PHÂN CÔNG KHÔNG BẮT BUỘC NHÓM HĐ/CBCT VÀ KPI
+
+- Phân công nay có thể lưu độc lập, không cần Phân bổ, CBCT hoặc Nhóm HĐ; lưu
+  trực tiếp các thông tin Trẻ, CBDA, dịch vụ, số buổi, đợt/kỳ và ngày phân công.
+  Khi dữ liệu nền được bổ sung, có thể cập nhật tiếp mà không mất dòng cũ.
+- Bổ sung trường Nhóm HĐ độc lập trên Phân công để lưu được cả trường hợp chưa
+  có nhóm; các bản ghi cũ vẫn dùng Nhóm HĐ từ Phân bổ như trước.
+- Trang Danh sách Phân công hiển thị rõ “Chưa phân CBCT/Chưa phân nhóm”, có KPI
+  Tổng số lượt phân công, lượt PHCN và lượt CS; đếm theo dòng phân công nên một
+  trẻ nhiều đợt/nhiều dịch vụ được tính đúng.
+- Cảnh báo import được tách thành từng message theo dòng, đặc biệt các dòng bỏ
+  qua; không còn nối toàn bộ lỗi vào một dòng dài.
+- Đã tạo migration 0014 cho các trường mới; cần chạy `manage.py migrate` sau
+  khi pull.

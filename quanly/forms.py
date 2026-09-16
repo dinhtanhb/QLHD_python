@@ -125,7 +125,7 @@ class PhanCongTreForm(BootstrapModelForm):
     class Meta:
         model = PhanCongTre
         fields = [
-            "phan_bo", "tre", "loai_dich_vu", "so_buoi_du_kien", "dinh_muc_di_lai", "dia_diem_ct",
+            "phan_bo", "nhom_hd", "cbda_quan_ly", "tre", "loai_dich_vu", "so_buoi_du_kien", "dinh_muc_di_lai", "dia_diem_ct",
             "hinh_thuc_ct", "dot_phan_cong", "ky_phan_cong", "ngay_phan_cong", "trang_thai", "ghi_chu",
         ]
         widgets = {
