@@ -17,6 +17,10 @@ class FinancialConfig:
     DI_LAI_CBCT_HOP_LE = ['tại nhà', 'khác']
     DI_LAI_PH_HOP_LE = ['tại trường', 'khác']
 
+    # Kỳ can thiệp có thể vượt 12 vì không đồng nhất với tháng dương lịch.
+    KY_CAN_THIEP_CHOICES = range(1, 31)
+    NAM_CAN_THIEP_CHOICES = range(2024, 2031)
+
 
 def calculate_tncn(tien_cong):
     """Tính thuế TNCN trên tiền công, không tính tiền đi lại."""

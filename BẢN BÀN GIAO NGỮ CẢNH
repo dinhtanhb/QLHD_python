@@ -3559,3 +3559,13 @@ sóc, tách khỏi tiền công cán bộ:
   tất cả đạt.
 - Đã tới mốc nên commit/push lên branch `dev` sau khi rà soát diff. Không đưa
   `quanly/document_templates/` và `qlhd-roadmap.canvas.tsx` vào commit.
+
+105. MỞ RỘNG KỲ VÀ NĂM CAN THIỆP
+
+- Bộ lọc Nhật ký can thiệp và Thanh quyết toán nay hiển thị Kỳ 1–30, không
+  còn giới hạn Kỳ 1–12.
+- Danh sách Năm dùng chung là 2024–2030; vẫn tách độc lập với Tháng 1–12.
+- Đã cập nhật tổng hợp Thanh quyết toán sử dụng lượt đi lại CBCT đúng theo
+  thiết kế tách lượt mới.
+- Không cần migration vì đây là danh sách lựa chọn cấu hình; đã chạy 9 test,
+  system check, kiểm tra migration và template đều đạt.

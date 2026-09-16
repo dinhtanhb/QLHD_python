@@ -1502,7 +1502,7 @@ def nhat_ky_can_thiep(request):
     total_sessions = qs.aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
     phcn_sessions = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.PHCN_SERVICE_CODES).aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
     cs_sessions = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.CS_SERVICE_CODES).aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
-    return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "tong_so": qs.count(), "total_sessions": total_sessions, "phcn_sessions": phcn_sessions, "cs_sessions": cs_sessions, "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "ky_choices": PhanCongTre.objects.values_list("ky_phan_cong", flat=True).distinct().order_by("ky_phan_cong"), "month_choices": range(1, 13), "year_choices": NhatKyThucHien.objects.dates("ngay_thuc_hien", "year", order="DESC"), "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
+    return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "tong_so": qs.count(), "total_sessions": total_sessions, "phcn_sessions": phcn_sessions, "cs_sessions": cs_sessions, "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "ky_choices": FinancialConfig.KY_CAN_THIEP_CHOICES, "month_choices": range(1, 13), "year_choices": FinancialConfig.NAM_CAN_THIEP_CHOICES, "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
 
 
 @readonly_required
@@ -1535,9 +1535,9 @@ def thanh_quyet_toan(request):
         item["can_bo_count"].add(journal.hop_dong.can_bo_id)
         item["journal_count"] += 1
         item["so_buoi"] += Decimal(journal.so_buoi_thuc_hien)
-        item["di_lai"] += Decimal(journal.so_luot_di_lai)
+        item["di_lai"] += Decimal(journal.so_luot_di_lai_cbct)
         item["tien_cong"] += Decimal(journal.so_buoi_thuc_hien) * Decimal(journal.don_gia_cong)
-        item["tien_di_lai"] += Decimal(journal.so_luot_di_lai) * Decimal(journal.dinh_muc_di_lai)
+        item["tien_di_lai"] += Decimal(journal.so_luot_di_lai_cbct) * Decimal(journal.dinh_muc_di_lai)
     for item in rows.values():
         breakdown = calculate_payment_breakdown(item["tien_cong"], item["tien_di_lai"])
         item["hop_dong_count"] = len(item["hop_dong_count"])
@@ -1550,9 +1550,9 @@ def thanh_quyet_toan(request):
         "can_bo_list": CanBo.objects.filter(is_active=True),
         "nhom_list": NhomHD.objects.filter(is_active=True),
         "filters": {"can_bo": request.GET.get("can_bo", ""), "nhom_hd": request.GET.get("nhom_hd", ""), "ky": ky, "thang": thang, "nam": nam},
-        "ky_choices": PhanCongTre.objects.values_list("ky_phan_cong", flat=True).distinct().order_by("ky_phan_cong"),
+        "ky_choices": FinancialConfig.KY_CAN_THIEP_CHOICES,
         "month_choices": range(1, 13),
-        "year_choices": NhatKyThucHien.objects.dates("ngay_thuc_hien", "year", order="DESC"),
+        "year_choices": FinancialConfig.NAM_CAN_THIEP_CHOICES,
     })
 
 

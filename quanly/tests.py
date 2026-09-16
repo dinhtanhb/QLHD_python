@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from django.test import SimpleTestCase
 from django.urls import reverse
 
-from .financial import calculate_payment_breakdown, calculate_tncn, calculate_travel_flags, journal_conflict_types
+from .financial import FinancialConfig, calculate_payment_breakdown, calculate_tncn, calculate_travel_flags, journal_conflict_types
 from .document_export import _allocation_context, _date_parts
 from .models import PhanCongTre
 
@@ -60,3 +60,7 @@ class FinancialRulesTests(SimpleTestCase):
         self.assertEqual(journal_conflict_types(current, [other]), [])
         travel = calculate_travel_flags(current, [other])
         self.assertEqual(travel, {"so_luot_di_lai_cbct": 1, "so_luot_di_lai_ph": 1})
+
+    def test_intervention_period_choices_cover_requested_range(self):
+        self.assertEqual(list(FinancialConfig.KY_CAN_THIEP_CHOICES), list(range(1, 31)))
+        self.assertEqual(list(FinancialConfig.NAM_CAN_THIEP_CHOICES), list(range(2024, 2031)))
