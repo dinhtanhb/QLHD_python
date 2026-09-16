@@ -3212,3 +3212,17 @@ khi hoàn tất xác nhận các mẫu thanh toán.
 - Không dùng tổng tiền công + tiền đi lại để xét ngưỡng thuế.
 - Đã bổ sung hàm tính dùng chung calculate_tncn() và
   calculate_payment_breakdown(); đã kiểm thử mốc 4.999.999 và 5.000.000 đồng.
+
+80. GIAO DIỆN NHẬT KÝ VÀ ĐỢT THANH TOÁN
+
+Đã bổ sung luồng giao diện P4 ban đầu:
+
+- Thêm nhật ký thực hiện từ chi tiết hợp đồng.
+- Tạo đợt thanh toán theo năm/tháng từ chi tiết hợp đồng.
+- Thêm chi tiết thanh toán bằng cách chọn nhật ký thuộc đúng hợp đồng.
+- Hiển thị tiền công, tiền đi lại, thuế TNCN và thực lĩnh.
+- Server tự lấy đơn giá công và định mức đi lại từ phân bổ; không nhận các giá
+  trị đơn giá từ người dùng.
+- Các guard của model tiếp tục chặn sai hợp đồng, sai thời hạn, vượt buổi,
+  vượt lượt đi lại và thanh toán trùng.
+- Chưa tạo bản ghi mẫu mới; dữ liệu cũ được giữ nguyên để kiểm thử.

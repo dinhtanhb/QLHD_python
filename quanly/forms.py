@@ -8,9 +8,12 @@ from .models import (
     DonVi,
     HopDong,
     NhomHD,
+    DotThanhToan,
     PhanBoChiTieu,
     PhanCongTre,
     PhuLucHopDong,
+    NhatKyThucHien,
+    ChiTietThanhToan,
     Tre,
 )
 
@@ -239,3 +242,52 @@ class PhuLucHopDongForm(BootstrapModelForm):
             "ngay_lap": forms.DateInput(attrs={"type": "date"}),
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),
         }
+
+
+class NhatKyThucHienForm(BootstrapModelForm):
+    class Meta:
+        model = NhatKyThucHien
+        fields = ["phan_cong", "ngay_thuc_hien", "so_buoi_thuc_hien", "so_luot_di_lai", "ghi_chu"]
+        widgets = {
+            "ngay_thuc_hien": forms.DateInput(attrs={"type": "date"}),
+            "so_buoi_thuc_hien": forms.NumberInput(attrs={"min": "1"}),
+            "so_luot_di_lai": forms.NumberInput(attrs={"min": "0"}),
+            "ghi_chu": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, hop_dong=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if hop_dong is not None:
+            self.fields["phan_cong"].queryset = PhanCongTre.objects.filter(
+                phan_bo_id=hop_dong.de_xuat.phan_bo_id
+            ).select_related("tre")
+
+
+class DotThanhToanForm(BootstrapModelForm):
+    class Meta:
+        model = DotThanhToan
+        fields = ["nam", "thang", "ngay_de_nghi", "ghi_chu"]
+        widgets = {
+            "nam": forms.NumberInput(attrs={"min": "2000"}),
+            "thang": forms.NumberInput(attrs={"min": "1", "max": "12"}),
+            "ngay_de_nghi": forms.DateInput(attrs={"type": "date"}),
+            "ghi_chu": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class ChiTietThanhToanForm(BootstrapModelForm):
+    class Meta:
+        model = ChiTietThanhToan
+        fields = ["nhat_ky", "so_buoi_thanh_toan", "so_luot_di_lai", "ghi_chu"]
+        widgets = {
+            "so_buoi_thanh_toan": forms.NumberInput(attrs={"min": "1"}),
+            "so_luot_di_lai": forms.NumberInput(attrs={"min": "0"}),
+            "ghi_chu": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, hop_dong=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if hop_dong is not None:
+            self.fields["nhat_ky"].queryset = NhatKyThucHien.objects.filter(
+                hop_dong=hop_dong
+            ).select_related("phan_cong__tre")

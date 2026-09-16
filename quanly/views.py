@@ -18,10 +18,13 @@ from .financial import FinancialConfig
 from .forms import (
     CanBoForm,
     ChiTietKhoiLuongHopDongForm,
+    ChiTietThanhToanForm,
     DeXuatHopDongForm,
+    DotThanhToanForm,
     DonViForm,
     HopDongForm,
     NhomHDForm,
+    NhatKyThucHienForm,
     PhanBoChiTieuForm,
     PhanCongTreForm,
     PhuLucHopDongForm,
@@ -910,10 +913,19 @@ def chi_tiet_hop_dong(request, pk):
         .distinct()
         .order_by("ky_phan_cong")
     )
+    nhat_ky = hop_dong.nhat_ky_thuc_hien.select_related("phan_cong__tre").order_by("-ngay_thuc_hien", "-id")
+    dot_thanh_toan = hop_dong.dot_thanh_toan.prefetch_related("chi_tiet").order_by("-nam", "-thang", "-id")
     return render(
         request,
         "quanly/chi_tiet_hop_dong.html",
-        {"hop_dong": hop_dong, "khoi_luong": khoi_luong, "phu_luc": phu_luc, "ky_choices": ky_choices},
+        {
+            "hop_dong": hop_dong,
+            "khoi_luong": khoi_luong,
+            "phu_luc": phu_luc,
+            "ky_choices": ky_choices,
+            "nhat_ky": nhat_ky,
+            "dot_thanh_toan": dot_thanh_toan,
+        },
     )
 
 
@@ -961,6 +973,61 @@ def xuat_phu_luc_phan_cong(request, pk):
     )
     response["Content-Disposition"] = f'attachment; filename="PhuLuc_{safe_number}_Ky{ky}.docx"'
     return response
+
+
+@hopdong_required
+def them_nhat_ky_thuc_hien(request, hop_dong_id):
+    hop_dong = get_object_or_404(
+        HopDong.objects.select_related("de_xuat__phan_bo"),
+        pk=hop_dong_id,
+    )
+    form = NhatKyThucHienForm(request.POST or None, hop_dong=hop_dong)
+    if request.method == "POST" and form.is_valid():
+        item = form.save(commit=False)
+        item.hop_dong = hop_dong
+        item.don_gia_cong = FinancialConfig.DON_GIA_CONG
+        is_cs = PhanCongTre.service_group(item.phan_cong.loai_dich_vu) == "CS"
+        allocation = hop_dong.de_xuat.phan_bo
+        item.dinh_muc_di_lai = allocation.dinh_muc_di_lai_cs if is_cs else allocation.dinh_muc_di_lai_phcn
+        item.save()
+        messages.success(request, "Đã ghi nhận nhật ký thực hiện.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+    return render(request, "quanly/them_nhat_ky_thuc_hien.html", {"form": form, "hop_dong": hop_dong})
+
+
+@hopdong_required
+def tao_dot_thanh_toan(request, hop_dong_id):
+    hop_dong = get_object_or_404(HopDong, pk=hop_dong_id)
+    form = DotThanhToanForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        item = form.save(commit=False)
+        item.hop_dong = hop_dong
+        item.save()
+        messages.success(request, "Đã tạo đợt thanh toán.")
+        return redirect("chi_tiet_dot_thanh_toan", pk=item.pk)
+    return render(request, "quanly/tao_dot_thanh_toan.html", {"form": form, "hop_dong": hop_dong})
+
+
+@hopdong_required
+def chi_tiet_dot_thanh_toan(request, pk):
+    dot = get_object_or_404(
+        DotThanhToan.objects.select_related("hop_dong").prefetch_related("chi_tiet__nhat_ky__phan_cong__tre"),
+        pk=pk,
+    )
+    return render(request, "quanly/chi_tiet_dot_thanh_toan.html", {"dot": dot})
+
+
+@hopdong_required
+def them_chi_tiet_thanh_toan(request, dot_id):
+    dot = get_object_or_404(DotThanhToan.objects.select_related("hop_dong"), pk=dot_id)
+    form = ChiTietThanhToanForm(request.POST or None, hop_dong=dot.hop_dong)
+    if request.method == "POST" and form.is_valid():
+        item = form.save(commit=False)
+        item.dot_thanh_toan = dot
+        item.save()
+        messages.success(request, "Đã thêm chi tiết thanh toán.")
+        return redirect("chi_tiet_dot_thanh_toan", pk=dot.pk)
+    return render(request, "quanly/them_chi_tiet_thanh_toan.html", {"form": form, "dot": dot})
 
 
 @hopdong_required
