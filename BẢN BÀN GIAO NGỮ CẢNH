@@ -3496,3 +3496,14 @@ sóc, tách khỏi tiền công cán bộ:
   cảnh báo bỏ qua; cần import/tạo CBCT trước rồi import lại hợp đồng.
 - Import cập nhật theo Số HĐ, kiểm tra ngày và transaction từng dòng; không
   xóa dữ liệu hợp đồng cũ.
+
+100. THỐNG NHẤT NÚT IMPORT VÀ KHUYẾN NGHỊ FILE NHẬT KÝ
+
+- Đã đổi nhãn nút trên toàn bộ các trang import thành “Kiểm tra và tải lên dữ
+  liệu”, thống nhất cách hiểu cho người dùng.
+- Rà soát importer Nhật ký: mỗi dòng tra cứu CBCT, trẻ, hợp đồng, phân công và
+  cập nhật database; dữ liệu đúng được lưu, dòng lỗi được cảnh báo riêng.
+- Với gần 40.000 dòng, cách xử lý hiện tại có thể chậm do nhiều truy vấn theo
+  dòng; khuyến nghị chia file 2.000–5.000 dòng/lần trong giai đoạn kiểm thử.
+- Không xóa hoặc ghi đè dữ liệu ngoài khóa tự nhiên của nhật ký; có thể import
+  lại từng phần khi cần.
