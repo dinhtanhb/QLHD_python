@@ -5,11 +5,9 @@ from pathlib import Path
 from django.conf import settings
 from django.core.exceptions import ValidationError
 
-from .financial import calculate_payment_breakdown
-
-
 TEMPLATE_ROOT = Path(settings.BASE_DIR) / "quanly" / "document_templates"
 INTERVENTION_PAYMENT_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DNTT.xlsx"
+INTERVENTION_ACCOUNT_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DSTK.xlsx"
 FIRST_DETAIL_ROW = 12
 LAST_TEMPLATE_DETAIL_ROW = 50
 TOTAL_ROW = 51
@@ -88,7 +86,6 @@ def export_intervention_payment_request(dot):
         planned = assignment.so_buoi_du_kien
         actual = item.so_buoi_thanh_toan
         travel = item.so_luot_di_lai
-        breakdown = calculate_payment_breakdown(item.tien_cong, item.tien_di_lai)
         values = {
             "A": index + 1,
             "B": f"{journal.hop_dong.can_bo.ho_ten} - {assignment.tre.ho_ten}",
@@ -119,6 +116,48 @@ def export_intervention_payment_request(dot):
     for column in ("K", "P", "Q", "R", "S", "T"):
         ws[f"{column}{TOTAL_ROW}"] = f"=SUM({column}{FIRST_DETAIL_ROW}:{column}{end_row})"
     _fill_placeholders(workbook, context)
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
+def export_intervention_account_list(dot):
+    """Xuất danh sách tài khoản và số tiền thực lĩnh của một đợt thanh toán."""
+    if not INTERVENTION_ACCOUNT_TEMPLATE.exists():
+        raise ValidationError("Chưa có template danh sách tài khoản thanh toán.")
+    rows = list(dot.chi_tiet.select_related("nhat_ky__hop_dong__can_bo").order_by("id"))
+    if not rows:
+        raise ValidationError("Đợt thanh toán chưa có chi tiết để xuất danh sách tài khoản.")
+
+    workbook = _workbook(INTERVENTION_ACCOUNT_TEMPLATE)
+    ws = workbook["DSTK"]
+    for row in range(5, 20):
+        for cell in ws[row]:
+            cell.value = None
+
+    staff = dot.hop_dong.can_bo
+    gross = sum(item.thanh_tien for item in rows)
+    net = sum(item.thuc_linh for item in rows)
+    values = {
+        "A5": 1,
+        "B5": staff.ho_ten,
+        "C5": staff.dien_thoai or "",
+        "D5": staff.email or "",
+        "E5": staff.dia_chi or "",
+        "F5": staff.tai_khoan or "",
+        "G5": staff.ngan_hang or "",
+        "H5": staff.chi_nhanh or "",
+        "I5": gross,
+        "J5": net,
+        "K5": staff.mst or "",
+        "L5": staff.cccd or "",
+        "I20": "=SUM(I5:I19)",
+        "J20": "=SUM(J5:J19)",
+    }
+    for coordinate, value in values.items():
+        ws[coordinate] = value
+    _fill_placeholders(workbook, {"DiaDiemThucHien": "Theo hồ sơ thanh toán"})
     output = BytesIO()
     workbook.save(output)
     output.seek(0)

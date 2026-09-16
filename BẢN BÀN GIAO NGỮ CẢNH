@@ -3241,3 +3241,17 @@ khi hoàn tất xác nhận các mẫu thanh toán.
 - Không ghi ngược dữ liệu và không tạo bản ghi khi xuất file.
 - Chưa render file thanh toán thực tế vì database mẫu chưa có nhật ký/chi tiết
   thanh toán; đã kiểm tra template và các đường dẫn xuất.
+
+82. XUẤT DANH SÁCH TÀI KHOẢN THANH TOÁN
+
+Đã bổ sung xuất Excel danh sách tài khoản theo template Mau_DSTK.xlsx:
+
+- URL: /thanh-toan/<id>/xuat-danh-sach-tai-khoan/.
+- Lấy cán bộ thực hiện từ hợp đồng và tổng hợp số tiền trước thuế/thực lĩnh
+  từ các chi tiết thanh toán của đợt.
+- Giữ sheet, bố cục và thông tin tài khoản theo mẫu; bổ sung công thức tổng
+  tiền trước thuế và tổng thực lĩnh.
+- Không tạo hoặc sửa dữ liệu nghiệp vụ khi xuất file.
+- Đã kiểm tra template, sheet, URL, manage.py check, makemigrations --check
+  và biên dịch Python. Chưa render file có dữ liệu thực tế vì database hiện
+  chưa có nhật ký/chi tiết thanh toán mẫu.
