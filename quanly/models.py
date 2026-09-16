@@ -443,6 +443,7 @@ class NhatKyThucHien(TimeStampedModel):
     ngay_thuc_hien = models.DateField(verbose_name="Ngày thực hiện")
     gio_bat_dau = models.TimeField(null=True, blank=True, verbose_name="Giờ bắt đầu")
     gio_ket_thuc = models.TimeField(null=True, blank=True, verbose_name="Giờ kết thúc")
+    dia_diem_ct = models.CharField(max_length=100, blank=True, null=True, verbose_name="Địa điểm can thiệp")
     ky_can_thiep = models.PositiveIntegerField(default=1, verbose_name="Kỳ can thiệp")
     lan_thanh_toan = models.PositiveIntegerField(default=1, verbose_name="Lần thanh toán")
     so_buoi_thuc_hien = models.PositiveIntegerField(default=1, verbose_name="Số buổi thực hiện")
@@ -511,10 +512,10 @@ class NhatKyThucHien(TimeStampedModel):
                 child_id=self.phan_cong.tre_id, cb_id=self.hop_dong.can_bo_id,
                 ace=self.phan_cong.tre.ace_ruot or "", service=self.phan_cong.loai_dich_vu,
                 date=self.ngay_thuc_hien, start=self.gio_bat_dau, end=self.gio_ket_thuc,
-                location=self.phan_cong.dia_diem_ct or "", record_id=self.pk,
+                location=self.dia_diem_ct or self.phan_cong.dia_diem_ct or "", record_id=self.pk,
             )
             existing = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related("hop_dong", "phan_cong__tre")
-            records = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.hop_dong.can_bo_id, ace=x.phan_cong.tre.ace_ruot or "", service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc, location=x.phan_cong.dia_diem_ct or "", record_id=x.pk) for x in existing]
+            records = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.hop_dong.can_bo_id, ace=x.phan_cong.tre.ace_ruot or "", service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc, location=x.dia_diem_ct or x.phan_cong.dia_diem_ct or "", record_id=x.pk) for x in existing]
             travel = calculate_travel_flags(current, records)
             self.so_luot_di_lai_cbct = travel["so_luot_di_lai_cbct"]
             self.so_luot_di_lai = travel["so_luot_di_lai_ph"]

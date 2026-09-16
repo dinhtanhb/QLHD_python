@@ -3618,3 +3618,35 @@ sóc, tách khỏi tiền công cán bộ:
   template check và xuất thực tế đều đạt.
 - Cần commit/push mốc này lên branch `dev`; không đưa mẫu trong
   `quanly/document_templates/` hoặc canvas vào commit.
+
+109. ĐỐI CHIẾU 3 FILE THANH TOÁN THỰC TẾ VÀ GOM ĐNTT ĐÚNG NGHIỆP VỤ
+
+- Đã đọc trực tiếp `DNTT_N15K5.xlsx`, `DSTK_N15K5.xlsx` và
+  `DNCK_N15K5.xlsx`. Mẫu thật không xuất một dòng cho mỗi phiên nhật ký:
+  DNTT có dòng tổng màu vàng theo CBCT và các dòng chi tiết theo phân công
+  của trẻ; DSTK/ĐNCK mỗi CBCT chỉ có một dòng.
+- Sửa ĐNTT Excel: gom nhật ký theo `CBCT -> phân công trẻ/dịch vụ`, cộng số
+  buổi theo địa điểm, lượt đi lại CBCT, tiền công và tiền đi lại. Thuế TNCN
+  được tính trên tổng tiền công của từng CBCT; dòng tổng cuối bảng chỉ cộng
+  các dòng CBCT nên không bị nhân đôi với chi tiết trẻ.
+- Kiểm thử Nhóm HĐ 15/Kỳ 14: 424 phiên được gom còn 72 dòng nghiệp vụ, gồm
+  12 dòng tổng CBCT và 60 dòng trẻ/phân công; bản in DNTT còn 2 trang A4.
+  DNTT, DSTK và ĐNCK cùng khớp tổng thực lĩnh 99.400.000 đồng trên dữ liệu
+  kiểm thử hiện tại.
+- ĐNTT Excel, DSTK và ĐNCK đều là một file tổng hợp theo Nhóm HĐ/Kỳ, tên
+  dạng `DNTT_N15K14.xlsx`, `DSTK_N15K14.xlsx`, `DNCK_N15K14.xlsx`.
+  Chỉ ĐNTT Word là ZIP gồm một file cho mỗi CBCT.
+- Bỏ cột nhập `LanTT` khỏi import/form nhật ký. Lần thanh toán được hệ thống
+  tự tính bằng số kỳ can thiệp trước đó có nhật ký của từng CBCT + 1; Word
+  dùng giá trị tính tại thời điểm xuất, không buộc nhập lại trong Excel.
+- Bổ sung địa điểm can thiệp ở cấp từng nhật ký vì cột `DiaDiem` trong file
+  trước đây bị bỏ qua. DNTT nay phân loại buổi thực tế theo địa điểm của từng
+  phiên; logic đi lại cũng dùng địa điểm này. Migration 0019 sao chép địa
+  điểm phân công cho dữ liệu cũ.
+- Khóa import nhật ký bổ sung giờ bắt đầu/kết thúc, tránh hai phiên cùng
+  trẻ/dịch vụ/ngày nhưng khác giờ ghi đè nhau.
+- Sửa trang Thanh quyết toán tính thuế theo từng CBCT rồi mới cộng theo Nhóm
+  HĐ/Kỳ, đồng nhất với DNTT/DSTK/DNCK thực tế.
+- Migration 0019 đã áp dụng cục bộ; `manage.py check`,
+  `makemigrations --check` và 10 test đều đạt. Không đưa `_qa/`,
+  `quanly/document_templates/` hoặc `qlhd-roadmap.canvas.tsx` vào commit.

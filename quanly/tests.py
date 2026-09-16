@@ -8,6 +8,7 @@ from django.urls import reverse
 from .financial import FinancialConfig, calculate_payment_breakdown, calculate_tncn, calculate_travel_flags, journal_conflict_types
 from .document_export import _allocation_context, _date_parts
 from .models import PhanCongTre
+from .payment_export import _group_journal_payment_rows
 
 
 class FinancialRulesTests(SimpleTestCase):
@@ -64,3 +65,31 @@ class FinancialRulesTests(SimpleTestCase):
     def test_intervention_period_choices_cover_requested_range(self):
         self.assertEqual(list(FinancialConfig.KY_CAN_THIEP_CHOICES), list(range(1, 31)))
         self.assertEqual(list(FinancialConfig.NAM_CAN_THIEP_CHOICES), list(range(2024, 2031)))
+
+    def test_payment_excel_groups_sessions_by_staff_and_assignment(self):
+        staff = SimpleNamespace(pk=1, ho_ten="CBCT A")
+        contract = SimpleNamespace(pk=10, so_hop_dong="HD-01", can_bo=staff)
+        child = SimpleNamespace(pk=20, ho_ten="Trẻ A")
+        assignment = SimpleNamespace(
+            pk=30, tre=child, loai_dich_vu="NNTL", dia_diem_ct="Nhà",
+            so_buoi_du_kien=25,
+        )
+        journals = [
+            SimpleNamespace(
+                hop_dong=contract, hop_dong_id=10, phan_cong=assignment,
+                phan_cong_id=30, dia_diem_ct="Nhà", so_buoi_thuc_hien=1, so_luot_di_lai_cbct=1,
+                don_gia_cong=Decimal("200000"), dinh_muc_di_lai=Decimal("50000"), ghi_chu="",
+            ),
+            SimpleNamespace(
+                hop_dong=contract, hop_dong_id=10, phan_cong=assignment,
+                phan_cong_id=30, dia_diem_ct="Nhà", so_buoi_thuc_hien=1, so_luot_di_lai_cbct=0,
+                don_gia_cong=Decimal("200000"), dinh_muc_di_lai=Decimal("50000"), ghi_chu="",
+            ),
+        ]
+        grouped = _group_journal_payment_rows(journals)
+        self.assertEqual(len(grouped), 1)
+        self.assertEqual(len(grouped[0]["details"]), 1)
+        self.assertEqual(grouped[0]["actual_home"], 2)
+        self.assertEqual(grouped[0]["actual_travel"], 1)
+        self.assertEqual(grouped[0]["labor"], Decimal("400000"))
+        self.assertEqual(grouped[0]["travel"], Decimal("50000"))

@@ -261,13 +261,12 @@ class PhuLucHopDongForm(BootstrapModelForm):
 class NhatKyThucHienForm(BootstrapModelForm):
     class Meta:
         model = NhatKyThucHien
-        fields = ["phan_cong", "ngay_thuc_hien", "gio_bat_dau", "gio_ket_thuc", "ky_can_thiep", "lan_thanh_toan", "so_buoi_thuc_hien", "so_luot_di_lai", "ghi_chu"]
+        fields = ["phan_cong", "ngay_thuc_hien", "gio_bat_dau", "gio_ket_thuc", "dia_diem_ct", "ky_can_thiep", "so_buoi_thuc_hien", "so_luot_di_lai", "ghi_chu"]
         widgets = {
               "ngay_thuc_hien": forms.DateInput(attrs={"type": "date"}),
               "gio_bat_dau": forms.TimeInput(attrs={"type": "time"}),
               "gio_ket_thuc": forms.TimeInput(attrs={"type": "time"}),
               "ky_can_thiep": forms.NumberInput(attrs={"min": "1", "max": "30"}),
-              "lan_thanh_toan": forms.NumberInput(attrs={"min": "1"}),
             "so_buoi_thuc_hien": forms.NumberInput(attrs={"min": "1"}),
             "so_luot_di_lai": forms.NumberInput(attrs={"min": "0"}),
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),
@@ -290,14 +289,13 @@ class NhatKyCanThiepForm(BootstrapModelForm):
 
     class Meta:
         model = NhatKyThucHien
-        fields = ["hop_dong", "phan_cong", "ngay_thuc_hien", "gio_bat_dau", "gio_ket_thuc", "ky_can_thiep", "lan_thanh_toan", "so_buoi_thuc_hien", "so_luot_di_lai", "ghi_chu"]
+        fields = ["hop_dong", "phan_cong", "ngay_thuc_hien", "gio_bat_dau", "gio_ket_thuc", "dia_diem_ct", "ky_can_thiep", "so_buoi_thuc_hien", "so_luot_di_lai", "ghi_chu"]
         widgets = {
             "phan_cong": forms.Select(attrs={"class": "form-select select2-search"}),
               "ngay_thuc_hien": forms.DateInput(attrs={"type": "date"}),
               "gio_bat_dau": forms.TimeInput(attrs={"type": "time"}),
               "gio_ket_thuc": forms.TimeInput(attrs={"type": "time"}),
               "ky_can_thiep": forms.NumberInput(attrs={"min": "1", "max": "30"}),
-              "lan_thanh_toan": forms.NumberInput(attrs={"min": "1"}),
             "so_buoi_thuc_hien": forms.NumberInput(attrs={"min": "1"}),
             "so_luot_di_lai": forms.NumberInput(attrs={"min": "0"}),
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),

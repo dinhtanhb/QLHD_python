@@ -173,12 +173,12 @@ def trang_chu(request):
     )
 
 
-def next_payment_round(can_bo, before_date=None):
-    """Lần TT kế tiếp theo các đợt thanh toán đã lưu, không đếm nhật ký chưa thanh toán."""
-    qs = DotThanhToan.objects.filter(hop_dong__can_bo=can_bo)
-    if before_date:
-        qs = qs.filter(ngay_de_nghi__lt=before_date)
-    return qs.values("nam", "thang").distinct().count() + 1
+def next_payment_round(can_bo, ky_can_thiep=None):
+    """Tự tính lần TT theo số kỳ can thiệp trước đó có nhật ký của CBCT."""
+    qs = NhatKyThucHien.objects.filter(hop_dong__can_bo=can_bo)
+    if ky_can_thiep:
+        qs = qs.filter(ky_can_thiep__lt=ky_can_thiep)
+    return qs.values("ky_can_thiep").distinct().count() + 1
     context = {
         "tong_tre": Tre.objects.filter(is_active=True).count(),
         "tong_can_bo": CanBo.objects.filter(is_active=True).count(),
@@ -802,20 +802,22 @@ def import_nhat_ky_can_thiep(request):
             is_cs = PhanCongTre.service_group(assignment.loai_dich_vu) == "CS"
             gio_bat_dau = parse_time(get_excel_value(row, "GioBatDau", "Giờ bắt đầu"))
             gio_ket_thuc = parse_time(get_excel_value(row, "GioKetThuc", "Giờ kết thúc"))
+            dia_diem_ct = clean_empty_excel_value(get_excel_value(row, "DiaDiem", "Địa điểm")) or assignment.dia_diem_ct
             ky_can_thiep = parse_int(get_excel_value(row, "KyCanThiep", "Kỳ can thiệp"), 0)
             if not 1 <= ky_can_thiep <= 30:
                 raise ValueError("Kỳ can thiệp phải từ 1 đến 30")
-            lan_tt_raw = get_excel_value(row, "LanTT", "Lần TT", "Lần thanh toán")
-            if clean_empty_excel_value(lan_tt_raw) is not None:
-                lan_tt = parse_int(lan_tt_raw, 0)
-                if lan_tt < 1:
-                    raise ValueError("Lần thanh toán phải lớn hơn 0")
-            else:
-                lan_tt = next_payment_round(can_bo, ngay)
+            lan_tt = next_payment_round(can_bo, ky_can_thiep)
             if (gio_bat_dau is None) != (gio_ket_thuc is None):
                 raise ValueError("Phải nhập đồng thời Giờ bắt đầu và Giờ kết thúc")
-            defaults = {"so_buoi_thuc_hien": parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0), "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0), "ky_can_thiep": ky_can_thiep, "lan_thanh_toan": lan_tt, "gio_bat_dau": gio_bat_dau, "gio_ket_thuc": gio_ket_thuc, "don_gia_cong": hop_dong.don_gia_cong, "dinh_muc_di_lai": hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn, "ghi_chu": clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú"))}
-            obj, is_created = NhatKyThucHien.objects.update_or_create(hop_dong=hop_dong, phan_cong=assignment, ngay_thuc_hien=ngay, defaults=defaults)
+            defaults = {"so_buoi_thuc_hien": parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0), "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0), "ky_can_thiep": ky_can_thiep, "lan_thanh_toan": lan_tt, "dia_diem_ct": dia_diem_ct, "don_gia_cong": hop_dong.don_gia_cong, "dinh_muc_di_lai": hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn, "ghi_chu": clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú"))}
+            obj, is_created = NhatKyThucHien.objects.update_or_create(
+                hop_dong=hop_dong,
+                phan_cong=assignment,
+                ngay_thuc_hien=ngay,
+                gio_bat_dau=gio_bat_dau,
+                gio_ket_thuc=gio_ket_thuc,
+                defaults=defaults,
+            )
             created += int(is_created); updated += int(not is_created)
         except Exception as exc:
             skipped += 1; errors.append(f"Dòng {row_no}: {exc}")
@@ -1289,8 +1291,9 @@ def them_nhat_ky_thuc_hien(request, hop_dong_id):
         item = form.save(commit=False)
         item.hop_dong = hop_dong
         if not item.pk:
-            item.lan_thanh_toan = next_payment_round(hop_dong.can_bo, item.ngay_thuc_hien)
+            item.lan_thanh_toan = next_payment_round(hop_dong.can_bo, item.ky_can_thiep)
         item.don_gia_cong = FinancialConfig.DON_GIA_CONG
+        item.dia_diem_ct = item.dia_diem_ct or item.phan_cong.dia_diem_ct
         is_cs = PhanCongTre.service_group(item.phan_cong.loai_dich_vu) == "CS"
         allocation = hop_dong.de_xuat.phan_bo
         item.dinh_muc_di_lai = allocation.dinh_muc_di_lai_cs if is_cs else allocation.dinh_muc_di_lai_phcn
@@ -1306,8 +1309,9 @@ def them_nhat_ky_can_thiep(request):
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
         if not item.pk:
-            item.lan_thanh_toan = next_payment_round(item.hop_dong.can_bo, item.ngay_thuc_hien)
+            item.lan_thanh_toan = next_payment_round(item.hop_dong.can_bo, item.ky_can_thiep)
         item.don_gia_cong = FinancialConfig.DON_GIA_CONG
+        item.dia_diem_ct = item.dia_diem_ct or item.phan_cong.dia_diem_ct
         item.dinh_muc_di_lai = item.hop_dong.dinh_muc_di_lai_cs if PhanCongTre.service_group(item.phan_cong.loai_dich_vu) == "CS" else item.hop_dong.dinh_muc_di_lai_phcn
         item.save()
         messages.success(request, "Đã thêm nhật ký và lưu vào cơ sở dữ liệu.")
@@ -1556,6 +1560,7 @@ def thanh_quyet_toan(request):
             "di_lai": Decimal("0"),
             "tien_cong": Decimal("0"),
             "tien_di_lai": Decimal("0"),
+            "staff_amounts": {},
         })
         item["hop_dong_count"].add(journal.hop_dong_id)
         item["can_bo_count"].add(journal.hop_dong.can_bo_id)
@@ -1564,8 +1569,21 @@ def thanh_quyet_toan(request):
         item["di_lai"] += Decimal(journal.so_luot_di_lai_cbct)
         item["tien_cong"] += Decimal(journal.so_buoi_thuc_hien) * Decimal(journal.don_gia_cong)
         item["tien_di_lai"] += Decimal(journal.so_luot_di_lai_cbct) * Decimal(journal.dinh_muc_di_lai)
+        staff_amount = item["staff_amounts"].setdefault(
+            journal.hop_dong.can_bo_id,
+            {"labor": Decimal("0"), "travel": Decimal("0")},
+        )
+        staff_amount["labor"] += Decimal(journal.so_buoi_thuc_hien) * Decimal(journal.don_gia_cong)
+        staff_amount["travel"] += Decimal(journal.so_luot_di_lai_cbct) * Decimal(journal.dinh_muc_di_lai)
     for item in rows.values():
-        breakdown = calculate_payment_breakdown(item["tien_cong"], item["tien_di_lai"])
+        staff_breakdowns = [
+            calculate_payment_breakdown(amount["labor"], amount["travel"])
+            for amount in item.pop("staff_amounts").values()
+        ]
+        breakdown = {
+            key: sum((value[key] for value in staff_breakdowns), Decimal("0"))
+            for key in ("tien_cong", "tien_di_lai", "tong_truoc_thue", "thue_tncn", "thuc_linh")
+        }
         item["hop_dong_count"] = len(item["hop_dong_count"])
         item["can_bo_count"] = len(item["can_bo_count"])
         item.update(breakdown)
@@ -1611,6 +1629,16 @@ def _journal_export_queryset(request):
     return qs, ky, thang, nam
 
 
+def _journal_export_file_stem(qs, ky):
+    first = qs.first()
+    if not first:
+        return "NTatCaK" + (ky or "TatCa")
+    group_codes = list(qs.values_list("hop_dong__nhom_hd__ma_nhom_hd", flat=True).distinct()[:2])
+    group_code = group_codes[0] if len(group_codes) == 1 else "TatCa"
+    period = ky or (str(first.ky_can_thiep) if qs.values("ky_can_thiep").distinct().count() == 1 else "TatCa")
+    return f"N{group_code}K{period}"
+
+
 @readonly_required
 def xuat_dntt_nhat_ky(request):
     qs, ky, thang, nam = _journal_export_queryset(request)
@@ -1624,58 +1652,57 @@ def xuat_dntt_nhat_ky(request):
             for journal in qs:
                 grouped.setdefault(journal.hop_dong.can_bo_id, []).append(journal)
             for journals in grouped.values():
-                output = export_journal_payment_request(journals, ky=ky, thang=thang, nam=nam)
                 staff = journals[0].hop_dong.can_bo
+                period = int(ky) if ky.isdigit() else journals[0].ky_can_thiep
+                payment_round = next_payment_round(staff, period)
+                output = export_journal_payment_request(journals, ky=ky, thang=thang, nam=nam, lan_tt=payment_round)
                 safe_name = re.sub(r'[\\/:*?"<>|]+', "_", f"{staff.ma_can_bo} {staff.ho_ten}").strip()
-                bundle.writestr(f"L{journals[0].lan_thanh_toan}_DNTT - {safe_name}.docx", output.getvalue())
+                bundle.writestr(f"L{payment_round}_DNTT - {safe_name}.docx", output.getvalue())
     except ValidationError as exc:
         messages.error(request, str(exc)); return redirect(f"{reverse('de_nghi_thanh_toan')}?{request.GET.urlencode()}")
     response = HttpResponse(archive.getvalue(), content_type="application/zip")
-    response["Content-Disposition"] = f'attachment; filename="L{ky or "x"}_DNTT_{request.GET.get("nhom_hd", "tat-ca")}.zip"'
+    response["Content-Disposition"] = f'attachment; filename="DNTT_Word_{_journal_export_file_stem(qs, ky)}.zip"'
     return response
 
 
 @readonly_required
 def xuat_dntt_excel_nhat_ky(request):
-    qs, _, _, _ = _journal_export_queryset(request)
+    qs, ky, thang, nam = _journal_export_queryset(request)
     try:
-        output = export_journal_payment_request_excel(qs)
+        output = export_journal_payment_request_excel(qs, ky=ky, thang=thang, nam=nam)
     except ValidationError as exc:
         messages.error(request, str(exc)); return redirect(f"{reverse('de_nghi_thanh_toan')}?{request.GET.urlencode()}")
     response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = 'attachment; filename="DNTT_TongHop.xlsx"'
+    response["Content-Disposition"] = f'attachment; filename="DNTT_{_journal_export_file_stem(qs, ky)}.xlsx"'
     return response
 
 
 @readonly_required
 def xuat_dstk_nhat_ky(request):
-    qs, _, _, _ = _journal_export_queryset(request)
+    qs, ky, _, _ = _journal_export_queryset(request)
     try: output = export_journal_account_list(qs)
     except ValidationError as exc:
         messages.error(request, str(exc)); return redirect("nhat_ky_can_thiep")
     response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = 'attachment; filename="DSTK_NhatKy.xlsx"'
+    response["Content-Disposition"] = f'attachment; filename="DSTK_{_journal_export_file_stem(qs, ky)}.xlsx"'
     return response
 
 
 @readonly_required
 def xuat_dnck_nhat_ky(request):
-    qs, _, thang, nam = _journal_export_queryset(request)
-    archive = BytesIO()
+    qs, ky, _, _ = _journal_export_queryset(request)
     try:
-        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
-            grouped = {}
-            for journal in qs:
-                grouped.setdefault(journal.hop_dong.can_bo_id, []).append(journal)
-            for journals in grouped.values():
-                output = export_journal_commitment(journals, tu_ngay=f"01/{thang}/{nam}" if thang and nam else "", den_ngay="")
-                staff = journals[0].hop_dong.can_bo
-                safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{staff.ma_can_bo}_{staff.ho_ten}")
-                bundle.writestr(f"DNCK_{safe_name}.xlsx", output.getvalue())
+        journals = list(qs)
+        dates = [item.ngay_thuc_hien for item in journals]
+        output = export_journal_commitment(
+            journals,
+            tu_ngay=min(dates).strftime("%d/%m/%Y") if dates else "",
+            den_ngay=max(dates).strftime("%d/%m/%Y") if dates else "",
+        )
     except ValidationError as exc:
         messages.error(request, str(exc)); return redirect(f"{reverse('de_nghi_thanh_toan')}?{request.GET.urlencode()}")
-    response = HttpResponse(archive.getvalue(), content_type="application/zip")
-    response["Content-Disposition"] = 'attachment; filename="DNCK_NhatKy.zip"'
+    response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = f'attachment; filename="DNCK_{_journal_export_file_stem(qs, ky)}.xlsx"'
     return response
 
 
