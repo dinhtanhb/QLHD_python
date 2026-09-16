@@ -199,6 +199,11 @@
         .btn-success { --bs-btn-bg: #147d72; --bs-btn-border-color: #147d72; --bs-btn-hover-bg: #0f665d; --bs-btn-hover-border-color: #0f665d; }
         .form-control, .form-select { border-color: #cbd7e1; border-radius: 8px; min-height: 40px; }
         .form-control:focus, .form-select:focus { border-color: var(--accent); box-shadow: 0 0 0 .2rem rgba(24,169,153,.14); }
+        .select2-container { width: 100% !important; }
+        .select2-container .select2-selection--single { height: 40px; border: 1px solid #cbd7e1; border-radius: 8px; }
+        .select2-container .select2-selection--single .select2-selection__rendered { line-height: 38px; color: #263746; padding-left: 12px; }
+        .select2-container .select2-selection--single .select2-selection__arrow { height: 38px; right: 6px; }
+        .select2-container--open .select2-selection--single, .select2-container--focus .select2-selection--single { border-color: var(--accent); box-shadow: 0 0 0 .2rem rgba(24,169,153,.14); }
         form p { margin-bottom: 1rem; }
         form p label { display: block; font-weight: 600; color: #486581; margin-bottom: .35rem; }
         .alert { border: 0; border-radius: 10px; }
@@ -228,6 +233,10 @@
             <a href="{% url 'nhat_ky_can_thiep' %}" class="menu-item">
                 <i class="bi bi-clipboard2-check menu-icon"></i>
                 <span class="menu-text">Nhật ký can thiệp</span>
+            </a>
+            <a href="{% url 'thanh_quyet_toan' %}" class="menu-item">
+                <i class="bi bi-receipt menu-icon"></i>
+                <span class="menu-text">Thanh quyết toán</span>
             </a>
                         
             <!-- Menu Danh mục -->

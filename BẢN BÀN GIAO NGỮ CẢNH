@@ -3405,3 +3405,18 @@ sóc, tách khỏi tiền công cán bộ:
   thực lĩnh; thuế chỉ tính trên tiền công từ 5.000.000 đồng, không tính đi lại.
 - Đã thêm test kiểm tra route import và route ĐNTT Excel; tổng 6 test đều đạt,
   đồng thời đã chạy check, migration check và kiểm tra biên dịch template.
+
+93. TÁCH TRANG NHẬT KÝ VÀ THANH QUYẾT TOÁN
+
+- Trang Nhật ký can thiệp nay chỉ phục vụ danh sách, lọc, nhập thủ công và
+  import Excel; các nút tính toán/xuất hồ sơ đã chuyển khỏi trang này.
+- Bổ sung trang `/thanh-quyet-toan/` trong Quy trình hợp đồng, tổng hợp nhật ký
+  theo Nhóm HĐ + Kỳ can thiệp, phù hợp cách lập ĐNTT thực tế theo nhóm thay vì
+  từng hợp đồng. Trang có bộ lọc CBCT/Nhóm HĐ/Kỳ/Tháng/Năm và xuất ĐNTT Word,
+  ĐNTT Excel, DSTK, ĐNCK theo đúng tập dữ liệu đã lọc.
+- Chi tiết hợp đồng chuyển từ thao tác tạo đợt thanh toán riêng sang liên kết
+  Thanh quyết toán theo Nhóm HĐ; dữ liệu cũ và route thanh toán cũ vẫn giữ để
+  tương thích.
+- Chuẩn hóa giao diện Select2 để đồng nhất chiều cao, đường viền, bo góc và
+  trạng thái focus với các ô nhập liệu khác.
+- Đã chạy system check, migration check, biên dịch toàn bộ template và 6 test.

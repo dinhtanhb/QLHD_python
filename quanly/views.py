@@ -15,7 +15,7 @@ from django.utils import timezone
 from .decorators import admin_required, dashboard_required, hopdong_required, readonly_required
 from .document_export import create_contract_from_proposal, export_acceptance_record, export_assignment_annex, export_contract_bundle, export_journal_payment_request, export_liquidation_record
 from .payment_export import export_intervention_account_list, export_intervention_payment_request, export_journal_account_list, export_journal_commitment, export_journal_payment_request_excel, export_parent_travel_account_list, export_parent_travel_payment_request
-from .financial import FinancialConfig
+from .financial import FinancialConfig, calculate_payment_breakdown
 from .forms import (
     CanBoForm,
     DieuChuyenPhanCongForm,
@@ -1357,6 +1357,54 @@ def nhat_ky_can_thiep(request):
     if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
     page_obj = Paginator(qs, 25).get_page(request.GET.get("page"))
     return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
+
+
+@readonly_required
+def thanh_quyet_toan(request):
+    """Tổng hợp và lập hồ sơ thanh toán theo Nhóm HĐ + Kỳ can thiệp."""
+    qs, ky, thang, nam = _journal_export_queryset(request)
+    query = request.GET.get("q", "").strip()
+    if query:
+        qs = qs.filter(
+            Q(phan_cong__tre__ma_tre__icontains=query)
+            | Q(phan_cong__tre__ho_ten__icontains=query)
+            | Q(hop_dong__so_hop_dong__icontains=query)
+            | Q(hop_dong__can_bo__ho_ten__icontains=query)
+        )
+    rows = {}
+    for journal in qs:
+        key = (journal.hop_dong.nhom_hd_id, journal.phan_cong.ky_phan_cong)
+        item = rows.setdefault(key, {
+            "nhom": journal.hop_dong.nhom_hd,
+            "ky": journal.phan_cong.ky_phan_cong,
+            "hop_dong_count": set(),
+            "can_bo_count": set(),
+            "journal_count": 0,
+            "so_buoi": Decimal("0"),
+            "di_lai": Decimal("0"),
+            "tien_cong": Decimal("0"),
+            "tien_di_lai": Decimal("0"),
+        })
+        item["hop_dong_count"].add(journal.hop_dong_id)
+        item["can_bo_count"].add(journal.hop_dong.can_bo_id)
+        item["journal_count"] += 1
+        item["so_buoi"] += Decimal(journal.so_buoi_thuc_hien)
+        item["di_lai"] += Decimal(journal.so_luot_di_lai)
+        item["tien_cong"] += Decimal(journal.so_buoi_thuc_hien) * Decimal(journal.don_gia_cong)
+        item["tien_di_lai"] += Decimal(journal.so_luot_di_lai) * Decimal(journal.dinh_muc_di_lai)
+    for item in rows.values():
+        breakdown = calculate_payment_breakdown(item["tien_cong"], item["tien_di_lai"])
+        item["hop_dong_count"] = len(item["hop_dong_count"])
+        item["can_bo_count"] = len(item["can_bo_count"])
+        item.update(breakdown)
+    danh_sach = sorted(rows.values(), key=lambda item: (item["nhom"].ma_nhom_hd, item["ky"]))
+    return render(request, "quanly/thanh_quyet_toan.html", {
+        "danh_sach": danh_sach,
+        "query": query,
+        "can_bo_list": CanBo.objects.filter(is_active=True),
+        "nhom_list": NhomHD.objects.filter(is_active=True),
+        "filters": {"can_bo": request.GET.get("can_bo", ""), "nhom_hd": request.GET.get("nhom_hd", ""), "ky": ky, "thang": thang, "nam": nam},
+    })
 
 
 def _journal_export_queryset(request):
