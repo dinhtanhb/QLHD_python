@@ -71,4 +71,6 @@ urlpatterns = [
     path("hop-dong/<int:hop_dong_id>/thanh-toan-di-lai-phu-huynh/them/", login_required(views.tao_dot_thanh_toan_phu_huynh), name="tao_dot_thanh_toan_phu_huynh"),
     path("thanh-toan-di-lai-phu-huynh/<int:pk>/", login_required(views.chi_tiet_dot_thanh_toan_phu_huynh), name="chi_tiet_dot_thanh_toan_phu_huynh"),
     path("thanh-toan-di-lai-phu-huynh/<int:dot_id>/chi-tiet/them/", login_required(views.them_chi_tiet_thanh_toan_phu_huynh), name="them_chi_tiet_thanh_toan_phu_huynh"),
+    path("thanh-toan-di-lai-phu-huynh/<int:pk>/xuat-dntt/", login_required(views.xuat_dntt_di_lai_phu_huynh), name="xuat_dntt_di_lai_phu_huynh"),
+    path("thanh-toan-di-lai-phu-huynh/<int:pk>/xuat-dstk/", login_required(views.xuat_dstk_di_lai_phu_huynh), name="xuat_dstk_di_lai_phu_huynh"),
 ]

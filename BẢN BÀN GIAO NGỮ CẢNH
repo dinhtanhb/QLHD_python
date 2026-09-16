@@ -3298,3 +3298,16 @@ sóc, tách khỏi tiền công cán bộ:
   thông tin tài khoản vào bảng thanh toán và không cho nhập lại từ form.
 - Giao diện chi tiết đợt thanh toán đã hiển thị đủ bốn trường để kiểm tra trước
   khi xuất file.
+
+86. XUẤT EXCEL THANH TOÁN ĐI LẠI PHỤ HUYNH
+
+Đã nối xuất theo các mẫu Excel hiện có:
+
+- DNTT: /thanh-toan-di-lai-phu-huynh/<id>/xuat-dntt/?nhom=NCS|CG|CBDA.
+- DSTK: /thanh-toan-di-lai-phu-huynh/<id>/xuat-dstk/?nhom=NCS|CG.
+- Dữ liệu tài khoản trong DSTK lấy trực tiếp từ Tre: tên phụ huynh, số tài
+  khoản, ngân hàng và chi nhánh; các khoản cùng một tài khoản được cộng gộp.
+- DNTT tách dự toán, thực tế lượt đi lại, định mức và thành tiền; không có
+  cột tiền công hoặc thuế TNCN.
+- Chưa tự suy diễn nhóm CBDA cho DSTK vì thư mục mẫu hiện chưa có
+  Mau_DSTK_DiLai_CBDA.xlsx; cần mẫu chính thức nếu nhóm này được sử dụng.

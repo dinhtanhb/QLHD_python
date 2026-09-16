@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 TEMPLATE_ROOT = Path(settings.BASE_DIR) / "quanly" / "document_templates"
 INTERVENTION_PAYMENT_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DNTT.xlsx"
 INTERVENTION_ACCOUNT_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DSTK.xlsx"
+PARENT_TRAVEL_TEMPLATE_ROOT = TEMPLATE_ROOT / "thanh_toan_di_lai_phu_huynh"
 FIRST_DETAIL_ROW = 12
 LAST_TEMPLATE_DETAIL_ROW = 50
 TOTAL_ROW = 51
@@ -157,6 +158,84 @@ def export_intervention_account_list(dot):
     }
     for coordinate, value in values.items():
         ws[coordinate] = value
+    _fill_placeholders(workbook, {"DiaDiemThucHien": "Theo hồ sơ thanh toán"})
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
+PARENT_TRAVEL_CATEGORIES = {"CG", "NCS", "CBDA"}
+
+
+def _parent_template(category, prefix):
+    category = (category or "NCS").upper()
+    if category not in PARENT_TRAVEL_CATEGORIES:
+        raise ValidationError("Nhóm mẫu phải là CG, NCS hoặc CBDA.")
+    path = PARENT_TRAVEL_TEMPLATE_ROOT / f"Mau_{prefix}_DiLai_{category}.xlsx"
+    if not path.exists():
+        raise ValidationError(f"Chưa có template {path.name}.")
+    return path
+
+
+def export_parent_travel_payment_request(dot, category="NCS"):
+    rows = list(dot.chi_tiet.select_related("nhat_ky__hop_dong__can_bo", "nhat_ky__phan_cong__tre").order_by("id"))
+    if not rows:
+        raise ValidationError("Đợt thanh toán chưa có chi tiết để xuất.")
+    workbook = _workbook(_parent_template(category, "DNTT"))
+    ws = workbook["DNTT_NCS"]
+    first_row, last_row = 11, ws.max_row - 8
+    for row in range(first_row, last_row + 1):
+        for cell in ws[row]:
+            cell.value = None
+    for index, item in enumerate(rows, start=1):
+        row = first_row + index - 1
+        if row > last_row:
+            raise ValidationError("Số dòng thanh toán vượt giới hạn template.")
+        journal = item.nhat_ky
+        assignment = journal.phan_cong
+        child = assignment.tre
+        ws.cell(row, 1).value = index
+        ws.cell(row, 2).value = f"{journal.hop_dong.can_bo.ho_ten} - {child.ho_ten}"
+        ws.cell(row, 3).value = child.ten_phu_huynh or ""
+        ws.cell(row, 4).value = journal.hop_dong.so_hop_dong
+        ws.cell(row, 5).value = assignment.nhom_dich_vu
+        ws.cell(row, 6).value = assignment.so_buoi_du_kien
+        ws.cell(row, 7).value = item.dinh_muc_di_lai
+        ws.cell(row, 8).value = f"=F{row}*G{row}"
+        ws.cell(row, 9).value = item.so_luot_di_lai
+        ws.cell(row, 10).value = item.so_luot_di_lai
+        ws.cell(row, 11).value = f"=J{row}*G{row}"
+        ws.cell(row, 12).value = item.ghi_chu or ""
+    _fill_placeholders(workbook, {"KyThanhToan": f"{dot.thang}/{dot.nam}", "TuNgay": dot.hop_dong.tu_ngay.strftime("%d/%m/%Y"), "DenNgay": dot.hop_dong.den_ngay.strftime("%d/%m/%Y")})
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
+def export_parent_travel_account_list(dot, category="NCS"):
+    rows = list(dot.chi_tiet.select_related("nhat_ky__phan_cong__tre").order_by("id"))
+    if not rows:
+        raise ValidationError("Đợt thanh toán chưa có chi tiết để xuất danh sách tài khoản.")
+    workbook = _workbook(_parent_template(category, "DSTK"))
+    ws = workbook["DSTK_NCS"]
+    first_row, last_row = 5, ws.max_row - 5
+    for row in range(first_row, last_row + 1):
+        for cell in ws[row]:
+            cell.value = None
+    grouped = {}
+    for item in rows:
+        child = item.nhat_ky.phan_cong.tre
+        key = (child.ten_phu_huynh or "", child.ten_tai_khoan or "", child.tai_khoan or "", child.ngan_hang or "", child.chi_nhanh or "")
+        grouped[key] = grouped.get(key, 0) + item.thanh_tien
+    for index, (key, amount) in enumerate(grouped.items(), start=1):
+        row = first_row + index - 1
+        if row > last_row:
+            raise ValidationError("Số người nhận vượt giới hạn template.")
+        parent, account_name, account, bank, branch = key
+        for column, value in enumerate((index, parent, account, bank, branch, amount), start=1):
+            ws.cell(row, column).value = value
     _fill_placeholders(workbook, {"DiaDiemThucHien": "Theo hồ sơ thanh toán"})
     output = BytesIO()
     workbook.save(output)
