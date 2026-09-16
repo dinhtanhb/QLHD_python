@@ -11,12 +11,15 @@
     
     <style>
         :root {
-            --sidebar-bg: #212529;
-            --sidebar-hover: #343a40;
-            --sidebar-submenu-bg: #181b1e;
-            --sidebar-color: #adb5bd;
+            --sidebar-bg: #102a43;
+            --sidebar-hover: #1f4b6e;
+            --sidebar-submenu-bg: #0b2033;
+            --sidebar-color: #b8c9d8;
             --sidebar-active-color: #ffffff;
-            --resizer-width: 4px;
+            --accent: #18a999;
+            --page-bg: #f4f7fa;
+            --border: #e3eaf0;
+            --resizer-width: 3px;
         }
 
         body {
@@ -24,8 +27,10 @@
             height: 100vh;
             overflow: hidden;
             margin: 0;
-            background-color: #f4f6f9;
-            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--page-bg);
+            color: #263746;
+            font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+            font-size: 0.94rem;
         }
 
         /* Sidebar Styles */
@@ -33,7 +38,7 @@
             width: 260px;
             min-width: 70px;
             max-width: 450px;
-            background: var(--sidebar-bg);
+            background: linear-gradient(180deg, #102a43 0%, #0b2033 100%);
             color: var(--sidebar-color);
             display: flex;
             flex-direction: column;
@@ -42,13 +47,13 @@
         }
 
         .sidebar-header {
-            padding: 16px;
-            text-align: center;
+            padding: 18px 16px;
+            text-align: left;
             font-weight: 700;
             font-size: 1.2rem;
             letter-spacing: 0.5px;
             color: #fff;
-            border-bottom: 1px solid #343a40;
+            border-bottom: 1px solid rgba(255,255,255,.1);
             white-space: nowrap;
             overflow: hidden;
         }
@@ -60,19 +65,21 @@
         }
 
         .menu-item {
-            padding: 12px 18px;
+            padding: 10px 18px;
             color: var(--sidebar-color);
             text-decoration: none;
             display: flex;
             align-items: center;
             cursor: pointer;
-            transition: background 0.15s ease, color 0.15s ease;
+            border-left: 3px solid transparent;
+            transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
             white-space: nowrap;
         }
 
         .menu-item:hover {
             color: var(--sidebar-active-color);
             background: var(--sidebar-hover);
+            border-left-color: var(--accent);
         }
 
         .menu-item i.menu-icon {
@@ -104,7 +111,7 @@
         }
 
         .submenu .menu-item {
-            padding: 9px 18px 9px 42px;
+            padding: 8px 18px 8px 46px;
             font-size: 0.9rem;
         }
 
@@ -112,7 +119,7 @@
         #resizer {
             width: var(--resizer-width);
             cursor: col-resize;
-            background: #343a40;
+            background: #d8e1e8;
             transition: background 0.2s;
             z-index: 1001;
         }
@@ -131,16 +138,17 @@
         }
 
         #topbar {
-            background: #ffffff;
-            padding: 12px 24px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            background: rgba(255,255,255,.96);
+            padding: 14px 28px;
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 2px 12px rgba(16,42,67,.05);
             display: flex;
             align-items: center;
             z-index: 999;
         }
 
         #content-area {
-            padding: 24px;
+            padding: 28px;
             overflow-y: auto;
             flex-grow: 1;
         }
@@ -170,6 +178,36 @@
         .collapsed #resizer {
             cursor: default;
             pointer-events: none;
+        }
+
+        .sidebar-footer { padding: 14px 16px 18px; border-top: 1px solid rgba(255,255,255,.1); }
+        .sidebar-footer .text-secondary { color: var(--sidebar-color) !important; }
+        .sidebar-footer .btn { width: 100%; margin-top: 10px; }
+        #toggle-btn { border-color: var(--border); color: #486581; }
+        #toggle-btn:hover { background: #eaf5f4; color: #147d72; }
+        #content-area > .container-fluid, #content-area > .container { max-width: 1480px; margin: 0 auto; }
+        .card { border: 1px solid var(--border) !important; border-radius: 14px !important; box-shadow: 0 5px 18px rgba(16,42,67,.06) !important; overflow: hidden; }
+        .card-header { border-bottom: 1px solid rgba(255,255,255,.12); padding: 14px 18px; }
+        .card-body { padding: 20px; }
+        .table { --bs-table-border-color: var(--border); margin-bottom: 0; }
+        .table thead th { background: #f6f9fb; color: #486581; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+        .table td, .table th { padding: .72rem .8rem; vertical-align: middle; }
+        .table tbody tr:hover { background: #f8fbfc; }
+        .btn { border-radius: 8px; font-weight: 600; }
+        .btn-primary { --bs-btn-bg: #147d72; --bs-btn-border-color: #147d72; --bs-btn-hover-bg: #0f665d; --bs-btn-hover-border-color: #0f665d; }
+        .btn-success { --bs-btn-bg: #147d72; --bs-btn-border-color: #147d72; --bs-btn-hover-bg: #0f665d; --bs-btn-hover-border-color: #0f665d; }
+        .form-control, .form-select { border-color: #cbd7e1; border-radius: 8px; min-height: 40px; }
+        .form-control:focus, .form-select:focus { border-color: var(--accent); box-shadow: 0 0 0 .2rem rgba(24,169,153,.14); }
+        form p { margin-bottom: 1rem; }
+        form p label { display: block; font-weight: 600; color: #486581; margin-bottom: .35rem; }
+        .alert { border: 0; border-radius: 10px; }
+        @media (max-width: 768px) {
+            #sidebar { width: 72px; min-width: 72px; }
+            #sidebar .menu-text, #sidebar .submenu, #sidebar .sidebar-title, #sidebar .arrow-icon, #sidebar .sidebar-footer { display: none; }
+            #sidebar .menu-item { justify-content: center; padding: 13px 0; }
+            #sidebar .menu-item i.menu-icon { min-width: unset; }
+            #content-area { padding: 16px; }
+            #topbar { padding: 12px 16px; }
         }
     </style>
 </head>
@@ -233,7 +271,7 @@
                 </a>
             </div>
         </div>
-        <div class="ms-auto d-flex align-items-center">
+        <div class="sidebar-footer">
             {% if user.is_authenticated %}
                 <span class="me-3 text-secondary small fw-semibold">
                     <i class="bi bi-person-circle"></i> Xin chào, {{ user.username }}

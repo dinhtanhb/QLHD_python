@@ -3321,3 +3321,18 @@ sóc, tách khỏi tiền công cán bộ:
 - Tiền đi lại không làm phát sinh thuế và không làm thay đổi cơ sở xét ngưỡng.
 - Phân nhóm rõ VLTL/HDTL là PHCN, CSYT là CS và mã không hợp lệ không được
   tự suy diễn.
+
+88. RÀ SOÁT VÀ ĐỒNG NHẤT GIAO DIỆN
+
+Đã chuẩn hóa giao diện dùng chung trong base.html:
+
+- Hệ màu thống nhất xanh navy–teal, nền sáng và độ tương phản phù hợp.
+- Sidebar, topbar, card, bảng, form, nút hành động và thông báo dùng chung
+  một phong cách; bỏ cảm giác mỗi màn hình một kiểu.
+- Bảng có tiêu đề rõ, khoảng cách thoáng, hover nhẹ và phù hợp dữ liệu dài.
+- Form có nhãn nổi bật, trường nhập đồng nhất và trạng thái focus dễ nhận biết.
+- Sidebar có khu vực người dùng riêng, vẫn thu gọn được; giao diện có quy tắc
+  responsive cho màn hình nhỏ.
+- Chỉ thay đổi trình bày, không thay đổi nghiệp vụ hoặc dữ liệu.
+- Đã chạy manage.py check, test nghiệp vụ và git diff --check; người dùng cần
+  kiểm thử trực quan các màn hình và render Excel/Word trong bước UAT.
