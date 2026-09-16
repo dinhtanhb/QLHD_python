@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from .financial import FinancialConfig
+from .financial import FinancialConfig, calculate_payment_breakdown
 
 
 class TimeStampedModel(models.Model):
@@ -508,6 +508,22 @@ class ChiTietThanhToan(TimeStampedModel):
             errors["so_buoi_thanh_toan"] = "Số buổi thanh toán phải lớn hơn 0."
         if errors:
             raise ValidationError(errors)
+
+    @property
+    def tien_cong(self):
+        return Decimal(self.so_buoi_thanh_toan) * Decimal(self.nhat_ky.don_gia_cong)
+
+    @property
+    def tien_di_lai(self):
+        return Decimal(self.so_luot_di_lai) * Decimal(self.nhat_ky.dinh_muc_di_lai)
+
+    @property
+    def thue_tncn(self):
+        return calculate_payment_breakdown(self.tien_cong, self.tien_di_lai)["thue_tncn"]
+
+    @property
+    def thuc_linh(self):
+        return calculate_payment_breakdown(self.tien_cong, self.tien_di_lai)["thuc_linh"]
 
     def save(self, *args, **kwargs):
         self.full_clean()

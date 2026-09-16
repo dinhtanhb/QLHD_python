@@ -3202,3 +3202,13 @@ trẻ CS, 4 phân công PHCN, 1 phân công CS, tổng giá trị phân bổ 12.
 Các trường tiền vẫn được tính từ số buổi/lượt thực tế và đơn giá đã lưu tại
 nhật ký; phần giao diện nhập liệu và xuất bộ hồ sơ thanh toán sẽ làm tiếp sau
 khi hoàn tất xác nhận các mẫu thanh toán.
+
+79. QUY TẮC THUẾ TNCN ĐÃ XÁC NHẬN
+
+- Chỉ xét ngưỡng trên tiền công.
+- Nếu tiền công < 5.000.000 đồng: thuế TNCN = 0.
+- Nếu tiền công >= 5.000.000 đồng: thuế TNCN = 10% tiền công.
+- Tiền đi lại không chịu thuế.
+- Không dùng tổng tiền công + tiền đi lại để xét ngưỡng thuế.
+- Đã bổ sung hàm tính dùng chung calculate_tncn() và
+  calculate_payment_breakdown(); đã kiểm thử mốc 4.999.999 và 5.000.000 đồng.
