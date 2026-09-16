@@ -3124,3 +3124,39 @@ Mốc xuất bộ hợp đồng Word đã đủ điều kiện commit/push sau k
 kiểm tra migration và render mẫu. Khi commit, chỉ đưa mã nguồn, requirements và
 file bàn giao vào Git; không đưa thư mục document_templates vì đang chứa dữ liệu
 cá nhân mẫu. Nếu cần cập nhật template lên GitHub, phải làm sạch dữ liệu trước.
+
+74. XÁC NHẬN NGHIỆP VỤ TÀI CHÍNH VÀ PHÂN LOẠI DỊCH VỤ
+
+Theo xác nhận của người sử dụng:
+
+- Đơn giá công dùng chung cho các nhóm dịch vụ là 200.000 đồng/buổi.
+- Định mức đi lại có hai mức và được chọn ngay tại bước phân bổ chỉ tiêu:
+  DM1 = 50.000 đồng/lượt, DM2 = 100.000 đồng/lượt.
+- Hợp đồng phải kế thừa đúng mức đi lại đã chọn trong PhanBoChiTieu;
+  không thay bằng mức mặc định khi phân bổ đã có giá trị cụ thể.
+- Nhóm PHCN gồm: VLTL, Hoạt động trị liệu, Ngôn ngữ trị liệu,
+  Giáo dục đặc biệt.
+- Nhóm CS gồm: CSXH và CSYT.
+- Khi ký/tạo hợp đồng, mặc định xem dịch vụ là can thiệp tại nhà,
+  do đó giá trị dự kiến bao gồm tiền công và khoản đi lại dự kiến.
+- Khi thanh toán, tiền đi lại được đối chiếu theo số lượt thực tế
+  trên bảng chấm công/sổ theo dõi can thiệp.
+- Dữ liệu cũ giữ nguyên; không tự động tính lại hoặc cập nhật lại
+  các hợp đồng, đề xuất cũ.
+
+Khi code, không dùng mã VLTL để đại diện cho toàn bộ PHCN trong nghiệp vụ;
+cần phân biệt nhóm PHCN/CS khi tính, hiển thị, đối chiếu và làm Dashboard.
+
+75. TRIỂN KHAI PHÂN NHÓM DỊCH VỤ
+
+Đã bổ sung quy tắc nhóm dùng chung từ PhanCongTre:
+
+- PHCN_SERVICE_CODES = VLTL, HDTL, NNTL, GDDB.
+- CS_SERVICE_CODES = CSXH, CSYT.
+- Có thể lấy nhóm bằng PhanCongTre.service_group() hoặc thuộc tính
+  PhanCongTre.nhom_dich_vu.
+- Các bước tạo đề xuất và kiểm tra phân công đã được chuyển từ logic chỉ nhận
+  CSXH sang logic nhận đầy đủ nhóm CS, bao gồm cả CSYT.
+- Khi import phân công, định mức đi lại vẫn lấy từ trường PHCN/CS tương ứng
+  của PhanBoChiTieu.
+- Không cập nhật dữ liệu cũ; dữ liệu cũ được giữ để kiểm thử hồi quy.

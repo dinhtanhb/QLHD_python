@@ -196,6 +196,9 @@ class PhanBoChiTieu(TimeStampedModel):
 class PhanCongTre(TimeStampedModel):
     """Phân công trẻ theo phân bổ; chưa đồng nghĩa với thực tế thực hiện."""
 
+    PHCN_SERVICE_CODES = frozenset({"VLTL", "HDTL", "NNTL", "GDDB"})
+    CS_SERVICE_CODES = frozenset({"CSXH", "CSYT"})
+
     LOAI_DV_CHOICES = [
         ("VLTL", "Vật lý trị liệu"),
         ("HDTL", "Hoạt động trị liệu"),
@@ -235,6 +238,19 @@ class PhanCongTre(TimeStampedModel):
             models.Index(fields=["tre", "ky_phan_cong"], name="idx_pct_tre_ky"),
             models.Index(fields=["loai_dich_vu", "ngay_phan_cong"], name="idx_pct_dv_ngay"),
         ]
+
+    @classmethod
+    def service_group(cls, service_code):
+        """Trả về nhóm nghiệp vụ PHCN/CS của một mã dịch vụ."""
+        if service_code in cls.PHCN_SERVICE_CODES:
+            return "PHCN"
+        if service_code in cls.CS_SERVICE_CODES:
+            return "CS"
+        return None
+
+    @property
+    def nhom_dich_vu(self):
+        return self.service_group(self.loai_dich_vu)
 
     def __str__(self):
         return f"Phân công {self.tre.ho_ten} - {self.loai_dich_vu}"

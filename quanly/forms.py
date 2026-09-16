@@ -154,15 +154,16 @@ class PhanCongTreForm(BootstrapModelForm):
             self.add_error("tre", "Trẻ đang ở trạng thái ngừng sử dụng.")
         if phan_bo and not phan_bo.can_bo.is_active:
             self.add_error("phan_bo", "Cán bộ của phân bổ đang ở trạng thái ngừng hoạt động.")
-        if phan_bo and loai_dich_vu == "CSXH" and phan_bo.so_tre_cs <= 0:
-            self.add_error("loai_dich_vu", "Phân bổ không có chỉ tiêu CSXH.")
-        if phan_bo and loai_dich_vu != "CSXH" and phan_bo.so_tre_phcn <= 0:
+        is_cs = PhanCongTre.service_group(loai_dich_vu) == "CS"
+        if phan_bo and is_cs and phan_bo.so_tre_cs <= 0:
+            self.add_error("loai_dich_vu", "Phân bổ không có chỉ tiêu CS.")
+        if phan_bo and not is_cs and phan_bo.so_tre_phcn <= 0:
             self.add_error("loai_dich_vu", "Phân bổ không có chỉ tiêu PHCN.")
 
         if phan_bo and (dinh_muc_di_lai is None or dinh_muc_di_lai <= 0):
             cleaned_data["dinh_muc_di_lai"] = (
                 phan_bo.dinh_muc_di_lai_cs
-                if loai_dich_vu == "CSXH"
+                if is_cs
                 else phan_bo.dinh_muc_di_lai_phcn
             )
 

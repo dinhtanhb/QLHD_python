@@ -111,8 +111,8 @@ def get_excel_value(row, *names):
     return None
 
 
-def service_is_csxh(service):
-    return service == "CSXH"
+def service_is_cs(service):
+    return PhanCongTre.service_group(service) == "CS"
 
 
 def calculate_expected_value(so_tre_phcn, so_buoi_phcn, dm_phcn, so_tre_cs, so_buoi_cs, dm_cs):
@@ -577,7 +577,12 @@ def import_phan_cong(request):
                 tre=tre,
                 loai_dich_vu=service,
                 so_buoi_du_kien=parse_int(get_excel_value(row, "Số buổi dự kiến", "SoBuoi"), 0),
-                dinh_muc_di_lai=parse_decimal(get_excel_value(row, "Định mức đi lại", "DMDL"), phan_bo.dinh_muc_di_lai_cs if service == "CSXH" else phan_bo.dinh_muc_di_lai_phcn),
+                dinh_muc_di_lai=parse_decimal(
+                    get_excel_value(row, "Định mức đi lại", "DMDL"),
+                    phan_bo.dinh_muc_di_lai_cs
+                    if PhanCongTre.service_group(service) == "CS"
+                    else phan_bo.dinh_muc_di_lai_phcn,
+                ),
                 dia_diem_ct=clean_empty_excel_value(get_excel_value(row, "Địa điểm CT", "DiaDiemCT")),
                 hinh_thuc_ct=clean_empty_excel_value(get_excel_value(row, "Hình thức CT", "HinhThucCT")),
                 dot_phan_cong=parse_int(get_excel_value(row, "Đợt phân công", "DotPhanCong"), 1),
@@ -748,14 +753,15 @@ def build_proposal_from_allocation(phan_bo):
     if not assignments.exists():
         raise ValueError("Phân bổ chưa có phân công trẻ; không đủ điều kiện tạo đề xuất hợp đồng.")
 
-    phcn = assignments.exclude(loai_dich_vu="CSXH")
-    cs = assignments.filter(loai_dich_vu="CSXH")
+    phcn = assignments.filter(loai_dich_vu__in=PhanCongTre.PHCN_SERVICE_CODES)
+    cs = assignments.filter(loai_dich_vu__in=PhanCongTre.CS_SERVICE_CODES)
     so_tre_phcn = phcn.values("tre_id").distinct().count()
     so_tre_cs = cs.values("tre_id").distinct().count()
     so_buoi_phcn = sum(item.so_buoi_du_kien for item in phcn)
     so_buoi_cs = sum(item.so_buoi_du_kien for item in cs)
     gia_tri = sum(
-        Decimal(item.so_buoi_du_kien) * (Decimal(str(FinancialConfig.DON_GIA_CONG)) + Decimal(item.dinh_muc_di_lai))
+        Decimal(item.so_buoi_du_kien)
+        * (Decimal(str(FinancialConfig.DON_GIA_CONG)) + Decimal(item.dinh_muc_di_lai))
         for item in assignments
     )
     lan = (phan_bo.de_xuat_hop_dong.order_by("-lan_de_xuat").values_list("lan_de_xuat", flat=True).first() or 0) + 1
