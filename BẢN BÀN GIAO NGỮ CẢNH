@@ -3517,3 +3517,15 @@ sóc, tách khỏi tiền công cán bộ:
   can thiệp, số buổi PHCN và số buổi CS. Số buổi tính theo `so_buoi_thuc_hien`,
   không đếm số dòng nhật ký.
 - Đã chạy 6 test, system check và kiểm tra biên dịch toàn bộ template.
+
+102. SỬA TÍNH THÀNH TIỀN NHẬT KÝ VÀ CHUẨN HÓA KPI/FILTER
+
+- Xác định các dòng hiển thị `200.001 đ`: dữ liệu cũ lưu nhầm định mức đi lại
+  là `1`; đã bổ sung migration 0015 tính lại định mức theo PHCN/CS của hợp đồng
+  và tính lại Thành tiền. Kiểm tra sau migration không còn định mức 0/1; ví dụ
+  1 buổi + 1 lượt đi lại = 250.000 đ với định mức 50.000 đ.
+- Import Nhật ký nay lấy định mức từ hợp đồng, không lấy giá trị định mức lỗi
+  từ dòng phân công.
+- Đưa KPI lên trước khu vực tìm kiếm; các bộ lọc Kỳ/Tháng/Năm chuyển thành
+  dropdown, có tìm nhanh Select2; áp dụng cho Nhật ký và Thanh quyết toán.
+- Đã chạy migration 0015, system check, template check và 6 test.

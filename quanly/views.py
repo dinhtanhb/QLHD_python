@@ -767,7 +767,8 @@ def import_nhat_ky_can_thiep(request):
             assignment = assignment_qs.order_by("id").first()
             if not assignment:
                 raise ValueError("Không tìm thấy phân công tương ứng")
-            defaults = {"so_buoi_thuc_hien": parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0), "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0), "don_gia_cong": hop_dong.don_gia_cong, "dinh_muc_di_lai": assignment.dinh_muc_di_lai, "ghi_chu": clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú"))}
+            is_cs = PhanCongTre.service_group(assignment.loai_dich_vu) == "CS"
+            defaults = {"so_buoi_thuc_hien": parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0), "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0), "don_gia_cong": hop_dong.don_gia_cong, "dinh_muc_di_lai": hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn, "ghi_chu": clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú"))}
             obj, is_created = NhatKyThucHien.objects.update_or_create(hop_dong=hop_dong, phan_cong=assignment, ngay_thuc_hien=ngay, defaults=defaults)
             created += int(is_created); updated += int(not is_created)
         except Exception as exc:
@@ -1477,7 +1478,7 @@ def nhat_ky_can_thiep(request):
     total_sessions = qs.aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
     phcn_sessions = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.PHCN_SERVICE_CODES).aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
     cs_sessions = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.CS_SERVICE_CODES).aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
-    return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "tong_so": qs.count(), "total_sessions": total_sessions, "phcn_sessions": phcn_sessions, "cs_sessions": cs_sessions, "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
+    return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "tong_so": qs.count(), "total_sessions": total_sessions, "phcn_sessions": phcn_sessions, "cs_sessions": cs_sessions, "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "ky_choices": PhanCongTre.objects.values_list("ky_phan_cong", flat=True).distinct().order_by("ky_phan_cong"), "month_choices": range(1, 13), "year_choices": NhatKyThucHien.objects.dates("ngay_thuc_hien", "year", order="DESC"), "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
 
 
 @readonly_required
@@ -1525,6 +1526,9 @@ def thanh_quyet_toan(request):
         "can_bo_list": CanBo.objects.filter(is_active=True),
         "nhom_list": NhomHD.objects.filter(is_active=True),
         "filters": {"can_bo": request.GET.get("can_bo", ""), "nhom_hd": request.GET.get("nhom_hd", ""), "ky": ky, "thang": thang, "nam": nam},
+        "ky_choices": PhanCongTre.objects.values_list("ky_phan_cong", flat=True).distinct().order_by("ky_phan_cong"),
+        "month_choices": range(1, 13),
+        "year_choices": NhatKyThucHien.objects.dates("ngay_thuc_hien", "year", order="DESC"),
     })
 
 
