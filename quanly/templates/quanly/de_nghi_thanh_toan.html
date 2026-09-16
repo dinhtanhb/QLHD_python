@@ -1,0 +1,11 @@
+{% extends 'quanly/base.html' %}
+{% load number_format %}
+{% block title %}Đề nghị thanh toán{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4"><div class="card shadow">
+<div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"><div><h4 class="mb-1">Đề nghị thanh toán</h4><small>Xuất hồ sơ theo Nhóm HĐ và Kỳ can thiệp</small></div><a class="btn btn-light btn-sm" href="{% url 'thanh_quyet_toan' %}?{{ query_string }}">Quay lại Thanh quyết toán</a></div>
+<div class="card-body"><div class="alert alert-info">{% if nhom %}<strong>{{ nhom.ma_nhom_hd }} - {{ nhom.ten_nhom_hd }}</strong>{% else %}Chưa chọn Nhóm HĐ{% endif %} · <strong>Kỳ {{ ky|default:'—' }}</strong>{% if thang and nam %} · Tháng {{ thang }}/{{ nam }}{% endif %}</div>
+<div class="row g-3 mb-4"><div class="col-md-4"><div class="border rounded p-3"><small class="text-muted">Số CBCT</small><div class="fs-4 fw-semibold text-primary">{{ can_bo_count|vn_number }}</div></div></div><div class="col-md-4"><div class="border rounded p-3"><small class="text-muted">Số nhật ký</small><div class="fs-4 fw-semibold text-primary">{{ journal_count|vn_number }}</div></div></div><div class="col-md-4"><div class="border rounded p-3"><small class="text-muted">Tổng số buổi</small><div class="fs-4 fw-semibold text-primary">{{ so_buoi|vn_number }}</div></div></div></div>
+{% if journal_count %}<div class="d-flex flex-wrap gap-2"><a class="btn btn-success" href="{% url 'xuat_dntt_nhat_ky' %}?{{ query_string }}">Xuất ĐNTT Word (ZIP theo CBCT)</a><a class="btn btn-outline-success" href="{% url 'xuat_dntt_excel_nhat_ky' %}?{{ query_string }}">Xuất ĐNTT Excel (ZIP theo CBCT)</a><a class="btn btn-outline-success" href="{% url 'xuat_dstk_nhat_ky' %}?{{ query_string }}">Xuất DSTK</a><a class="btn btn-outline-primary" href="{% url 'xuat_dnck_nhat_ky' %}?{{ query_string }}">Xuất ĐNCK</a></div>{% else %}<div class="alert alert-warning">Không có nhật ký phù hợp với Nhóm HĐ và Kỳ đã chọn.</div>{% endif %}
+</div></div></div>
+{% endblock %}

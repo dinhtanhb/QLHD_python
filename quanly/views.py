@@ -1,6 +1,8 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from io import BytesIO
 import re
+import zipfile
 
 import pandas as pd
 from django.contrib import messages
@@ -10,6 +12,7 @@ from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 
 from .decorators import admin_required, dashboard_required, hopdong_required, readonly_required
@@ -1559,6 +1562,24 @@ def thanh_quyet_toan(request):
     })
 
 
+@readonly_required
+def de_nghi_thanh_toan(request):
+    """Trang xuất hồ sơ cho một Nhóm HĐ + Kỳ can thiệp đã chọn."""
+    qs, ky, thang, nam = _journal_export_queryset(request)
+    nhom_id = request.GET.get("nhom_hd", "").strip()
+    nhom = get_object_or_404(NhomHD, pk=int(nhom_id)) if nhom_id.isdigit() else None
+    return render(request, "quanly/de_nghi_thanh_toan.html", {
+        "nhom": nhom,
+        "ky": ky,
+        "thang": thang,
+        "nam": nam,
+        "journal_count": qs.count(),
+        "so_buoi": qs.aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0,
+        "can_bo_count": qs.values("hop_dong__can_bo_id").distinct().count(),
+        "query_string": request.GET.urlencode(),
+    })
+
+
 def _journal_export_queryset(request):
     qs = NhatKyThucHien.objects.select_related("hop_dong__can_bo__don_vi", "hop_dong__nhom_hd", "phan_cong__tre").order_by("ngay_thuc_hien", "id")
     cb_id, nhom_id, ky, thang, nam = (request.GET.get(key, "").strip() for key in ("can_bo", "nhom_hd", "ky", "thang", "nam"))
@@ -1573,22 +1594,45 @@ def _journal_export_queryset(request):
 @readonly_required
 def xuat_dntt_nhat_ky(request):
     qs, ky, thang, nam = _journal_export_queryset(request)
-    try: output = export_journal_payment_request(qs, ky=ky, thang=thang, nam=nam)
+    if not qs.exists():
+        messages.error(request, "Không có nhật ký phù hợp để xuất ĐNTT.")
+        return redirect(f"{reverse('de_nghi_thanh_toan')}?{request.GET.urlencode()}")
+    archive = BytesIO()
+    try:
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+            grouped = {}
+            for journal in qs:
+                grouped.setdefault(journal.hop_dong.can_bo_id, []).append(journal)
+            for journals in grouped.values():
+                output = export_journal_payment_request(journals, ky=ky, thang=thang, nam=nam)
+                staff = journals[0].hop_dong.can_bo
+                safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{staff.ma_can_bo}_{staff.ho_ten}")
+                bundle.writestr(f"L{ky or 'x'}_DNTT_{safe_name}.docx", output.getvalue())
     except ValidationError as exc:
-        messages.error(request, str(exc)); return redirect("nhat_ky_can_thiep")
-    return _document_response(output, f"DNTT_NhatKy_{ky or 'tat-ca'}_{thang or 'tat-ca'}_{nam or 'tat-ca'}.docx")
+        messages.error(request, str(exc)); return redirect(f"{reverse('de_nghi_thanh_toan')}?{request.GET.urlencode()}")
+    response = HttpResponse(archive.getvalue(), content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="L{ky or "x"}_DNTT_{request.GET.get("nhom_hd", "tat-ca")}.zip"'
+    return response
 
 
 @readonly_required
 def xuat_dntt_excel_nhat_ky(request):
     qs, _, _, _ = _journal_export_queryset(request)
+    archive = BytesIO()
     try:
-        output = export_journal_payment_request_excel(qs)
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+            grouped = {}
+            for journal in qs:
+                grouped.setdefault(journal.hop_dong.can_bo_id, []).append(journal)
+            for journals in grouped.values():
+                output = export_journal_payment_request_excel(journals)
+                staff = journals[0].hop_dong.can_bo
+                safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{staff.ma_can_bo}_{staff.ho_ten}")
+                bundle.writestr(f"DNTT_{safe_name}.xlsx", output.getvalue())
     except ValidationError as exc:
-        messages.error(request, str(exc))
-        return redirect("nhat_ky_can_thiep")
-    response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = 'attachment; filename="DNTT_NhatKy.xlsx"'
+        messages.error(request, str(exc)); return redirect(f"{reverse('de_nghi_thanh_toan')}?{request.GET.urlencode()}")
+    response = HttpResponse(archive.getvalue(), content_type="application/zip")
+    response["Content-Disposition"] = 'attachment; filename="DNTT_NhatKy.xlsx.zip"'
     return response
 
 
@@ -1606,11 +1650,21 @@ def xuat_dstk_nhat_ky(request):
 @readonly_required
 def xuat_dnck_nhat_ky(request):
     qs, _, thang, nam = _journal_export_queryset(request)
-    try: output = export_journal_commitment(qs, tu_ngay=f"01/{thang}/{nam}" if thang and nam else "", den_ngay="")
+    archive = BytesIO()
+    try:
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+            grouped = {}
+            for journal in qs:
+                grouped.setdefault(journal.hop_dong.can_bo_id, []).append(journal)
+            for journals in grouped.values():
+                output = export_journal_commitment(journals, tu_ngay=f"01/{thang}/{nam}" if thang and nam else "", den_ngay="")
+                staff = journals[0].hop_dong.can_bo
+                safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{staff.ma_can_bo}_{staff.ho_ten}")
+                bundle.writestr(f"DNCK_{safe_name}.xlsx", output.getvalue())
     except ValidationError as exc:
-        messages.error(request, str(exc)); return redirect("nhat_ky_can_thiep")
-    response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = 'attachment; filename="DNCK_NhatKy.xlsx"'
+        messages.error(request, str(exc)); return redirect(f"{reverse('de_nghi_thanh_toan')}?{request.GET.urlencode()}")
+    response = HttpResponse(archive.getvalue(), content_type="application/zip")
+    response["Content-Disposition"] = 'attachment; filename="DNCK_NhatKy.zip"'
     return response
 
 

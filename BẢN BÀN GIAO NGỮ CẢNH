@@ -3586,3 +3586,18 @@ sóc, tách khỏi tiền công cán bộ:
 - Migration 0017 đã áp dụng cục bộ; kiểm tra Django, template và 9 test đều đạt.
 - Cần commit/push mốc này lên branch `dev`; không đưa mẫu trong
   `quanly/document_templates/` hoặc canvas vào commit.
+
+107. TÁCH TRANG ĐỀ NGHỊ THANH TOÁN VÀ XUẤT HỒ SƠ THEO CBCT
+
+- Thanh quyết toán nay chỉ tổng hợp số liệu theo Nhóm HĐ + Kỳ can thiệp và có
+  nút `In ĐNTT` ở từng dòng; không còn các nút xuất hàng loạt trên trang tổng hợp.
+- Bổ sung trang `Đề nghị thanh toán`, tự nhận Nhóm HĐ/Kỳ từ dòng vừa chọn và
+  chứa 4 nghiệp vụ xuất: ĐNTT Word, ĐNTT Excel, DSTK, ĐNCK.
+- ĐNTT Word xuất ZIP, mỗi CBCT một file, tên dạng `L<Kỳ>_DNTT_MãCBCT_TênCBCT`.
+  ĐNTT Excel và ĐNCK cũng tách theo CBCT; Excel tự chèn dòng khi vượt giới
+  hạn template thay vì báo lỗi.
+- Đã kiểm tra trực tiếp Nhóm HĐ 15/Kỳ 14: 424 nhật ký, 12 CBCT, CBCT lớn
+  nhất 107 dòng; Word/Excel/ĐNCK đều xuất đủ 12 file, DSTK xuất được.
+- Sửa lỗi `MergedCell` trong mẫu DSTK và ĐNCK; kiểm thử Django và template đạt.
+- Đã tới mốc commit/push lên branch `dev`; không đưa mẫu trong
+  `quanly/document_templates/` hoặc canvas vào commit.

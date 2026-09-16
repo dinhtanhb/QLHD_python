@@ -84,6 +84,7 @@ urlpatterns = [
     path("nhat-ky-can-thiep/", login_required(views.nhat_ky_can_thiep), name="nhat_ky_can_thiep"),
     path("nhat-ky-can-thiep/import/", login_required(views.import_nhat_ky_can_thiep), name="import_nhat_ky_can_thiep"),
     path("thanh-quyet-toan/", login_required(views.thanh_quyet_toan), name="thanh_quyet_toan"),
+    path("de-nghi-thanh-toan/", login_required(views.de_nghi_thanh_toan), name="de_nghi_thanh_toan"),
     path("nhat-ky-can-thiep/xuat-dntt/", login_required(views.xuat_dntt_nhat_ky), name="xuat_dntt_nhat_ky"),
     path("nhat-ky-can-thiep/xuat-dntt-excel/", login_required(views.xuat_dntt_excel_nhat_ky), name="xuat_dntt_excel_nhat_ky"),
     path("nhat-ky-can-thiep/xuat-dstk/", login_required(views.xuat_dstk_nhat_ky), name="xuat_dstk_nhat_ky"),

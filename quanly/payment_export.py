@@ -247,7 +247,7 @@ def export_parent_travel_account_list(dot, category="NCS"):
 def _journal_totals(journals):
     from decimal import Decimal
     labor = sum((Decimal(row.so_buoi_thuc_hien) * Decimal(row.don_gia_cong) for row in journals), Decimal("0"))
-    travel = sum((Decimal(row.so_luot_di_lai) * Decimal(row.dinh_muc_di_lai) for row in journals), Decimal("0"))
+    travel = sum((Decimal(row.so_luot_di_lai_cbct) * Decimal(row.dinh_muc_di_lai) for row in journals), Decimal("0"))
     return labor, travel
 
 
@@ -271,7 +271,6 @@ def export_journal_account_list(journals):
         net = calculate_payment_breakdown(labor, travel)["thuc_linh"]
         for column, value in enumerate((index, staff.ho_ten, staff.dien_thoai or "", staff.email or "", staff.dia_chi or "", staff.tai_khoan or "", staff.ngan_hang or "", staff.chi_nhanh or "", labor + travel, net, staff.mst or "", staff.cccd or ""), start=1):
             ws.cell(row, column).value = value
-    ws["I20"] = "=SUM(I5:I19)"
     ws["J20"] = "=SUM(J5:J19)"
     output = BytesIO()
     workbook.save(output)
@@ -286,10 +285,14 @@ def export_journal_payment_request_excel(journals):
     workbook = _workbook(INTERVENTION_PAYMENT_TEMPLATE)
     ws = workbook["DNTT"]
     _clear_detail_rows(ws)
+    total_row = TOTAL_ROW
+    extra_rows = max(0, len(journals) - (LAST_TEMPLATE_DETAIL_ROW - FIRST_DETAIL_ROW + 1))
+    for _ in range(extra_rows):
+        ws.insert_rows(total_row)
+        _copy_row_style(ws, LAST_TEMPLATE_DETAIL_ROW, total_row)
+        total_row += 1
     for index, journal in enumerate(journals):
         row = FIRST_DETAIL_ROW + index
-        if row > LAST_TEMPLATE_DETAIL_ROW:
-            raise ValidationError("Số dòng nhật ký vượt giới hạn template ĐNTT.")
         assignment = journal.phan_cong
         bucket = _location_bucket(assignment.dia_diem_ct)
         values = {
@@ -301,7 +304,7 @@ def export_journal_payment_request_excel(journals):
         }
         for column, value in values.items(): ws[f"{column}{row}"] = value
     end_row = FIRST_DETAIL_ROW + len(journals) - 1
-    for column in ("K", "P", "Q", "R", "S", "T"): ws[f"{column}{TOTAL_ROW}"] = f"=SUM({column}{FIRST_DETAIL_ROW}:{column}{end_row})"
+    for column in ("K", "P", "Q", "R", "S", "T"): ws[f"{column}{total_row}"] = f"=SUM({column}{FIRST_DETAIL_ROW}:{column}{end_row})"
     output = BytesIO(); workbook.save(output); output.seek(0); return output
 
 
@@ -313,7 +316,11 @@ def export_journal_commitment(journals, tu_ngay="", den_ngay=""):
     ws = workbook["DNCK"]
     for row in range(5, 26):
         for cell in ws[row]:
-            cell.value = None
+            try:
+                cell.value = None
+            except AttributeError:
+                # Một số template gộp ô ở khu vực cuối bảng.
+                pass
     grouped = {}
     for journal in journals:
         staff = journal.hop_dong.can_bo

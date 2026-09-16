@@ -1,40 +1,11 @@
 {% extends 'quanly/base.html' %}
 {% load number_format %}
-
 {% block title %}Thanh quyết toán{% endblock %}
-
 {% block content %}
-<div class="container-fluid mt-4">
-  <div class="card shadow">
-    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-      <div><h4 class="mb-1">Thanh quyết toán</h4><small>Lập hồ sơ theo Nhóm HĐ và Kỳ can thiệp</small></div>
-      <a class="btn btn-light btn-sm" href="{% url 'nhat_ky_can_thiep' %}">Nhật ký can thiệp</a>
-    </div>
-    <div class="card-body">
-      <div class="alert alert-info py-2">Chọn Nhóm HĐ và Kỳ can thiệp để lập ĐNTT cho nhiều hợp đồng cùng lúc. Ví dụ: Kỳ 15 tương ứng tháng 8/2026.</div>
-      <form method="get" class="row g-2 align-items-end mb-4">
-        <div class="col-lg-3"><label class="form-label">Tìm kiếm</label><input name="q" value="{{ query }}" class="form-control" placeholder="Trẻ, hợp đồng, CBCT..."></div>
-        <div class="col-lg-2"><label class="form-label">CBCT</label><select name="can_bo" class="form-select select2-search"><option value="">Tất cả</option>{% for cb in can_bo_list %}<option value="{{ cb.pk }}" {% if filters.can_bo == cb.pk|stringformat:'s' %}selected{% endif %}>{{ cb.ma_can_bo }} - {{ cb.ho_ten }}</option>{% endfor %}</select></div>
-        <div class="col-lg-2"><label class="form-label">Nhóm HĐ</label><select name="nhom_hd" class="form-select select2-search"><option value="">Tất cả</option>{% for nhom in nhom_list %}<option value="{{ nhom.pk }}" {% if filters.nhom_hd == nhom.pk|stringformat:'s' %}selected{% endif %}>{{ nhom.ma_nhom_hd }} - {{ nhom.ten_nhom_hd }}</option>{% endfor %}</select></div>
-        <div class="col-lg-1"><label class="form-label">Kỳ thanh toán</label><select name="ky" class="form-select select2-search"><option value="">Tất cả</option>{% for value in ky_choices %}<option value="{{ value }}" {% if filters.ky == value|stringformat:'s' %}selected{% endif %}>Kỳ {{ value }}</option>{% endfor %}</select></div>
-        <div class="col-lg-1"><label class="form-label">Tháng</label><select name="thang" class="form-select select2-search"><option value="">Tất cả</option>{% for value in month_choices %}<option value="{{ value }}" {% if filters.thang == value|stringformat:'s' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></div>
-        <div class="col-lg-1"><label class="form-label">Năm</label><select name="nam" class="form-select select2-search"><option value="">Tất cả</option>{% for value in year_choices %}<option value="{{ value }}" {% if filters.nam == value|stringformat:'s' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></div>
-        <div class="col-lg-2"><button class="btn btn-primary me-1">Lọc</button><a class="btn btn-outline-secondary" href="{% url 'thanh_quyet_toan' %}">Xóa lọc</a></div>
-      </form>
-      <form method="get" class="d-flex flex-wrap gap-2 mb-3">
-        {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
-        {% if filters.can_bo %}<input type="hidden" name="can_bo" value="{{ filters.can_bo }}">{% endif %}
-        {% if filters.nhom_hd %}<input type="hidden" name="nhom_hd" value="{{ filters.nhom_hd }}">{% endif %}
-        {% if filters.ky %}<input type="hidden" name="ky" value="{{ filters.ky }}">{% endif %}
-        {% if filters.thang %}<input type="hidden" name="thang" value="{{ filters.thang }}">{% endif %}
-        {% if filters.nam %}<input type="hidden" name="nam" value="{{ filters.nam }}">{% endif %}
-        <button class="btn btn-success" formaction="{% url 'xuat_dntt_nhat_ky' %}">Xuất ĐNTT Word</button>
-        <button class="btn btn-outline-success" formaction="{% url 'xuat_dntt_excel_nhat_ky' %}">Xuất ĐNTT Excel</button>
-        <button class="btn btn-outline-success" formaction="{% url 'xuat_dstk_nhat_ky' %}">Xuất DSTK</button>
-        <button class="btn btn-outline-primary" formaction="{% url 'xuat_dnck_nhat_ky' %}">Xuất ĐNCK</button>
-      </form>
-      <div class="table-responsive"><table class="table table-bordered table-hover align-middle"><thead><tr><th>Nhóm HĐ</th><th>Kỳ</th><th>Hợp đồng</th><th>CBCT</th><th>Nhật ký</th><th>Buổi</th><th>Đi lại</th><th>Tiền công</th><th>Tiền đi lại</th><th>Thuế</th><th>Thực lĩnh</th></tr></thead><tbody>{% for item in danh_sach %}<tr><td>{{ item.nhom.ma_nhom_hd }}<br><small>{{ item.nhom.ten_nhom_hd }}</small></td><td>{{ item.ky|vn_number }}</td><td>{{ item.hop_dong_count|vn_number }}</td><td>{{ item.can_bo_count|vn_number }}</td><td>{{ item.journal_count|vn_number }}</td><td>{{ item.so_buoi|vn_number }}</td><td>{{ item.di_lai|vn_number }}</td><td>{{ item.tien_cong|vn_number }} đ</td><td>{{ item.tien_di_lai|vn_number }} đ</td><td>{{ item.thue_tncn|vn_number }} đ</td><td class="fw-semibold">{{ item.thuc_linh|vn_number }} đ</td></tr>{% empty %}<tr><td colspan="11" class="text-center text-muted py-4">Chưa có nhật ký phù hợp để thanh quyết toán.</td></tr>{% endfor %}</tbody></table></div>
-    </div>
-  </div>
-</div>
+<div class="container-fluid mt-4"><div class="card shadow">
+<div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"><div><h4 class="mb-1">Thanh quyết toán</h4><small>Lập hồ sơ theo Nhóm HĐ và Kỳ can thiệp</small></div><a class="btn btn-light btn-sm" href="{% url 'nhat_ky_can_thiep' %}">Nhật ký can thiệp</a></div>
+<div class="card-body"><div class="alert alert-info py-2">Chọn Nhóm HĐ và Kỳ can thiệp để xem số liệu. Bấm <strong>In ĐNTT</strong> ở từng dòng để mở trang xuất hồ sơ riêng.</div>
+<form method="get" class="row g-2 align-items-end mb-4"><div class="col-lg-3"><label class="form-label">Tìm kiếm</label><input name="q" value="{{ query }}" class="form-control" placeholder="Trẻ, hợp đồng, CBCT..."></div><div class="col-lg-2"><label class="form-label">CBCT</label><select name="can_bo" class="form-select select2-search"><option value="">Tất cả</option>{% for cb in can_bo_list %}<option value="{{ cb.pk }}" {% if filters.can_bo == cb.pk|stringformat:'s' %}selected{% endif %}>{{ cb.ma_can_bo }} - {{ cb.ho_ten }}</option>{% endfor %}</select></div><div class="col-lg-2"><label class="form-label">Nhóm HĐ</label><select name="nhom_hd" class="form-select select2-search"><option value="">Tất cả</option>{% for nhom in nhom_list %}<option value="{{ nhom.pk }}" {% if filters.nhom_hd == nhom.pk|stringformat:'s' %}selected{% endif %}>{{ nhom.ma_nhom_hd }} - {{ nhom.ten_nhom_hd }}</option>{% endfor %}</select></div><div class="col-lg-1"><label class="form-label">Kỳ</label><select name="ky" class="form-select select2-search"><option value="">Tất cả</option>{% for value in ky_choices %}<option value="{{ value }}" {% if filters.ky == value|stringformat:'s' %}selected{% endif %}>Kỳ {{ value }}</option>{% endfor %}</select></div><div class="col-lg-1"><label class="form-label">Tháng</label><select name="thang" class="form-select select2-search"><option value="">Tất cả</option>{% for value in month_choices %}<option value="{{ value }}" {% if filters.thang == value|stringformat:'s' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></div><div class="col-lg-1"><label class="form-label">Năm</label><select name="nam" class="form-select select2-search"><option value="">Tất cả</option>{% for value in year_choices %}<option value="{{ value }}" {% if filters.nam == value|stringformat:'s' %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></div><div class="col-lg-2"><button class="btn btn-primary me-1">Lọc</button><a class="btn btn-outline-secondary" href="{% url 'thanh_quyet_toan' %}">Xóa lọc</a></div></form>
+<div class="table-responsive"><table class="table table-bordered table-hover align-middle"><thead><tr><th>Nhóm HĐ</th><th>Kỳ</th><th>Hợp đồng</th><th>CBCT</th><th>Nhật ký</th><th>Buổi</th><th>Đi lại</th><th>Tiền công</th><th>Tiền đi lại</th><th>Thuế</th><th>Thực lĩnh</th><th>Thao tác</th></tr></thead><tbody>{% for item in danh_sach %}<tr><td>{{ item.nhom.ma_nhom_hd }}<br><small>{{ item.nhom.ten_nhom_hd }}</small></td><td>{{ item.ky|vn_number }}</td><td>{{ item.hop_dong_count|vn_number }}</td><td>{{ item.can_bo_count|vn_number }}</td><td>{{ item.journal_count|vn_number }}</td><td>{{ item.so_buoi|vn_number }}</td><td>{{ item.di_lai|vn_number }}</td><td>{{ item.tien_cong|vn_number }} đ</td><td>{{ item.tien_di_lai|vn_number }} đ</td><td>{{ item.thue_tncn|vn_number }} đ</td><td class="fw-semibold">{{ item.thuc_linh|vn_number }} đ</td><td><a class="btn btn-sm btn-success" href="{% url 'de_nghi_thanh_toan' %}?nhom_hd={{ item.nhom.pk }}&ky={{ item.ky }}{% if filters.thang %}&thang={{ filters.thang }}{% endif %}{% if filters.nam %}&nam={{ filters.nam }}{% endif %}">In ĐNTT</a></td></tr>{% empty %}<tr><td colspan="12" class="text-center text-muted">Chưa có nhật ký phù hợp để thanh quyết toán.</td></tr>{% endfor %}</tbody></table></div>
+</div></div></div>
 {% endblock %}
