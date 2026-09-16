@@ -443,6 +443,7 @@ class NhatKyThucHien(TimeStampedModel):
     ngay_thuc_hien = models.DateField(verbose_name="Ngày thực hiện")
     gio_bat_dau = models.TimeField(null=True, blank=True, verbose_name="Giờ bắt đầu")
     gio_ket_thuc = models.TimeField(null=True, blank=True, verbose_name="Giờ kết thúc")
+    ky_can_thiep = models.PositiveIntegerField(default=1, verbose_name="Kỳ can thiệp")
     so_buoi_thuc_hien = models.PositiveIntegerField(default=1, verbose_name="Số buổi thực hiện")
     # Tên cũ được giữ lại và quy ước là lượt đi lại của phụ huynh.
     so_luot_di_lai = models.PositiveIntegerField(default=1, verbose_name="Số lượt đi lại PH")

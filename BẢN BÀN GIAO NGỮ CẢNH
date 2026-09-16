@@ -3569,3 +3569,20 @@ sóc, tách khỏi tiền công cán bộ:
   thiết kế tách lượt mới.
 - Không cần migration vì đây là danh sách lựa chọn cấu hình; đã chạy 9 test,
   system check, kiểm tra migration và template đều đạt.
+
+106. TÁCH KỲ CAN THIỆP KHỎI KỲ PHÂN CÔNG
+
+- Đã xác định lỗi khiến import file có `KyCanThiep = 14` nhưng Nhật ký và
+  Thanh quyết toán vẫn hiển thị Kỳ 1: code cũ đọc `PhanCongTre.ky_phan_cong`
+  thay vì cột `KyCanThiep` của file nhật ký.
+- Bổ sung trường `NhatKyThucHien.ky_can_thiep`; migration 0017 giữ dữ liệu cũ
+  bằng cách sao chép Kỳ phân công hiện có làm giá trị ban đầu.
+- Import Nhật ký nay bắt buộc Kỳ can thiệp 1–30 và lưu đúng từng dòng; danh
+  sách Nhật ký, lọc, Thanh quyết toán và tổng hợp theo Nhóm HĐ đều dùng trường
+  Kỳ can thiệp riêng.
+- Sửa nhận diện mã dịch vụ chi tiết: `NNTL`, `GDDB`, `VLTL`, `HDTL`, `CSXH`,
+  `CSYT` được ghép đúng phân công tương ứng; chỉ `PHCN`/`CS` mới dùng logic
+  chọn theo nhóm.
+- Migration 0017 đã áp dụng cục bộ; kiểm tra Django, template và 9 test đều đạt.
+- Cần commit/push mốc này lên branch `dev`; không đưa mẫu trong
+  `quanly/document_templates/` hoặc canvas vào commit.

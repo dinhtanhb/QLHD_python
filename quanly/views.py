@@ -779,7 +779,7 @@ def import_nhat_ky_can_thiep(request):
                 raise ValueError(f"Không có hợp đồng bao phủ ngày {ngay:%d/%m/%Y} cho CBCT {ma_cb}, Nhóm HĐ {nhom_value or 'chưa có'}{detail}")
             raw_service = (clean_empty_excel_value(get_excel_value(row, "MaLoaiDichVu", "Loại dịch vụ")) or "PHCN").upper()
             service_codes = {"PHCN": PhanCongTre.PHCN_SERVICE_CODES, "CS": PhanCongTre.CS_SERVICE_CODES}
-            if raw_service in PhanCongTre.LOAI_DV_CHOICES:
+            if raw_service in dict(PhanCongTre.LOAI_DV_CHOICES):
                 assignment_qs = PhanCongTre.objects.filter(phan_bo=hop_dong.de_xuat.phan_bo, tre=tre, loai_dich_vu=raw_service)
             else:
                 group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} else "PHCN"
@@ -790,9 +790,12 @@ def import_nhat_ky_can_thiep(request):
             is_cs = PhanCongTre.service_group(assignment.loai_dich_vu) == "CS"
             gio_bat_dau = parse_time(get_excel_value(row, "GioBatDau", "Giờ bắt đầu"))
             gio_ket_thuc = parse_time(get_excel_value(row, "GioKetThuc", "Giờ kết thúc"))
+            ky_can_thiep = parse_int(get_excel_value(row, "KyCanThiep", "Kỳ can thiệp"), 0)
+            if not 1 <= ky_can_thiep <= 30:
+                raise ValueError("Kỳ can thiệp phải từ 1 đến 30")
             if (gio_bat_dau is None) != (gio_ket_thuc is None):
                 raise ValueError("Phải nhập đồng thời Giờ bắt đầu và Giờ kết thúc")
-            defaults = {"so_buoi_thuc_hien": parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0), "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0), "gio_bat_dau": gio_bat_dau, "gio_ket_thuc": gio_ket_thuc, "don_gia_cong": hop_dong.don_gia_cong, "dinh_muc_di_lai": hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn, "ghi_chu": clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú"))}
+            defaults = {"so_buoi_thuc_hien": parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0), "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0), "ky_can_thiep": ky_can_thiep, "gio_bat_dau": gio_bat_dau, "gio_ket_thuc": gio_ket_thuc, "don_gia_cong": hop_dong.don_gia_cong, "dinh_muc_di_lai": hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn, "ghi_chu": clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú"))}
             obj, is_created = NhatKyThucHien.objects.update_or_create(hop_dong=hop_dong, phan_cong=assignment, ngay_thuc_hien=ngay, defaults=defaults)
             created += int(is_created); updated += int(not is_created)
         except Exception as exc:
@@ -1495,7 +1498,7 @@ def nhat_ky_can_thiep(request):
         qs = qs.filter(Q(phan_cong__tre__ma_tre__icontains=query) | Q(phan_cong__tre__ho_ten__icontains=query) | Q(hop_dong__so_hop_dong__icontains=query) | Q(hop_dong__can_bo__ho_ten__icontains=query))
     if cb_id.isdigit(): qs = qs.filter(hop_dong__can_bo_id=int(cb_id))
     if nhom_id.isdigit(): qs = qs.filter(hop_dong__nhom_hd_id=int(nhom_id))
-    if ky.isdigit(): qs = qs.filter(phan_cong__ky_phan_cong=int(ky))
+    if ky.isdigit(): qs = qs.filter(ky_can_thiep=int(ky))
     if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
     if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
     page_obj = Paginator(qs, 25).get_page(request.GET.get("page"))
@@ -1519,10 +1522,10 @@ def thanh_quyet_toan(request):
         )
     rows = {}
     for journal in qs:
-        key = (journal.hop_dong.nhom_hd_id, journal.phan_cong.ky_phan_cong)
+        key = (journal.hop_dong.nhom_hd_id, journal.ky_can_thiep)
         item = rows.setdefault(key, {
             "nhom": journal.hop_dong.nhom_hd,
-            "ky": journal.phan_cong.ky_phan_cong,
+            "ky": journal.ky_can_thiep,
             "hop_dong_count": set(),
             "can_bo_count": set(),
             "journal_count": 0,
@@ -1561,7 +1564,7 @@ def _journal_export_queryset(request):
     cb_id, nhom_id, ky, thang, nam = (request.GET.get(key, "").strip() for key in ("can_bo", "nhom_hd", "ky", "thang", "nam"))
     if cb_id.isdigit(): qs = qs.filter(hop_dong__can_bo_id=int(cb_id))
     if nhom_id.isdigit(): qs = qs.filter(hop_dong__nhom_hd_id=int(nhom_id))
-    if ky.isdigit(): qs = qs.filter(phan_cong__ky_phan_cong=int(ky))
+    if ky.isdigit(): qs = qs.filter(ky_can_thiep=int(ky))
     if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
     if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
     return qs, ky, thang, nam
