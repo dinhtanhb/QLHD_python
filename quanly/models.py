@@ -1,10 +1,11 @@
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from .financial import FinancialConfig, calculate_payment_breakdown
+from .financial import FinancialConfig, calculate_payment_breakdown, calculate_travel_flags, journal_conflict_types
 
 
 class TimeStampedModel(models.Model):
@@ -141,6 +142,7 @@ class Tre(TimeStampedModel):
     tai_khoan = models.CharField(max_length=50, blank=True, null=True, verbose_name="Tài khoản")
     ngan_hang = models.CharField(max_length=100, blank=True, null=True, verbose_name="Ngân hàng")
     chi_nhanh = models.CharField(max_length=100, blank=True, null=True, verbose_name="Chi nhánh")
+    ace_ruot = models.CharField(max_length=100, blank=True, null=True, verbose_name="ACE ruột")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
     is_active = models.BooleanField(default=True, verbose_name="Đang sử dụng")
 
@@ -439,8 +441,12 @@ class NhatKyThucHien(TimeStampedModel):
     hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, related_name="nhat_ky_thuc_hien", verbose_name="Hợp đồng")
     phan_cong = models.ForeignKey(PhanCongTre, on_delete=models.PROTECT, related_name="nhat_ky_thuc_hien", verbose_name="Phân công")
     ngay_thuc_hien = models.DateField(verbose_name="Ngày thực hiện")
+    gio_bat_dau = models.TimeField(null=True, blank=True, verbose_name="Giờ bắt đầu")
+    gio_ket_thuc = models.TimeField(null=True, blank=True, verbose_name="Giờ kết thúc")
     so_buoi_thuc_hien = models.PositiveIntegerField(default=1, verbose_name="Số buổi thực hiện")
-    so_luot_di_lai = models.PositiveIntegerField(default=1, verbose_name="Số lượt đi lại")
+    # Tên cũ được giữ lại và quy ước là lượt đi lại của phụ huynh.
+    so_luot_di_lai = models.PositiveIntegerField(default=1, verbose_name="Số lượt đi lại PH")
+    so_luot_di_lai_cbct = models.PositiveIntegerField(default=0, verbose_name="Số lượt đi lại CBCT")
     don_gia_cong = models.DecimalField(max_digits=12, decimal_places=0, verbose_name="Đơn giá công")
     dinh_muc_di_lai = models.DecimalField(max_digits=12, decimal_places=0, verbose_name="Định mức đi lại")
     thanh_tien = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Thành tiền")
@@ -455,6 +461,7 @@ class NhatKyThucHien(TimeStampedModel):
         constraints = [
             models.CheckConstraint(condition=models.Q(so_buoi_thuc_hien__gt=0), name="ck_nk_so_buoi_gt0"),
             models.CheckConstraint(condition=models.Q(so_luot_di_lai__gte=0), name="ck_nk_di_lai_gte0"),
+            models.CheckConstraint(condition=models.Q(so_luot_di_lai_cbct__gte=0), name="ck_nk_di_lai_cbct_gte0"),
         ]
 
     def clean(self):
@@ -479,12 +486,37 @@ class NhatKyThucHien(TimeStampedModel):
                 errors["so_buoi_thuc_hien"] = (
                     "Tổng số buổi thực hiện của phân công không được vượt số buổi dự kiến."
                 )
+            if self.gio_bat_dau and self.gio_ket_thuc:
+                if self.gio_ket_thuc <= self.gio_bat_dau:
+                    errors["gio_ket_thuc"] = "Giờ kết thúc phải lớn hơn giờ bắt đầu."
+                current = SimpleNamespace(
+                    child_id=phan_cong.tre_id, cb_id=hop_dong.can_bo_id,
+                    service=phan_cong.loai_dich_vu, date=self.ngay_thuc_hien,
+                    start=self.gio_bat_dau, end=self.gio_ket_thuc,
+                )
+                other_qs = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related("hop_dong", "phan_cong")
+                previous = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.hop_dong.can_bo_id, service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc) for x in other_qs]
+                conflicts = journal_conflict_types(current, previous)
+                if conflicts:
+                    errors["gio_bat_dau"] = "Cảnh báo: " + ", ".join(conflicts) + ". Vui lòng kiểm tra lại lịch."
         if errors:
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         self.full_clean()
-        self.thanh_tien = Decimal(self.so_buoi_thuc_hien) * Decimal(self.don_gia_cong) + Decimal(self.so_luot_di_lai) * Decimal(self.dinh_muc_di_lai)
+        if self.gio_bat_dau and self.gio_ket_thuc:
+            current = SimpleNamespace(
+                child_id=self.phan_cong.tre_id, cb_id=self.hop_dong.can_bo_id,
+                ace=self.phan_cong.tre.ace_ruot or "", service=self.phan_cong.loai_dich_vu,
+                date=self.ngay_thuc_hien, start=self.gio_bat_dau, end=self.gio_ket_thuc,
+                location=self.phan_cong.dia_diem_ct or "", record_id=self.pk,
+            )
+            existing = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related("hop_dong", "phan_cong__tre")
+            records = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.hop_dong.can_bo_id, ace=x.phan_cong.tre.ace_ruot or "", service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc, location=x.phan_cong.dia_diem_ct or "", record_id=x.pk) for x in existing]
+            travel = calculate_travel_flags(current, records)
+            self.so_luot_di_lai_cbct = travel["so_luot_di_lai_cbct"]
+            self.so_luot_di_lai = travel["so_luot_di_lai_ph"]
+        self.thanh_tien = Decimal(self.so_buoi_thuc_hien) * Decimal(self.don_gia_cong) + Decimal(self.so_luot_di_lai_cbct) * Decimal(self.dinh_muc_di_lai)
         super().save(*args, **kwargs)
 
 
@@ -519,7 +551,7 @@ class ChiTietThanhToan(TimeStampedModel):
                 errors["nhat_ky"] = "Nhật ký không thuộc hợp đồng của đợt thanh toán."
             if (self.so_buoi_thanh_toan or 0) > self.nhat_ky.so_buoi_thuc_hien:
                 errors["so_buoi_thanh_toan"] = "Số buổi thanh toán không được vượt số buổi thực hiện."
-            if (self.so_luot_di_lai or 0) > self.nhat_ky.so_luot_di_lai:
+            if (self.so_luot_di_lai or 0) > self.nhat_ky.so_luot_di_lai_cbct:
                 errors["so_luot_di_lai"] = "Số lượt đi lại thanh toán không được vượt số lượt thực tế."
         if self.so_buoi_thanh_toan is not None and self.so_buoi_thanh_toan <= 0:
             errors["so_buoi_thanh_toan"] = "Số buổi thanh toán phải lớn hơn 0."

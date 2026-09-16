@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from django.test import SimpleTestCase
 from django.urls import reverse
 
-from .financial import calculate_payment_breakdown, calculate_tncn
+from .financial import calculate_payment_breakdown, calculate_tncn, calculate_travel_flags, journal_conflict_types
 from .document_export import _allocation_context, _date_parts
 from .models import PhanCongTre
 
@@ -46,3 +46,17 @@ class FinancialRulesTests(SimpleTestCase):
         self.assertEqual(PhanCongTre.service_group("HDTL"), "PHCN")
         self.assertEqual(PhanCongTre.service_group("CSYT"), "CS")
         self.assertIsNone(PhanCongTre.service_group("UNKNOWN"))
+
+    def test_schedule_conflicts_distinguish_child_and_cbct(self):
+        current = SimpleNamespace(child_id="T2", cb_id="CB1", service="CSXH", date=date(2026, 7, 4), start=__import__("datetime").time(10), end=__import__("datetime").time(11))
+        other = SimpleNamespace(child_id="T1", cb_id="CB1", service="VLTL", date=current.date, start=__import__("datetime").time(10), end=__import__("datetime").time(11))
+        self.assertEqual(journal_conflict_types(current, [other]), ["Trùng CBCT"])
+        other.child_id = "T2"
+        self.assertEqual(journal_conflict_types(current, [other]), ["Trùng lịch CT"])
+
+    def test_adjacent_sessions_are_not_conflicts_and_travel_is_separate(self):
+        current = SimpleNamespace(child_id="T2", cb_id="CB1", ace="A", service="CSXH", date=date(2026, 7, 4), start=__import__("datetime").time(11), end=__import__("datetime").time(12), location="Khác", record_id=2)
+        other = SimpleNamespace(child_id="T1", cb_id="CB1", ace="B", service="VLTL", date=current.date, start=__import__("datetime").time(10), end=__import__("datetime").time(11), location="Khác", record_id=1)
+        self.assertEqual(journal_conflict_types(current, [other]), [])
+        travel = calculate_travel_flags(current, [other])
+        self.assertEqual(travel, {"so_luot_di_lai_cbct": 1, "so_luot_di_lai_ph": 1})

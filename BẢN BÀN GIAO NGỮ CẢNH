@@ -3540,3 +3540,22 @@ sóc, tách khỏi tiền công cán bộ:
 - Đối chiếu ABP0191 cho thấy HĐ Nhóm 17 hiệu lực năm 2026, còn HĐ Nhóm 6 đã
   hết hạn ngày 31/12/2025; dòng Nhóm 6 trong file có ngày năm 2026 sẽ bị bỏ qua
   là đúng nghiệp vụ, không phải do trùng số hợp đồng.
+
+104. NHẬT KÝ CAN THIỆP: GIỜ, TRÙNG LỊCH VÀ TÁCH LƯỢT ĐI LẠI
+
+- Bổ sung `GioBatDau`, `GioKetThuc` vào Nhật ký; cho phép hai phiên nối tiếp
+  nhau, nhưng báo `Trùng lịch CT` khi cùng trẻ có dịch vụ chồng giờ và báo
+  `Trùng CBCT` khi một CBCT chồng giờ trên hai trẻ.
+- Tách lượt đi lại CBCT (`so_luot_di_lai_cbct`) và PH. Cột cũ
+  `so_luot_di_lai` được giữ làm lượt PH để tương thích dữ liệu/import cũ.
+  Khi có giờ, hệ thống tự tính theo địa điểm và các phiên trước; tiền công
+  CBCT/xuất ĐNTT dùng lượt CBCT, hồ sơ đi lại PH dùng lượt PH.
+- Bổ sung trường tùy chọn `ACE ruột` ở Trẻ để phục vụ quy tắc gộp lượt đi lại.
+- Import Nhật ký đã đọc giờ, yêu cầu nhập đủ cặp giờ; lỗi trùng/giờ sai được
+  báo theo từng dòng và dòng lỗi không được lưu.
+- Migration 0016 đã áp dụng cục bộ; dữ liệu cũ được sao chép lượt đi lại hiện
+  có sang trường CBCT để không làm thay đổi số liệu cũ.
+- Đã chạy `manage.py check`, `migrate`, `makemigrations --check` và 8 test,
+  tất cả đạt.
+- Đã tới mốc nên commit/push lên branch `dev` sau khi rà soát diff. Không đưa
+  `quanly/document_templates/` và `qlhd-roadmap.canvas.tsx` vào commit.

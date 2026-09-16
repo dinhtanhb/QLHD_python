@@ -112,6 +112,15 @@ def parse_date(value, default=None):
         return default
 
 
+def parse_time(value, default=None):
+    value = clean_empty_excel_value(value)
+    if value is None:
+        return default
+    try:
+        parsed = pd.to_datetime(value, errors="raise")
+        return parsed.time()
+    except (ValueError, TypeError):
+        return default
 def normalized_columns(df):
     df = df.copy()
     df.columns = [str(col).replace("\xa0", " ").strip() for col in df.columns]
@@ -779,7 +788,11 @@ def import_nhat_ky_can_thiep(request):
             if not assignment:
                 raise ValueError("Không tìm thấy phân công tương ứng")
             is_cs = PhanCongTre.service_group(assignment.loai_dich_vu) == "CS"
-            defaults = {"so_buoi_thuc_hien": parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0), "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0), "don_gia_cong": hop_dong.don_gia_cong, "dinh_muc_di_lai": hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn, "ghi_chu": clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú"))}
+            gio_bat_dau = parse_time(get_excel_value(row, "GioBatDau", "Giờ bắt đầu"))
+            gio_ket_thuc = parse_time(get_excel_value(row, "GioKetThuc", "Giờ kết thúc"))
+            if (gio_bat_dau is None) != (gio_ket_thuc is None):
+                raise ValueError("Phải nhập đồng thời Giờ bắt đầu và Giờ kết thúc")
+            defaults = {"so_buoi_thuc_hien": parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0), "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0), "gio_bat_dau": gio_bat_dau, "gio_ket_thuc": gio_ket_thuc, "don_gia_cong": hop_dong.don_gia_cong, "dinh_muc_di_lai": hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn, "ghi_chu": clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú"))}
             obj, is_created = NhatKyThucHien.objects.update_or_create(hop_dong=hop_dong, phan_cong=assignment, ngay_thuc_hien=ngay, defaults=defaults)
             created += int(is_created); updated += int(not is_created)
         except Exception as exc:

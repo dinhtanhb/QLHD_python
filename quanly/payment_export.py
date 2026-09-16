@@ -295,9 +295,9 @@ def export_journal_payment_request_excel(journals):
         values = {
             "A": index + 1, "B": f"{journal.hop_dong.can_bo.ho_ten} - {assignment.tre.ho_ten}", "C": journal.hop_dong.so_hop_dong, "D": assignment.nhom_dich_vu,
             "E": assignment.so_buoi_du_kien if bucket == "facility" else 0, "F": assignment.so_buoi_du_kien if bucket == "home" else 0, "G": assignment.so_buoi_du_kien if bucket == "other" else 0,
-            "H": journal.so_luot_di_lai if bucket == "home" else 0, "I": journal.don_gia_cong, "J": journal.dinh_muc_di_lai,
+            "H": journal.so_luot_di_lai_cbct if bucket == "home" else 0, "I": journal.don_gia_cong, "J": journal.dinh_muc_di_lai,
             "K": f"=E{row}*I{row}+H{row}*J{row}", "L": journal.so_buoi_thuc_hien if bucket == "facility" else 0, "M": journal.so_buoi_thuc_hien if bucket == "home" else 0, "N": journal.so_buoi_thuc_hien if bucket == "other" else 0,
-            "O": journal.so_luot_di_lai, "P": f"=(L{row}+M{row}+N{row})*I{row}", "Q": f"=O{row}*J{row}", "R": f"=P{row}+Q{row}", "S": f"=IF(P{row}>=5000000,P{row}*10%,0)", "T": f"=R{row}-S{row}", "U": journal.ghi_chu or "",
+            "O": journal.so_luot_di_lai_cbct, "P": f"=(L{row}+M{row}+N{row})*I{row}", "Q": f"=O{row}*J{row}", "R": f"=P{row}+Q{row}", "S": f"=IF(P{row}>=5000000,P{row}*10%,0)", "T": f"=R{row}-S{row}", "U": journal.ghi_chu or "",
         }
         for column, value in values.items(): ws[f"{column}{row}"] = value
     end_row = FIRST_DETAIL_ROW + len(journals) - 1

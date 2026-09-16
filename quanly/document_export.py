@@ -175,8 +175,8 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None):
     cs = [x for x in journals if x.phan_cong.nhom_dich_vu == "CS"]
     def totals(rows):
         labor = sum((Decimal(x.so_buoi_thuc_hien) * Decimal(x.don_gia_cong) for x in rows), Decimal("0"))
-        travel = sum((Decimal(x.so_luot_di_lai) * Decimal(x.dinh_muc_di_lai) for x in rows), Decimal("0"))
-        return sum((x.so_buoi_thuc_hien for x in rows), 0), labor, sum((x.so_luot_di_lai for x in rows), 0), travel
+        travel = sum((Decimal(x.so_luot_di_lai_cbct) * Decimal(x.dinh_muc_di_lai) for x in rows), Decimal("0"))
+        return sum((x.so_buoi_thuc_hien for x in rows), 0), labor, sum((x.so_luot_di_lai_cbct for x in rows), 0), travel
     phcn_sessions, phcn_labor, phcn_trips, phcn_travel = totals(phcn)
     cs_sessions, cs_labor, cs_trips, cs_travel = totals(cs)
     context = {

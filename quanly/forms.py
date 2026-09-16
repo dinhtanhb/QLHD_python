@@ -47,8 +47,8 @@ class TreForm(BootstrapModelForm):
         model = Tre
         fields = [
             "ma_tre", "ho_ten", "ngay_sinh", "gioi_tinh", "tinh", "xa", "ma_tinh",
-            "ten_phu_huynh", "dien_thoai", "ten_tai_khoan", "tai_khoan", "ngan_hang",
-            "chi_nhanh", "ghi_chu", "is_active",
+              "ten_phu_huynh", "dien_thoai", "ten_tai_khoan", "tai_khoan", "ngan_hang",
+              "chi_nhanh", "ace_ruot", "ghi_chu", "is_active",
         ]
         widgets = {
             "ngay_sinh": forms.DateInput(attrs={"type": "date"}),
@@ -261,9 +261,11 @@ class PhuLucHopDongForm(BootstrapModelForm):
 class NhatKyThucHienForm(BootstrapModelForm):
     class Meta:
         model = NhatKyThucHien
-        fields = ["phan_cong", "ngay_thuc_hien", "so_buoi_thuc_hien", "so_luot_di_lai", "ghi_chu"]
+        fields = ["phan_cong", "ngay_thuc_hien", "gio_bat_dau", "gio_ket_thuc", "so_buoi_thuc_hien", "so_luot_di_lai", "ghi_chu"]
         widgets = {
-            "ngay_thuc_hien": forms.DateInput(attrs={"type": "date"}),
+              "ngay_thuc_hien": forms.DateInput(attrs={"type": "date"}),
+              "gio_bat_dau": forms.TimeInput(attrs={"type": "time"}),
+              "gio_ket_thuc": forms.TimeInput(attrs={"type": "time"}),
             "so_buoi_thuc_hien": forms.NumberInput(attrs={"min": "1"}),
             "so_luot_di_lai": forms.NumberInput(attrs={"min": "0"}),
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),
@@ -286,10 +288,12 @@ class NhatKyCanThiepForm(BootstrapModelForm):
 
     class Meta:
         model = NhatKyThucHien
-        fields = ["hop_dong", "phan_cong", "ngay_thuc_hien", "so_buoi_thuc_hien", "so_luot_di_lai", "ghi_chu"]
+        fields = ["hop_dong", "phan_cong", "ngay_thuc_hien", "gio_bat_dau", "gio_ket_thuc", "so_buoi_thuc_hien", "so_luot_di_lai", "ghi_chu"]
         widgets = {
             "phan_cong": forms.Select(attrs={"class": "form-select select2-search"}),
-            "ngay_thuc_hien": forms.DateInput(attrs={"type": "date"}),
+              "ngay_thuc_hien": forms.DateInput(attrs={"type": "date"}),
+              "gio_bat_dau": forms.TimeInput(attrs={"type": "time"}),
+              "gio_ket_thuc": forms.TimeInput(attrs={"type": "time"}),
             "so_buoi_thuc_hien": forms.NumberInput(attrs={"min": "1"}),
             "so_luot_di_lai": forms.NumberInput(attrs={"min": "0"}),
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),
