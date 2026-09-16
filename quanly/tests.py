@@ -13,6 +13,7 @@ from .models import PhanCongTre
 class FinancialRulesTests(SimpleTestCase):
     def test_intervention_journal_routes_are_registered(self):
         self.assertEqual(reverse("import_nhat_ky_can_thiep"), "/nhat-ky-can-thiep/import/")
+        self.assertEqual(reverse("them_nhat_ky_can_thiep"), "/nhat-ky-can-thiep/them/")
         self.assertEqual(reverse("xuat_dntt_excel_nhat_ky"), "/nhat-ky-can-thiep/xuat-dntt-excel/")
 
     def test_contract_date_parts_keep_day_month_year_separate(self):

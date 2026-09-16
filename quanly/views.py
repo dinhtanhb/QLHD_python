@@ -27,6 +27,7 @@ from .forms import (
     HopDongForm,
     NhomHDForm,
     NhatKyThucHienForm,
+    NhatKyCanThiepForm,
     NghiemThuForm,
     PhanBoChiTieuForm,
     PhanCongTreForm,
@@ -730,8 +731,13 @@ def import_nhat_ky_can_thiep(request):
         except Exception as exc:
             skipped += 1; errors.append(f"Dòng {row_no}: {exc}")
     msg = f"Import nhật ký hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
-    if errors: msg += " " + " | ".join(errors[:5])
-    messages.success(request, msg)
+    if errors:
+        msg += " Chi tiết: " + " | ".join(errors[:8])
+        messages.warning(request, msg)
+    elif created or updated:
+        messages.success(request, msg + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
+    else:
+        messages.warning(request, msg + " Không có dữ liệu nào được lưu.")
     return redirect("nhat_ky_can_thiep")
 
 
@@ -1147,6 +1153,19 @@ def them_nhat_ky_thuc_hien(request, hop_dong_id):
 
 
 @hopdong_required
+def them_nhat_ky_can_thiep(request):
+    form = NhatKyCanThiepForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        item = form.save(commit=False)
+        item.don_gia_cong = FinancialConfig.DON_GIA_CONG
+        item.dinh_muc_di_lai = item.hop_dong.dinh_muc_di_lai_cs if PhanCongTre.service_group(item.phan_cong.loai_dich_vu) == "CS" else item.hop_dong.dinh_muc_di_lai_phcn
+        item.save()
+        messages.success(request, "Đã thêm nhật ký và lưu vào cơ sở dữ liệu.")
+        return redirect("nhat_ky_can_thiep")
+    return render(request, "quanly/them_nhat_ky_can_thiep.html", {"form": form})
+
+
+@hopdong_required
 def tao_dot_thanh_toan(request, hop_dong_id):
     hop_dong = get_object_or_404(HopDong, pk=hop_dong_id)
     form = DotThanhToanForm(request.POST or None)
@@ -1356,7 +1375,7 @@ def nhat_ky_can_thiep(request):
     if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
     if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
     page_obj = Paginator(qs, 25).get_page(request.GET.get("page"))
-    return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
+    return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "tong_so": qs.count(), "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
 
 
 @readonly_required

@@ -3420,3 +3420,17 @@ sóc, tách khỏi tiền công cán bộ:
 - Chuẩn hóa giao diện Select2 để đồng nhất chiều cao, đường viền, bo góc và
   trạng thái focus với các ô nhập liệu khác.
 - Đã chạy system check, migration check, biên dịch toàn bộ template và 6 test.
+
+94. HOÀN THIỆN NHẬP VÀ HIỂN THỊ NHẬT KÝ CAN THIỆP
+
+- Bổ sung nút `Thêm nhật ký` ngay trên trang Nhật ký can thiệp và form nhập
+  độc lập; người dùng chọn hợp đồng, phân công, ngày, số buổi và lượt đi lại,
+  hệ thống tự lấy đơn giá/định mức theo hợp đồng rồi lưu vào database.
+- Import Excel nay hiển thị thông báo trên giao diện dùng chung: số dòng thêm,
+  cập nhật, bỏ qua; nếu có lỗi sẽ cảnh báo và nêu chi tiết từng dòng, nếu lưu
+  thành công sẽ xác nhận rõ dữ liệu đã vào cơ sở dữ liệu.
+- Trang Nhật ký luôn hiển thị tổng số bản ghi theo bộ lọc, giúp xác nhận kết quả
+  import ngay sau khi quay về danh sách; không còn im lặng khi import rỗng hoặc
+  toàn bộ dòng không khớp dữ liệu nền.
+- Chuẩn hóa hiển thị thông báo và bổ sung route nhập thủ công; 7 kiểm tra route/
+  nghiệp vụ dự kiến đạt sau lần chạy test tiếp theo.

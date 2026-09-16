@@ -7,8 +7,8 @@
 <div class="container-fluid mt-4">
   <div class="card shadow">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-      <div><h4 class="mb-1">Nhật ký can thiệp</h4><small>Theo dõi thực tế và lập hồ sơ thanh toán</small></div>
-      <a class="btn btn-light btn-sm" href="{% url 'import_nhat_ky_can_thiep' %}">Import Excel</a>
+      <div><h4 class="mb-1">Nhật ký can thiệp</h4><small>Danh sách, nhập liệu và import dữ liệu thực tế</small></div>
+      <div class="d-flex gap-2"><a class="btn btn-light btn-sm" href="{% url 'them_nhat_ky_can_thiep' %}">Thêm nhật ký</a><a class="btn btn-light btn-sm" href="{% url 'import_nhat_ky_can_thiep' %}">Import Excel</a></div>
     </div>
     <div class="card-body">
       <form method="get" class="row g-2 align-items-end mb-3">
@@ -24,6 +24,7 @@
           <span class="text-muted small align-self-center">Tổng hợp và xuất hồ sơ được thực hiện tại trang Thanh quyết toán.</span>
         </div>
       </form>
+      <div class="d-flex justify-content-between align-items-center mb-2"><span class="text-muted small">Tổng số bản ghi: <strong>{{ tong_so|vn_number }}</strong></span><span class="text-muted small">Dữ liệu hiển thị theo bộ lọc hiện tại</span></div>
       <div class="table-responsive"><table class="table table-bordered table-hover align-middle"><thead><tr><th>Ngày</th><th>CBCT</th><th>Hợp đồng / Nhóm</th><th>Trẻ</th><th>Dịch vụ</th><th>Kỳ</th><th>Buổi</th><th>Đi lại</th><th>Thành tiền</th></tr></thead><tbody>{% for item in danh_sach %}<tr><td>{{ item.ngay_thuc_hien|date:"d/m/Y" }}</td><td>{{ item.hop_dong.can_bo.ma_can_bo }}<br>{{ item.hop_dong.can_bo.ho_ten }}</td><td>{{ item.hop_dong.so_hop_dong }}<br>{{ item.hop_dong.nhom_hd.ma_nhom_hd }}</td><td>{{ item.phan_cong.tre.ho_ten }}</td><td>{{ item.phan_cong.get_loai_dich_vu_display }}<br><span class="badge bg-light text-dark">{{ item.phan_cong.nhom_dich_vu }}</span></td><td>{{ item.phan_cong.ky_phan_cong|vn_number }}</td><td>{{ item.so_buoi_thuc_hien|vn_number }}</td><td>{{ item.so_luot_di_lai|vn_number }}</td><td class="fw-semibold">{{ item.thanh_tien|vn_number }} đ</td></tr>{% empty %}<tr><td colspan="9" class="text-center text-muted py-4">Chưa có nhật ký phù hợp.</td></tr>{% endfor %}</tbody></table></div>
       {% include 'quanly/_pagination.html' with page_obj=page_obj query=query %}
     </div>

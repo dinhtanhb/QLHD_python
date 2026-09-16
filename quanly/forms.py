@@ -277,6 +277,36 @@ class NhatKyThucHienForm(BootstrapModelForm):
             ).select_related("tre")
 
 
+class NhatKyCanThiepForm(BootstrapModelForm):
+    hop_dong = forms.ModelChoiceField(
+        queryset=HopDong.objects.select_related("can_bo", "nhom_hd"),
+        label="Hợp đồng",
+        widget=forms.Select(attrs={"class": "form-select select2-search"}),
+    )
+
+    class Meta:
+        model = NhatKyThucHien
+        fields = ["hop_dong", "phan_cong", "ngay_thuc_hien", "so_buoi_thuc_hien", "so_luot_di_lai", "ghi_chu"]
+        widgets = {
+            "phan_cong": forms.Select(attrs={"class": "form-select select2-search"}),
+            "ngay_thuc_hien": forms.DateInput(attrs={"type": "date"}),
+            "so_buoi_thuc_hien": forms.NumberInput(attrs={"min": "1"}),
+            "so_luot_di_lai": forms.NumberInput(attrs={"min": "0"}),
+            "ghi_chu": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def clean(self):
+        cleaned = super().clean()
+        hop_dong = cleaned.get("hop_dong")
+        phan_cong = cleaned.get("phan_cong")
+        ngay = cleaned.get("ngay_thuc_hien")
+        if hop_dong and phan_cong and phan_cong.phan_bo_id != hop_dong.de_xuat.phan_bo_id:
+            self.add_error("phan_cong", "Phân công không thuộc phân bổ của hợp đồng đã chọn.")
+        if hop_dong and ngay and not (hop_dong.tu_ngay <= ngay <= hop_dong.den_ngay):
+            self.add_error("ngay_thuc_hien", "Ngày thực hiện phải nằm trong thời hạn hợp đồng.")
+        return cleaned
+
+
 class DotThanhToanForm(BootstrapModelForm):
     class Meta:
         model = DotThanhToan
