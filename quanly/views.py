@@ -18,6 +18,7 @@ from .payment_export import export_intervention_account_list, export_interventio
 from .financial import FinancialConfig
 from .forms import (
     CanBoForm,
+    DieuChuyenPhanCongForm,
     ChiTietKhoiLuongHopDongForm,
     ChiTietThanhToanForm,
     DeXuatHopDongForm,
@@ -50,6 +51,7 @@ from .models import (
     Tre,
     Tinh,
     Xa,
+    LichSuDieuChuyenPhanCong,
     ThanhLyHopDong,
     DotThanhToanDiLaiPhuHuynh,
     ChiTietThanhToanDiLaiPhuHuynh,
@@ -556,6 +558,50 @@ def sua_phan_cong(request, pk):
     return render(request, "quanly/sua_phan_cong.html", {"form": form, "item": item})
 
 
+@hopdong_required
+def xoa_phan_cong(request, pk):
+    item = get_object_or_404(PhanCongTre, pk=pk)
+    if request.method == "POST":
+        try:
+            item.delete()
+            messages.success(request, "Đã xóa phân công trẻ.")
+        except Exception as exc:
+            messages.error(request, f"Không thể xóa phân công: {exc}")
+    return redirect("danh_sach_phan_cong")
+
+
+@hopdong_required
+def dieu_chuyen_phan_cong(request, pk):
+    item = get_object_or_404(PhanCongTre.objects.select_related("phan_bo__nhom_hd", "tre"), pk=pk)
+    queryset = PhanBoChiTieu.objects.filter(nhom_hd=item.phan_bo.nhom_hd).exclude(pk=item.phan_bo_id).select_related("can_bo", "nhom_hd")
+    if request.method == "POST":
+        form = DieuChuyenPhanCongForm(request.POST)
+        form.fields["phan_bo"].queryset = queryset
+        if form.is_valid():
+            target = form.cleaned_data["phan_bo"]
+            old = item.phan_bo
+            item.phan_bo = target
+            is_cs = PhanCongTre.service_group(item.loai_dich_vu) == "CS"
+            item.dinh_muc_di_lai = target.dinh_muc_di_lai_cs if is_cs else target.dinh_muc_di_lai_phcn
+            item.full_clean()
+            with transaction.atomic():
+                item.save(update_fields=["phan_bo", "dinh_muc_di_lai", "updated_at"])
+                LichSuDieuChuyenPhanCong.objects.create(phan_cong=item, phan_bo_cu=old, phan_bo_moi=target, nguoi_thuc_hien=request.user.get_username(), ly_do=form.cleaned_data.get("ly_do"))
+            messages.success(request, "Đã điều chuyển phân công và ghi nhận lịch sử.")
+            return redirect("danh_sach_phan_cong")
+    else:
+        form = DieuChuyenPhanCongForm()
+        form.fields["phan_bo"].queryset = queryset
+    return render(request, "quanly/dieu_chuyen_phan_cong.html", {"form": form, "item": item})
+
+
+@hopdong_required
+def lich_su_phan_cong(request, pk):
+    item = get_object_or_404(PhanCongTre.objects.select_related("tre", "phan_bo__can_bo"), pk=pk)
+    history = item.lich_su_dieu_chuyen.select_related("phan_bo_cu__can_bo", "phan_bo_moi__can_bo")
+    return render(request, "quanly/lich_su_phan_cong.html", {"item": item, "history": history})
+
+
 @admin_required
 def import_phan_cong(request):
     if request.method != "POST" or not request.FILES.get("file_excel"):
@@ -890,7 +936,7 @@ def tao_hop_dong_chinh_thuc(request, pk):
                 form.add_error(None, exc)
             else:
                 messages.success(request, f"Đã tạo Hợp đồng {hop_dong.so_hop_dong} và Phụ lục Kỳ 1.")
-                return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+                return redirect("danh_sach_hop_dong")
     else:
         form = HopDongForm(initial={
             "de_xuat": proposal,
@@ -907,8 +953,55 @@ def tao_hop_dong_chinh_thuc(request, pk):
 
 @hopdong_required
 def danh_sach_hop_dong(request):
+    query = request.GET.get("q", "").strip()
     qs = HopDong.objects.select_related("can_bo", "nhom_hd", "de_xuat").order_by("-ngay_ky", "-id")
-    return render(request, "quanly/danh_sach_hop_dong.html", {"danh_sach": qs})
+    if query:
+        qs = qs.filter(Q(so_hop_dong__icontains=query) | Q(can_bo__ma_can_bo__icontains=query) | Q(can_bo__ho_ten__icontains=query))
+    page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
+    return render(request, "quanly/danh_sach_hop_dong.html", {"hop_dongs": page_obj, "page_obj": page_obj, "query": query})
+
+
+@admin_required
+def import_hop_dong(request):
+    if request.method != "POST" or not request.FILES.get("file_excel"):
+        return render(request, "quanly/import_hop_dong.html")
+    try:
+        df = normalized_columns(pd.read_excel(request.FILES["file_excel"]))
+    except Exception as exc:
+        messages.error(request, f"Không đọc được file Excel: {exc}")
+        return render(request, "quanly/import_hop_dong.html")
+    created = updated = skipped = 0
+    errors = []
+    for row_no, (_, row) in enumerate(df.iterrows(), start=2):
+        try:
+            ma_cb = clean_empty_excel_value(get_excel_value(row, "MaCbct", "MaCBCT", "Mã CBCT"))
+            so_hd = clean_empty_excel_value(get_excel_value(row, "SoHopDong", "Số Hợp đồng", "Số HĐ"))
+            if not ma_cb or not so_hd:
+                skipped += 1
+                continue
+            can_bo = get_object_or_404(CanBo, ma_can_bo=ma_cb)
+            nhom_value = clean_empty_excel_value(get_excel_value(row, "NhomHD", "Nhóm HĐ"))
+            nhom_hd = NhomHD.objects.filter(pk=int(float(nhom_value))).first() if nhom_value and str(nhom_value).isdigit() else NhomHD.objects.filter(Q(ma_nhom_hd=nhom_value) | Q(ten_nhom_hd__iexact=nhom_value)).first()
+            if not nhom_hd:
+                raise ValueError(f"Không tìm thấy Nhóm hợp đồng '{nhom_value}'")
+            phan_bo = PhanBoChiTieu.objects.filter(can_bo=can_bo, nhom_hd=nhom_hd).order_by("-ngay_lap", "-id").first()
+            if not phan_bo:
+                raise ValueError("Không tìm thấy phân bổ tương ứng để liên kết hợp đồng")
+            proposal = phan_bo.de_xuat_hop_dong.order_by("-lan_de_xuat", "-id").first()
+            if not proposal:
+                proposal = DeXuatHopDong.objects.create(phan_bo=phan_bo, so_tre_phcn=phan_bo.so_tre_phcn, so_buoi_phcn=phan_bo.so_buoi_phcn, so_tre_cs=phan_bo.so_tre_cs, so_buoi_cs=phan_bo.so_buoi_cs, gia_tri_du_kien=phan_bo.gia_tri_du_kien, trang_thai="DA_DUYET")
+            defaults = {"de_xuat": proposal, "can_bo": can_bo, "nhom_hd": nhom_hd, "ngay_ky": parse_date(get_excel_value(row, "NgayKy", "Ngày ký")), "tu_ngay": parse_date(get_excel_value(row, "TuNgay", "Từ ngày")), "den_ngay": parse_date(get_excel_value(row, "DenNgay", "Đến ngày")), "don_gia_cong": FinancialConfig.DON_GIA_CONG, "dinh_muc_di_lai_phcn": phan_bo.dinh_muc_di_lai_phcn, "dinh_muc_di_lai_cs": phan_bo.dinh_muc_di_lai_cs, "gia_tri_hop_dong": proposal.gia_tri_du_kien, "trang_thai": "DA_KY"}
+            _, is_created = HopDong.objects.update_or_create(so_hop_dong=so_hd, defaults=defaults)
+            created += int(is_created)
+            updated += int(not is_created)
+        except Exception as exc:
+            skipped += 1
+            errors.append(f"Dòng {row_no}: {exc}")
+    msg = f"Import hợp đồng hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
+    if errors:
+        msg += " " + " | ".join(errors[:5])
+    messages.success(request, msg)
+    return redirect("danh_sach_hop_dong")
 
 
 @hopdong_required

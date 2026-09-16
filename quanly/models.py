@@ -100,8 +100,8 @@ class CanBo(TimeStampedModel):
 
     class Meta:
         ordering = ["ho_ten"]
-        verbose_name = "Cán bộ chuyên trách"
-        verbose_name_plural = "Cán bộ chuyên trách"
+        verbose_name = "Cán bộ can thiệp"
+        verbose_name_plural = "Cán bộ can thiệp"
 
     def __str__(self):
         return f"{self.ma_can_bo} - {self.ho_ten}"
@@ -156,7 +156,7 @@ class Tre(TimeStampedModel):
 class PhanBoChiTieu(TimeStampedModel):
     """Phân bổ chỉ tiêu. Không chứa thông tin hợp đồng chính thức."""
 
-    can_bo = models.ForeignKey(CanBo, on_delete=models.PROTECT, related_name="phan_bo_chi_tieu", verbose_name="Cán bộ chuyên trách")
+    can_bo = models.ForeignKey(CanBo, on_delete=models.PROTECT, related_name="phan_bo_chi_tieu", verbose_name="Cán bộ can thiệp")
     nhom_hd = models.ForeignKey(NhomHD, on_delete=models.PROTECT, related_name="phan_bo_chi_tieu", verbose_name="Nhóm hợp đồng")
     tham_gia_ct = models.BooleanField(default=True, verbose_name="Tham gia can thiệp")
     ngay_lap = models.DateField(default=timezone.now, verbose_name="Ngày lập phân bổ")
@@ -256,6 +256,17 @@ class PhanCongTre(TimeStampedModel):
         return f"Phân công {self.tre.ho_ten} - {self.loai_dich_vu}"
 
 
+class LichSuDieuChuyenPhanCong(TimeStampedModel):
+    phan_cong = models.ForeignKey(PhanCongTre, on_delete=models.CASCADE, related_name="lich_su_dieu_chuyen")
+    phan_bo_cu = models.ForeignKey(PhanBoChiTieu, on_delete=models.PROTECT, related_name="lich_su_phan_cong_cu")
+    phan_bo_moi = models.ForeignKey(PhanBoChiTieu, on_delete=models.PROTECT, related_name="lich_su_phan_cong_moi")
+    nguoi_thuc_hien = models.CharField(max_length=150, blank=True, null=True)
+    ly_do = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+
 class DeXuatHopDong(TimeStampedModel):
     """Đề xuất hợp đồng được tạo từ phân bổ + dữ liệu phân công thực tế."""
 
@@ -306,7 +317,7 @@ class HopDong(TimeStampedModel):
     ]
 
     de_xuat = models.ForeignKey(DeXuatHopDong, on_delete=models.PROTECT, related_name="hop_dong", verbose_name="Đề xuất hợp đồng")
-    can_bo = models.ForeignKey(CanBo, on_delete=models.PROTECT, related_name="hop_dong", verbose_name="Cán bộ chuyên trách")
+    can_bo = models.ForeignKey(CanBo, on_delete=models.PROTECT, related_name="hop_dong", verbose_name="Cán bộ can thiệp")
     nhom_hd = models.ForeignKey(NhomHD, on_delete=models.PROTECT, related_name="hop_dong", verbose_name="Nhóm hợp đồng")
     so_hop_dong = models.CharField(max_length=50, unique=True, verbose_name="Số hợp đồng")
     ngay_ky = models.DateField(null=True, blank=True, verbose_name="Ngày ký")

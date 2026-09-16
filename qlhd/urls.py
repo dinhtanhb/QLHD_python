@@ -39,6 +39,9 @@ urlpatterns = [
     path("hop-dong/phan-cong/", login_required(views.danh_sach_phan_cong), name="danh_sach_phan_cong"),
     path("hop-dong/phan-cong/them/", login_required(views.them_phan_cong), name="them_phan_cong"),
     path("hop-dong/phan-cong/sua/<int:pk>/", login_required(views.sua_phan_cong), name="sua_phan_cong"),
+    path("hop-dong/phan-cong/xoa/<int:pk>/", login_required(views.xoa_phan_cong), name="xoa_phan_cong"),
+    path("hop-dong/phan-cong/dieu-chuyen/<int:pk>/", login_required(views.dieu_chuyen_phan_cong), name="dieu_chuyen_phan_cong"),
+    path("hop-dong/phan-cong/lich-su/<int:pk>/", login_required(views.lich_su_phan_cong), name="lich_su_phan_cong"),
 
     path("hop-dong/tao-moi/", login_required(views.phan_bo_chi_tieu), name="phan_bo_chi_tieu"),
     path("hop-dong/danh-sach-phan-bo/", login_required(views.danh_sach_phan_bo), name="danh_sach_phan_bo"),
@@ -53,6 +56,7 @@ urlpatterns = [
 
     path("hop-dong/tao-chinh-thuc/<int:pk>/", login_required(views.tao_hop_dong_chinh_thuc), name="tao_hop_dong_chinh_thuc"),
     path("hop-dong/", login_required(views.danh_sach_hop_dong), name="danh_sach_hop_dong"),
+    path("hop-dong/import/", login_required(views.import_hop_dong), name="import_hop_dong"),
     path("hop-dong/<int:pk>/", login_required(views.chi_tiet_hop_dong), name="chi_tiet_hop_dong"),
     path("hop-dong/<int:pk>/xuat-bo-hop-dong/", login_required(views.xuat_bo_hop_dong), name="xuat_bo_hop_dong"),
     path("hop-dong/<int:pk>/xuat-phu-luc-phan-cong/", login_required(views.xuat_phu_luc_phan_cong), name="xuat_phu_luc_phan_cong"),

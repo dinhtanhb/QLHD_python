@@ -3336,3 +3336,28 @@ sóc, tách khỏi tiền công cán bộ:
 - Chỉ thay đổi trình bày, không thay đổi nghiệp vụ hoặc dữ liệu.
 - Đã chạy manage.py check, test nghiệp vụ và git diff --check; người dùng cần
   kiểm thử trực quan các màn hình và render Excel/Word trong bước UAT.
+
+89. SỬA LUỒNG HỢP ĐỒNG, PHÂN CÔNG VÀ ĐIỀU HƯỚNG
+
+Đã xử lý các yêu cầu rà soát giao diện/nghiệp vụ:
+
+- Sửa lỗi danh sách hợp đồng: view trước đây truyền biến danh_sach nhưng
+  template đọc hop_dongs; nay dùng đúng Page object hop_dongs và có tìm kiếm,
+  phân trang. Sau khi tạo HĐ từ đề xuất, hệ thống quay về danh sách HĐ để thấy
+  bản ghi vừa tạo.
+- Đổi nhãn nghiệp vụ từ Cán bộ chuyên trách thành Cán bộ can thiệp; tạo
+  migration 0012 cho metadata tương ứng.
+- Thêm Import danh sách hợp đồng chỉ cho Admin, liên kết với cán bộ/nhóm/phân
+  bổ hiện có, không tự tạo dữ liệu thiếu ngoài quan hệ nghiệp vụ cần thiết.
+- Menu Phân bổ chỉ tiêu mở danh sách trước; nút + Phân bổ mới nằm tại trang
+  danh sách.
+- Bổ sung sửa, xóa có POST/CSRF, điều chuyển CBCT và xem lịch sử điều chuyển
+  cho phân công; thêm model lịch sử và cập nhật định mức theo phân bổ đích.
+- Bổ sung dropdown cho Địa điểm can thiệp (Trường/Nhà/Khác) và Hình thức
+  can thiệp (Cá nhân/Chuyên gia/Đơn vị); tích hợp Select2 để gõ tìm nhanh.
+- Rà lại các màn hình xuất file; chi tiết thanh toán phụ huynh đã có nút xuất
+  DNTT/DSTK NCS. DSTK CBDA không xuất riêng theo quy tắc đã chốt.
+- Đã chạy manage.py check, makemigrations --check và 3 test nghiệp vụ.
+- Các số tiền/tổng quan ở Dashboard, danh sách hợp đồng và màn hình phân công
+  đã chuyển sang định dạng Việt Nam; tiếp tục rà soát các màn hình nhập/xem
+  còn lại trong UAT để bảo đảm không bỏ sót trường số.

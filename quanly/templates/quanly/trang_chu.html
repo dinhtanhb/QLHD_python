@@ -1,4 +1,5 @@
 {% extends 'quanly/base.html' %}
+{% load number_format %}
 
 {% block title %}Trang chủ - VietHealth{% endblock %}
 
@@ -112,8 +113,8 @@
                     <div class="row g-3">
                         <div class="col-6"><div class="small text-muted">Phân bổ chỉ tiêu</div><div class="fs-4 fw-bold">{{ tong_phan_bo }}</div></div>
                         <div class="col-6"><div class="small text-muted">Đề xuất hợp đồng</div><div class="fs-4 fw-bold">{{ tong_de_xuat }}</div></div>
-                        <div class="col-6"><div class="small text-muted">Giá trị phân bổ/đề xuất</div><div class="fs-5 fw-bold text-primary">{{ gia_tri_phan_bo|floatformat:0 }} đ</div></div>
-                        <div class="col-6"><div class="small text-muted">Giá trị hợp đồng</div><div class="fs-5 fw-bold text-success">{{ gia_tri_hop_dong|floatformat:0 }} đ</div></div>
+                        <div class="col-6"><div class="small text-muted">Giá trị phân bổ/đề xuất</div><div class="fs-5 fw-bold text-primary">{{ gia_tri_phan_bo|vn_number }} đ</div></div>
+                        <div class="col-6"><div class="small text-muted">Giá trị hợp đồng</div><div class="fs-5 fw-bold text-success">{{ gia_tri_hop_dong|vn_number }} đ</div></div>
                     </div>
                     <div class="alert alert-secondary mt-3 mb-0 small">Giá trị phân bổ/đề xuất và giá trị hợp đồng được hiển thị riêng để không làm mất dấu các sai lệch dữ liệu lịch sử.</div>
                 </div>

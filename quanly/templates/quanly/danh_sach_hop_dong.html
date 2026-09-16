@@ -1,5 +1,6 @@
 {% extends 'quanly/base.html' %}
 {% load humanize %}
+{% load number_format %}
 {% block title %}Danh sách Hợp đồng{% endblock %}
 
 {% block content %}
@@ -7,7 +8,7 @@
     <div class="card shadow">
         <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
             <h4 class="mb-0">Danh sách Hợp đồng chính thức</h4>
-            <span class="badge bg-light text-dark">DB là nguồn dữ liệu gốc</span>
+            <div><a href="{% url 'import_hop_dong' %}" class="btn btn-light btn-sm">Import Excel</a> <span class="badge bg-light text-dark">DB là nguồn dữ liệu gốc</span></div>
         </div>
         <div class="card-body">
             <form method="get" class="row g-2 mb-3">
@@ -25,7 +26,7 @@
                             <td class="fw-bold text-primary">{{ hd.so_hop_dong }}</td>
                             <td>{{ hd.can_bo.ma_can_bo }}<br>{{ hd.can_bo.ho_ten }}</td>
                             <td>{{ hd.nhom_hd.ma_nhom_hd }} - {{ hd.nhom_hd.ten_nhom_hd }}</td>
-                            <td class="fw-bold text-success">{{ hd.gia_tri_hop_dong|floatformat:0|intcomma }} đ</td>
+                            <td class="fw-bold text-success">{{ hd.gia_tri_hop_dong|vn_number }} đ</td>
                             <td>{{ hd.ngay_ky|date:"d/m/Y" }}</td>
                             <td>{{ hd.tu_ngay|date:"d/m/Y" }} - {{ hd.den_ngay|date:"d/m/Y" }}</td>
                             <td><span class="badge bg-success">{{ hd.get_trang_thai_display }}</span></td>

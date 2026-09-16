@@ -6,7 +6,7 @@
 {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
 <form method="post">{% csrf_token %}
 <div class="row">
-<div class="col-md-6 mb-3"><label class="form-label fw-bold">Cán bộ chuyên trách</label>{{ form.can_bo }}{% for e in form.can_bo.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+<div class="col-md-6 mb-3"><label class="form-label fw-bold">Cán bộ can thiệp</label>{{ form.can_bo }}{% for e in form.can_bo.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
 <div class="col-md-6 mb-3"><label class="form-label fw-bold">Nhóm hợp đồng</label>{{ form.nhom_hd }}{% for e in form.nhom_hd.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
 <div class="col-md-4 mb-3"><label class="form-label">Ngày lập</label>{{ form.ngay_lap }}</div>
 <div class="col-md-4 mb-3"><label class="form-label">Tham gia can thiệp</label>{{ form.tham_gia_ct }}</div>

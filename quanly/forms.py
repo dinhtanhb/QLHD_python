@@ -119,6 +119,9 @@ class PhanBoChiTieuForm(BootstrapModelForm):
 
 
 class PhanCongTreForm(BootstrapModelForm):
+    LOCATION_CHOICES = [("Trường", "Trường"), ("Nhà", "Nhà"), ("Khác", "Khác")]
+    FORM_CHOICES = [("Cá nhân", "Cá nhân"), ("Chuyên gia", "Chuyên gia"), ("Đơn vị", "Đơn vị")]
+
     class Meta:
         model = PhanCongTre
         fields = [
@@ -133,6 +136,8 @@ class PhanCongTreForm(BootstrapModelForm):
             "dot_phan_cong": forms.NumberInput(attrs={"min": "1"}),
             "ky_phan_cong": forms.NumberInput(attrs={"min": "1"}),
             "ngay_phan_cong": forms.DateInput(attrs={"type": "date"}),
+            "dia_diem_ct": forms.Select(choices=[("Trường", "Trường"), ("Nhà", "Nhà"), ("Khác", "Khác")], attrs={"class": "form-select select2-search"}),
+            "hinh_thuc_ct": forms.Select(choices=[("Cá nhân", "Cá nhân"), ("Chuyên gia", "Chuyên gia"), ("Đơn vị", "Đơn vị")], attrs={"class": "form-select select2-search"}),
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),
         }
 
@@ -160,7 +165,7 @@ class PhanCongTreForm(BootstrapModelForm):
         if tre and not tre.is_active:
             self.add_error("tre", "Trẻ đang ở trạng thái ngừng sử dụng.")
         if phan_bo and not phan_bo.can_bo.is_active:
-            self.add_error("phan_bo", "Cán bộ của phân bổ đang ở trạng thái ngừng hoạt động.")
+            self.add_error("phan_bo", "Cán bộ can thiệp của phân bổ đang ở trạng thái ngừng hoạt động.")
         is_cs = PhanCongTre.service_group(loai_dich_vu) == "CS"
         if phan_bo and is_cs and phan_bo.so_tre_cs <= 0:
             self.add_error("loai_dich_vu", "Phân bổ không có chỉ tiêu CS.")
@@ -175,6 +180,11 @@ class PhanCongTreForm(BootstrapModelForm):
             )
 
         return cleaned_data
+
+
+class DieuChuyenPhanCongForm(forms.Form):
+    phan_bo = forms.ModelChoiceField(queryset=PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd"), label="Phân bổ đích")
+    ly_do = forms.CharField(required=False, label="Lý do điều chuyển", widget=forms.Textarea(attrs={"rows": 3}))
 
 
 class DeXuatHopDongForm(BootstrapModelForm):
