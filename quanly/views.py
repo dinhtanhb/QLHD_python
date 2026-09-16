@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -128,14 +128,37 @@ def calculate_expected_value(so_tre_phcn, so_buoi_phcn, dm_phcn, so_tre_cs, so_b
 # =========================================================
 @dashboard_required
 def trang_chu(request):
+    allocations = PhanBoChiTieu.objects.all()
+    assignments = PhanCongTre.objects.all()
+    contracts = HopDong.objects.all()
+    allocation_value = sum(
+        calculate_expected_value(
+            item.so_tre_phcn,
+            item.so_buoi_phcn,
+            item.dinh_muc_di_lai_phcn,
+            item.so_tre_cs,
+            item.so_buoi_cs,
+            item.dinh_muc_di_lai_cs,
+        )
+        for item in allocations
+    )
     context = {
         "tong_tre": Tre.objects.filter(is_active=True).count(),
         "tong_can_bo": CanBo.objects.filter(is_active=True).count(),
         "tong_don_vi": DonVi.objects.filter(is_active=True).count(),
         "tong_nhom": NhomHD.objects.filter(is_active=True).count(),
-        "tong_phan_cong": PhanCongTre.objects.count(),
+        "tong_phan_bo": allocations.count(),
+        "tong_phan_cong": assignments.count(),
         "tong_de_xuat": DeXuatHopDong.objects.count(),
-        "tong_hop_dong": HopDong.objects.count(),
+        "tong_hop_dong": contracts.count(),
+        "phcn_so_tre": allocations.aggregate(total=Sum("so_tre_phcn"))["total"] or 0,
+        "phcn_so_buoi_moi_tre": allocations.aggregate(total=Sum("so_buoi_phcn"))["total"] or 0,
+        "cs_so_tre": allocations.aggregate(total=Sum("so_tre_cs"))["total"] or 0,
+        "cs_so_buoi_moi_tre": allocations.aggregate(total=Sum("so_buoi_cs"))["total"] or 0,
+        "phcn_phan_cong": assignments.filter(loai_dich_vu__in=PhanCongTre.PHCN_SERVICE_CODES).count(),
+        "cs_phan_cong": assignments.filter(loai_dich_vu__in=PhanCongTre.CS_SERVICE_CODES).count(),
+        "gia_tri_phan_bo": allocation_value,
+        "gia_tri_hop_dong": contracts.aggregate(total=Sum("gia_tri_hop_dong"))["total"] or 0,
     }
     return render(request, "quanly/trang_chu.html", context)
 

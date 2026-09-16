@@ -3160,3 +3160,17 @@ cần phân biệt nhóm PHCN/CS khi tính, hiển thị, đối chiếu và là
 - Khi import phân công, định mức đi lại vẫn lấy từ trường PHCN/CS tương ứng
   của PhanBoChiTieu.
 - Không cập nhật dữ liệu cũ; dữ liệu cũ được giữ để kiểm thử hồi quy.
+
+76. DASHBOARD TỔNG QUAN - MỐC BAN ĐẦU
+
+Đã bổ sung thống kê trên trang chủ:
+
+- Tách chỉ tiêu PHCN và CS theo số trẻ, tổng định mức buổi/trẻ và số phân công.
+- Hiển thị riêng tổng giá trị phân bổ và tổng giá trị hợp đồng.
+- Tổng giá trị phân bổ được tính trực tiếp từng PhanBoChiTieu, không cộng qua
+  bảng đề xuất để tránh nhân đôi khi một phân bổ có nhiều lần đề xuất.
+- Dữ liệu cũ chỉ được đọc để thống kê, không bị cập nhật.
+
+Số liệu kiểm tra hiện tại: 172 phân bổ, 1.857 chỉ tiêu trẻ PHCN, 1.154 chỉ tiêu
+trẻ CS, 4 phân công PHCN, 1 phân công CS, tổng giá trị phân bổ 12.182.500.000
+đồng và tổng giá trị hợp đồng lịch sử 130.000.000 đồng.
