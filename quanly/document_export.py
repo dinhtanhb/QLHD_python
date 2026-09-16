@@ -26,6 +26,8 @@ CONTRACT_TEMPLATE = TEMPLATE_ROOT / "hop_dong" / "Mau_HopDong.docx"
 ANNEX_TEMPLATE = TEMPLATE_ROOT / "phu_luc" / "Mau_PhuLucPhanCong.docx"
 ACCEPTANCE_TEMPLATE = TEMPLATE_ROOT / "nghiem_thu_thanh_ly" / "Mau_BBNT.docx"
 LIQUIDATION_TEMPLATE = TEMPLATE_ROOT / "nghiem_thu_thanh_ly" / "Mau_TLHD.docx"
+PAYMENT_REQUEST_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DNTT.docx"
+COMMITMENT_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DNCK.xlsx"
 PLACEHOLDER_PATTERN = re.compile(r"\{\{[^{}]+\}\}")
 
 
@@ -158,6 +160,38 @@ def export_acceptance_record(hop_dong, record):
 
 def export_liquidation_record(hop_dong, record):
     return _export_simple_contract_record(hop_dong, record, LIQUIDATION_TEMPLATE, _record_context(hop_dong, record))
+
+
+def export_journal_payment_request(journals, ky=None, thang=None, nam=None):
+    """Xuất ĐNTT Word trực tiếp từ tập nhật ký đã lọc."""
+    journals = list(journals)
+    if not journals:
+        raise ValidationError("Không có nhật ký phù hợp để xuất ĐNTT.")
+    if not PAYMENT_REQUEST_TEMPLATE.exists():
+        raise ValidationError("Chưa có template ĐNTT Word.")
+    first = journals[0]
+    staff = first.hop_dong.can_bo
+    phcn = [x for x in journals if x.phan_cong.nhom_dich_vu == "PHCN"]
+    cs = [x for x in journals if x.phan_cong.nhom_dich_vu == "CS"]
+    def totals(rows):
+        labor = sum((Decimal(x.so_buoi_thuc_hien) * Decimal(x.don_gia_cong) for x in rows), Decimal("0"))
+        travel = sum((Decimal(x.so_luot_di_lai) * Decimal(x.dinh_muc_di_lai) for x in rows), Decimal("0"))
+        return sum((x.so_buoi_thuc_hien for x in rows), 0), labor, sum((x.so_luot_di_lai for x in rows), 0), travel
+    phcn_sessions, phcn_labor, phcn_trips, phcn_travel = totals(phcn)
+    cs_sessions, cs_labor, cs_trips, cs_travel = totals(cs)
+    context = {
+        "HoTenGVMN": staff.ho_ten, "DiaChi": staff.dia_chi or "", "DonViCongTac": staff.don_vi.ten_don_vi if staff.don_vi_id else "",
+        "SoHopDong": first.hop_dong.so_hop_dong if len({x.hop_dong_id for x in journals}) == 1 else "Theo danh sách hợp đồng",
+        "NgayKy_Ngay": first.hop_dong.ngay_ky.day if first.hop_dong.ngay_ky else "", "NgayKy_Thang": first.hop_dong.ngay_ky.month if first.hop_dong.ngay_ky else "", "NgayKy_Nam": first.hop_dong.ngay_ky.year if first.hop_dong.ngay_ky else "",
+        "ThangCanThiep": thang or (first.ngay_thuc_hien.month if first.ngay_thuc_hien else ""), "NamCanThiep": nam or (first.ngay_thuc_hien.year if first.ngay_thuc_hien else ""), "LanThanhToan": ky or "",
+        "SoBuoiPHCN_Thang": phcn_sessions, "TienCongPHCN_Thang": _money(phcn_labor), "SoBuoiDiLaiPHCN_Thang": phcn_trips, "TienDiLaiPHCN_Thang": _money(phcn_travel),
+        "SoBuoiCS_Thang": cs_sessions, "TienCongCS_Thang": _money(cs_labor), "SoBuoiDiLaiCS_Thang": cs_trips, "TienDiLaiCS_Thang": _money(cs_travel),
+        "GiaTriHopDong": _money(sum((x.hop_dong.gia_tri_hop_dong for x in journals), Decimal("0"))),
+        "STT_Lan1": "1", "NoiDung_Lan1": "Thanh toán tiền công và đi lại PHCN", "SoTien_Lan1": _money(phcn_labor + phcn_travel),
+        "STT_Lan2": "2", "NoiDung_Lan2": "Thanh toán tiền công và đi lại CS", "SoTien_Lan2": _money(cs_labor + cs_travel),
+        "STT_Lan3": "", "NoiDung_Lan3": "", "SoTien_Lan3": "",
+    }
+    return _export_simple_contract_record(first.hop_dong, first, PAYMENT_REQUEST_TEMPLATE, context)
 
 
 def _service_display(value):

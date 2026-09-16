@@ -13,8 +13,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from .decorators import admin_required, dashboard_required, hopdong_required, readonly_required
-from .document_export import create_contract_from_proposal, export_acceptance_record, export_assignment_annex, export_contract_bundle, export_liquidation_record
-from .payment_export import export_intervention_account_list, export_intervention_payment_request, export_parent_travel_account_list, export_parent_travel_payment_request
+from .document_export import create_contract_from_proposal, export_acceptance_record, export_assignment_annex, export_contract_bundle, export_journal_payment_request, export_liquidation_record
+from .payment_export import export_intervention_account_list, export_intervention_payment_request, export_journal_account_list, export_journal_commitment, export_parent_travel_account_list, export_parent_travel_payment_request
 from .financial import FinancialConfig
 from .forms import (
     CanBoForm,
@@ -52,6 +52,7 @@ from .models import (
     Tinh,
     Xa,
     LichSuDieuChuyenPhanCong,
+    NhatKyThucHien,
     ThanhLyHopDong,
     DotThanhToanDiLaiPhuHuynh,
     ChiTietThanhToanDiLaiPhuHuynh,
@@ -686,6 +687,54 @@ def import_phan_cong(request):
     return redirect("danh_sach_phan_cong")
 
 
+@admin_required
+def import_nhat_ky_can_thiep(request):
+    if request.method != "POST" or not request.FILES.get("file_excel"):
+        return render(request, "quanly/import_nhat_ky_can_thiep.html")
+    try:
+        df = normalized_columns(pd.read_excel(request.FILES["file_excel"]))
+    except Exception as exc:
+        messages.error(request, f"Không đọc được file Excel: {exc}")
+        return render(request, "quanly/import_nhat_ky_can_thiep.html")
+    created = updated = skipped = 0
+    errors = []
+    for row_no, (_, row) in enumerate(df.iterrows(), start=2):
+        try:
+            ma_cb = clean_empty_excel_value(get_excel_value(row, "MaCBCT", "Mã CBCT"))
+            ma_tre = clean_empty_excel_value(get_excel_value(row, "MaTre", "Mã trẻ", "IDChild"))
+            ngay = parse_date(get_excel_value(row, "NgayCanThiep", "Ngày can thiệp"))
+            if not ma_cb or not ma_tre or not ngay:
+                raise ValueError("Thiếu mã CBCT, mã trẻ hoặc ngày can thiệp")
+            can_bo = CanBo.objects.get(ma_can_bo=ma_cb)
+            tre = Tre.objects.get(ma_tre=ma_tre)
+            nhom_value = clean_empty_excel_value(get_excel_value(row, "NhomHD", "Nhóm HĐ"))
+            contracts = HopDong.objects.filter(can_bo=can_bo, tu_ngay__lte=ngay, den_ngay__gte=ngay).select_related("nhom_hd", "de_xuat")
+            if nhom_value:
+                contracts = contracts.filter(Q(nhom_hd__ma_nhom_hd=nhom_value) | Q(nhom_hd__ten_nhom_hd__iexact=nhom_value))
+            hop_dong = contracts.order_by("-ngay_ky", "-id").first()
+            if not hop_dong:
+                raise ValueError("Không tìm thấy hợp đồng đang hiệu lực")
+            raw_service = (clean_empty_excel_value(get_excel_value(row, "MaLoaiDichVu", "Loại dịch vụ")) or "PHCN").upper()
+            service_codes = {"PHCN": PhanCongTre.PHCN_SERVICE_CODES, "CS": PhanCongTre.CS_SERVICE_CODES}
+            if raw_service in PhanCongTre.LOAI_DV_CHOICES:
+                assignment_qs = PhanCongTre.objects.filter(phan_bo=hop_dong.de_xuat.phan_bo, tre=tre, loai_dich_vu=raw_service)
+            else:
+                group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} else "PHCN"
+                assignment_qs = PhanCongTre.objects.filter(phan_bo=hop_dong.de_xuat.phan_bo, tre=tre, loai_dich_vu__in=service_codes[group])
+            assignment = assignment_qs.order_by("id").first()
+            if not assignment:
+                raise ValueError("Không tìm thấy phân công tương ứng")
+            defaults = {"so_buoi_thuc_hien": parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0), "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0), "don_gia_cong": hop_dong.don_gia_cong, "dinh_muc_di_lai": assignment.dinh_muc_di_lai, "ghi_chu": clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú"))}
+            obj, is_created = NhatKyThucHien.objects.update_or_create(hop_dong=hop_dong, phan_cong=assignment, ngay_thuc_hien=ngay, defaults=defaults)
+            created += int(is_created); updated += int(not is_created)
+        except Exception as exc:
+            skipped += 1; errors.append(f"Dòng {row_no}: {exc}")
+    msg = f"Import nhật ký hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
+    if errors: msg += " " + " | ".join(errors[:5])
+    messages.success(request, msg)
+    return redirect("nhat_ky_can_thiep")
+
+
 # =========================================================
 # PHÂN BỔ CHỈ TIÊU
 # =========================================================
@@ -1288,6 +1337,68 @@ def xuat_dntt_di_lai_phu_huynh(request, pk):
 @hopdong_required
 def xuat_dstk_di_lai_phu_huynh(request, pk):
     return _export_parent_travel(request, pk, request.GET.get("nhom", "NCS"), account_list=True)
+
+
+@readonly_required
+def nhat_ky_can_thiep(request):
+    query = request.GET.get("q", "").strip()
+    cb_id = request.GET.get("can_bo", "").strip()
+    nhom_id = request.GET.get("nhom_hd", "").strip()
+    ky = request.GET.get("ky", "").strip()
+    thang = request.GET.get("thang", "").strip()
+    nam = request.GET.get("nam", "").strip()
+    qs = NhatKyThucHien.objects.select_related("hop_dong__can_bo", "hop_dong__nhom_hd", "phan_cong__tre").order_by("-ngay_thuc_hien", "-id")
+    if query:
+        qs = qs.filter(Q(phan_cong__tre__ma_tre__icontains=query) | Q(phan_cong__tre__ho_ten__icontains=query) | Q(hop_dong__so_hop_dong__icontains=query) | Q(hop_dong__can_bo__ho_ten__icontains=query))
+    if cb_id.isdigit(): qs = qs.filter(hop_dong__can_bo_id=int(cb_id))
+    if nhom_id.isdigit(): qs = qs.filter(hop_dong__nhom_hd_id=int(nhom_id))
+    if ky.isdigit(): qs = qs.filter(phan_cong__ky_phan_cong=int(ky))
+    if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
+    if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
+    page_obj = Paginator(qs, 25).get_page(request.GET.get("page"))
+    return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
+
+
+def _journal_export_queryset(request):
+    qs = NhatKyThucHien.objects.select_related("hop_dong__can_bo__don_vi", "hop_dong__nhom_hd", "phan_cong__tre").order_by("ngay_thuc_hien", "id")
+    cb_id, nhom_id, ky, thang, nam = (request.GET.get(key, "").strip() for key in ("can_bo", "nhom_hd", "ky", "thang", "nam"))
+    if cb_id.isdigit(): qs = qs.filter(hop_dong__can_bo_id=int(cb_id))
+    if nhom_id.isdigit(): qs = qs.filter(hop_dong__nhom_hd_id=int(nhom_id))
+    if ky.isdigit(): qs = qs.filter(phan_cong__ky_phan_cong=int(ky))
+    if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
+    if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
+    return qs, ky, thang, nam
+
+
+@readonly_required
+def xuat_dntt_nhat_ky(request):
+    qs, ky, thang, nam = _journal_export_queryset(request)
+    try: output = export_journal_payment_request(qs, ky=ky, thang=thang, nam=nam)
+    except ValidationError as exc:
+        messages.error(request, str(exc)); return redirect("nhat_ky_can_thiep")
+    return _document_response(output, f"DNTT_NhatKy_{ky or 'tat-ca'}_{thang or 'tat-ca'}_{nam or 'tat-ca'}.docx")
+
+
+@readonly_required
+def xuat_dstk_nhat_ky(request):
+    qs, _, _, _ = _journal_export_queryset(request)
+    try: output = export_journal_account_list(qs)
+    except ValidationError as exc:
+        messages.error(request, str(exc)); return redirect("nhat_ky_can_thiep")
+    response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="DSTK_NhatKy.xlsx"'
+    return response
+
+
+@readonly_required
+def xuat_dnck_nhat_ky(request):
+    qs, _, thang, nam = _journal_export_queryset(request)
+    try: output = export_journal_commitment(qs, tu_ngay=f"01/{thang}/{nam}" if thang and nam else "", den_ngay="")
+    except ValidationError as exc:
+        messages.error(request, str(exc)); return redirect("nhat_ky_can_thiep")
+    response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="DNCK_NhatKy.xlsx"'
+    return response
 
 
 @hopdong_required

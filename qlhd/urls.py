@@ -77,4 +77,9 @@ urlpatterns = [
     path("thanh-toan-di-lai-phu-huynh/<int:dot_id>/chi-tiet/them/", login_required(views.them_chi_tiet_thanh_toan_phu_huynh), name="them_chi_tiet_thanh_toan_phu_huynh"),
     path("thanh-toan-di-lai-phu-huynh/<int:pk>/xuat-dntt/", login_required(views.xuat_dntt_di_lai_phu_huynh), name="xuat_dntt_di_lai_phu_huynh"),
     path("thanh-toan-di-lai-phu-huynh/<int:pk>/xuat-dstk/", login_required(views.xuat_dstk_di_lai_phu_huynh), name="xuat_dstk_di_lai_phu_huynh"),
+    path("nhat-ky-can-thiep/", login_required(views.nhat_ky_can_thiep), name="nhat_ky_can_thiep"),
+    path("nhat-ky-can-thiep/import/", login_required(views.import_nhat_ky_can_thiep), name="import_nhat_ky_can_thiep"),
+    path("nhat-ky-can-thiep/xuat-dntt/", login_required(views.xuat_dntt_nhat_ky), name="xuat_dntt_nhat_ky"),
+    path("nhat-ky-can-thiep/xuat-dstk/", login_required(views.xuat_dstk_nhat_ky), name="xuat_dstk_nhat_ky"),
+    path("nhat-ky-can-thiep/xuat-dnck/", login_required(views.xuat_dnck_nhat_ky), name="xuat_dnck_nhat_ky"),
 ]

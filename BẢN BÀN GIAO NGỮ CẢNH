@@ -3376,3 +3376,20 @@ sóc, tách khỏi tiền công cán bộ:
 - Sau khi phát hiện lỗi thực tế ở màn hình xuất hợp đồng, đã bổ sung test
   context hợp đồng và xác nhận 5 test đều đạt; định dạng số các màn hình chi
   tiết hợp đồng/thanh toán cũng đã chuyển sang `vn_number`.
+
+91. TRANG TRUNG TÂM NHẬT KÝ CAN THIỆP
+
+Đã bổ sung trang nghiệp vụ trọng tâm `/nhat-ky-can-thiep/`:
+
+- Hiển thị nhật ký thực tế theo ngày, CBCT, hợp đồng/nhóm HĐ, trẻ, dịch vụ,
+  kỳ can thiệp, số buổi, lượt đi lại và thành tiền.
+- Lọc theo từ khóa, CBCT, nhóm HĐ, kỳ, tháng và năm; các nút xuất dùng đúng
+  bộ lọc hiện tại để tránh lệch tập dữ liệu.
+- Import Excel chỉ dành cho Admin theo mẫu Mau_NhatKyCanThiep.xlsx; chỉ ghi
+  khi tìm thấy hợp đồng đang hiệu lực và phân công tương ứng, cập nhật cùng
+  khóa tự nhiên hợp đồng + phân công + ngày.
+- Xuất ĐNTT Word theo mẫu Mau_DNTT.docx, tách tổng PHCN/CS và tính theo nhật
+  ký thực tế; hỗ trợ phạm vi từng CBCT hoặc nhóm HĐ thông qua bộ lọc.
+- Xuất DSTK và ĐNCK Excel theo cùng tập nhật ký đã lọc; DSTK gộp theo CBCT.
+- Đã thêm menu truy cập trực tiếp và kiểm tra route/template, system check,
+  migration check và 5 test nghiệp vụ.

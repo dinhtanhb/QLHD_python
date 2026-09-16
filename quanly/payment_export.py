@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 TEMPLATE_ROOT = Path(settings.BASE_DIR) / "quanly" / "document_templates"
 INTERVENTION_PAYMENT_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DNTT.xlsx"
 INTERVENTION_ACCOUNT_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DSTK.xlsx"
+INTERVENTION_COMMITMENT_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DNCK.xlsx"
 PARENT_TRAVEL_TEMPLATE_ROOT = TEMPLATE_ROOT / "thanh_toan_di_lai_phu_huynh"
 FIRST_DETAIL_ROW = 12
 LAST_TEMPLATE_DETAIL_ROW = 50
@@ -237,6 +238,68 @@ def export_parent_travel_account_list(dot, category="NCS"):
         for column, value in enumerate((index, parent, account, bank, branch, amount), start=1):
             ws.cell(row, column).value = value
     _fill_placeholders(workbook, {"DiaDiemThucHien": "Theo hồ sơ thanh toán"})
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
+def _journal_totals(journals):
+    from decimal import Decimal
+    labor = sum((Decimal(row.so_buoi_thuc_hien) * Decimal(row.don_gia_cong) for row in journals), Decimal("0"))
+    travel = sum((Decimal(row.so_luot_di_lai) * Decimal(row.dinh_muc_di_lai) for row in journals), Decimal("0"))
+    return labor, travel
+
+
+def export_journal_account_list(journals):
+    journals = list(journals)
+    if not journals:
+        raise ValidationError("Không có nhật ký phù hợp để xuất DSTK.")
+    workbook = _workbook(INTERVENTION_ACCOUNT_TEMPLATE)
+    ws = workbook["DSTK"]
+    for row in range(5, 20):
+        for cell in ws[row]:
+            cell.value = None
+    grouped = {}
+    for journal in journals:
+        staff = journal.hop_dong.can_bo
+        grouped.setdefault(staff.pk, (staff, []))[1].append(journal)
+    for index, (staff, items) in enumerate(grouped.values(), start=1):
+        row = 4 + index
+        labor, travel = _journal_totals(items)
+        from .financial import calculate_payment_breakdown
+        net = calculate_payment_breakdown(labor, travel)["thuc_linh"]
+        for column, value in enumerate((index, staff.ho_ten, staff.dien_thoai or "", staff.email or "", staff.dia_chi or "", staff.tai_khoan or "", staff.ngan_hang or "", staff.chi_nhanh or "", labor + travel, net, staff.mst or "", staff.cccd or ""), start=1):
+            ws.cell(row, column).value = value
+    ws["I20"] = "=SUM(I5:I19)"
+    ws["J20"] = "=SUM(J5:J19)"
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
+def export_journal_commitment(journals, tu_ngay="", den_ngay=""):
+    journals = list(journals)
+    if not journals:
+        raise ValidationError("Không có nhật ký phù hợp để xuất ĐNCK.")
+    workbook = _workbook(INTERVENTION_COMMITMENT_TEMPLATE)
+    ws = workbook["DNCK"]
+    for row in range(5, 26):
+        for cell in ws[row]:
+            cell.value = None
+    grouped = {}
+    for journal in journals:
+        staff = journal.hop_dong.can_bo
+        grouped.setdefault(staff.pk, (staff, []))[1].append(journal)
+    for index, (staff, items) in enumerate(grouped.values(), start=1):
+        row = 4 + index
+        labor, travel = _journal_totals(items)
+        from .financial import calculate_payment_breakdown
+        net = calculate_payment_breakdown(labor, travel)["thuc_linh"]
+        for column, value in enumerate((index, staff.ho_ten, staff.dia_chi or "", staff.tai_khoan or "", staff.ngan_hang or "", staff.chi_nhanh or "", net), start=1):
+            ws.cell(row, column).value = value
+    _fill_placeholders(workbook, {"TuNgay": tu_ngay, "DenNgay": den_ngay})
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
