@@ -3310,4 +3310,14 @@ sóc, tách khỏi tiền công cán bộ:
 - DNTT tách dự toán, thực tế lượt đi lại, định mức và thành tiền; không có
   cột tiền công hoặc thuế TNCN.
 - Chưa tự suy diễn nhóm CBDA cho DSTK vì thư mục mẫu hiện chưa có
-  Mau_DSTK_DiLai_CBDA.xlsx; cần mẫu chính thức nếu nhóm này được sử dụng.
+  Mau_DSTK_DiLai_CBDA.xlsx; theo xác nhận mới, CBDA dùng chính tài khoản của
+  cán bộ dự án quản lý nên không cần xuất DSTK phụ huynh CBDA.
+
+87. KIỂM THỬ TỰ ĐỘNG QUY TẮC NGHIỆP VỤ
+
+Đã bổ sung test không phụ thuộc database cho các quy tắc quan trọng:
+
+- Ngưỡng thuế 4.999.999 và 5.000.000 đồng.
+- Tiền đi lại không làm phát sinh thuế và không làm thay đổi cơ sở xét ngưỡng.
+- Phân nhóm rõ VLTL/HDTL là PHCN, CSYT là CS và mã không hợp lệ không được
+  tự suy diễn.
