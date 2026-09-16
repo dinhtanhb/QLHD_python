@@ -12,6 +12,8 @@ from .models import (
     PhanBoChiTieu,
     PhanCongTre,
     PhuLucHopDong,
+    NghiemThu,
+    ThanhLyHopDong,
     NhatKyThucHien,
     ChiTietThanhToan,
     Tre,
@@ -291,3 +293,23 @@ class ChiTietThanhToanForm(BootstrapModelForm):
             self.fields["nhat_ky"].queryset = NhatKyThucHien.objects.filter(
                 hop_dong=hop_dong
             ).select_related("phan_cong__tre")
+
+
+class NghiemThuForm(BootstrapModelForm):
+    class Meta:
+        model = NghiemThu
+        fields = ["ngay_nghiem_thu", "ket_qua", "bien_ban_so", "ghi_chu"]
+        widgets = {
+            "ngay_nghiem_thu": forms.DateInput(attrs={"type": "date"}),
+            "ghi_chu": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class ThanhLyHopDongForm(BootstrapModelForm):
+    class Meta:
+        model = ThanhLyHopDong
+        fields = ["ngay_thanh_ly", "bien_ban_so", "ghi_chu"]
+        widgets = {
+            "ngay_thanh_ly": forms.DateInput(attrs={"type": "date"}),
+            "ghi_chu": forms.Textarea(attrs={"rows": 3}),
+        }

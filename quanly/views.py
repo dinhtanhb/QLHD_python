@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from .decorators import admin_required, dashboard_required, hopdong_required, readonly_required
-from .document_export import create_contract_from_proposal, export_assignment_annex, export_contract_bundle
+from .document_export import create_contract_from_proposal, export_acceptance_record, export_assignment_annex, export_contract_bundle, export_liquidation_record
 from .payment_export import export_intervention_account_list, export_intervention_payment_request
 from .financial import FinancialConfig
 from .forms import (
@@ -26,10 +26,12 @@ from .forms import (
     HopDongForm,
     NhomHDForm,
     NhatKyThucHienForm,
+    NghiemThuForm,
     PhanBoChiTieuForm,
     PhanCongTreForm,
     PhuLucHopDongForm,
     TreForm,
+    ThanhLyHopDongForm,
 )
 from .models import (
     CanBo,
@@ -39,12 +41,14 @@ from .models import (
     DonVi,
     HopDong,
     NhomHD,
+    NghiemThu,
     PhanBoChiTieu,
     PhanCongTre,
     PhuLucHopDong,
     Tre,
     Tinh,
     Xa,
+    ThanhLyHopDong,
 )
 
 
@@ -1050,6 +1054,72 @@ def xuat_danh_sach_tai_khoan(request, pk):
     safe_number = re.sub(r"[^A-Za-z0-9._-]+", "_", dot.hop_dong.so_hop_dong)
     response["Content-Disposition"] = f'attachment; filename="DSTK_{safe_number}_{dot.thang}_{dot.nam}.xlsx"'
     return response
+
+
+@hopdong_required
+def cap_nhat_nghiem_thu(request, hop_dong_id):
+    hop_dong = get_object_or_404(HopDong.objects.select_related("de_xuat__phan_bo"), pk=hop_dong_id)
+    record, _ = NghiemThu.objects.get_or_create(hop_dong=hop_dong)
+    if request.method == "POST":
+        form = NghiemThuForm(request.POST, instance=record)
+        if form.is_valid():
+            obj = form.save(commit=False)
+            paid_total = ChiTietThanhToan.objects.filter(nhat_ky__hop_dong=hop_dong).aggregate(total=Sum("thanh_tien"))["total"]
+            obj.gia_tri_nghiem_thu = paid_total or hop_dong.gia_tri_hop_dong
+            obj.save()
+            messages.success(request, "Đã lưu thông tin nghiệm thu.")
+            return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+    else:
+        form = NghiemThuForm(instance=record)
+    return render(request, "quanly/cap_nhat_nghiem_thu.html", {"form": form, "hop_dong": hop_dong, "record": record})
+
+
+@hopdong_required
+def cap_nhat_thanh_ly(request, hop_dong_id):
+    hop_dong = get_object_or_404(HopDong.objects.select_related("de_xuat__phan_bo"), pk=hop_dong_id)
+    if not hasattr(hop_dong, "nghiem_thu"):
+        messages.error(request, "Chỉ được thanh lý sau khi đã lập biên bản nghiệm thu.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+    record, _ = ThanhLyHopDong.objects.get_or_create(hop_dong=hop_dong, defaults={"gia_tri_thanh_ly": hop_dong.nghiem_thu.gia_tri_nghiem_thu})
+    if request.method == "POST":
+        form = ThanhLyHopDongForm(request.POST, instance=record)
+        if form.is_valid():
+            obj = form.save(commit=False)
+            obj.gia_tri_thanh_ly = hop_dong.nghiem_thu.gia_tri_nghiem_thu
+            obj.save()
+            messages.success(request, "Đã lưu thông tin thanh lý hợp đồng.")
+            return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+    else:
+        form = ThanhLyHopDongForm(instance=record)
+    return render(request, "quanly/cap_nhat_thanh_ly.html", {"form": form, "hop_dong": hop_dong, "record": record})
+
+
+def _document_response(output, filename):
+    response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@hopdong_required
+def xuat_bien_ban_nghiem_thu(request, pk):
+    hop_dong = get_object_or_404(HopDong.objects.select_related("can_bo", "de_xuat__phan_bo"), pk=pk)
+    try:
+        record = hop_dong.nghiem_thu
+        return _document_response(export_acceptance_record(hop_dong, record), f"BBNT_{hop_dong.so_hop_dong}.docx")
+    except (NghiemThu.DoesNotExist, ValidationError) as exc:
+        messages.error(request, "Chưa có hồ sơ nghiệm thu hợp lệ để xuất.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+
+
+@hopdong_required
+def xuat_bien_ban_thanh_ly(request, pk):
+    hop_dong = get_object_or_404(HopDong.objects.select_related("can_bo", "de_xuat__phan_bo"), pk=pk)
+    try:
+        record = hop_dong.thanh_ly
+        return _document_response(export_liquidation_record(hop_dong, record), f"TLHD_{hop_dong.so_hop_dong}.docx")
+    except (ThanhLyHopDong.DoesNotExist, ValidationError) as exc:
+        messages.error(request, "Chưa có hồ sơ thanh lý hợp lệ để xuất.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
 
 
 @hopdong_required

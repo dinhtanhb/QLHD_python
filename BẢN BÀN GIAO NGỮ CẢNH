@@ -3255,3 +3255,19 @@ khi hoàn tất xác nhận các mẫu thanh toán.
 - Đã kiểm tra template, sheet, URL, manage.py check, makemigrations --check
   và biên dịch Python. Chưa render file có dữ liệu thực tế vì database hiện
   chưa có nhật ký/chi tiết thanh toán mẫu.
+
+83. NGHIỆM THU, THANH LÝ VÀ XUẤT BIÊN BẢN
+
+Đã bổ sung luồng P5 ban đầu:
+
+- Tạo/cập nhật hồ sơ nghiệm thu theo hợp đồng; giá trị nghiệm thu lấy từ
+  tổng chi tiết thanh toán, nếu chưa có thanh toán thì dùng giá trị hợp đồng.
+- Chỉ cho phép lập hồ sơ thanh lý sau khi hợp đồng đã có nghiệm thu; giá trị
+  thanh lý kế thừa giá trị nghiệm thu, không nhận giá trị tiền tùy ý từ form.
+- Bổ sung nút thao tác tại trang chi tiết hợp đồng.
+- Xuất BBNT theo Mau_BBNT.docx và TLHD theo Mau_TLHD.docx, thay placeholder
+  bằng thông tin hợp đồng/cán bộ và số liệu PHCN/CS.
+- Không thay đổi dữ liệu cũ nếu người dùng chưa thao tác lưu hồ sơ mới.
+- Đã đạt manage.py check, makemigrations --check và py_compile. Việc render
+  hai biên bản có dữ liệu mới sẽ thực hiện trong UAT sau khi người dùng tạo
+  bản ghi nghiệm thu/thanh lý mẫu.

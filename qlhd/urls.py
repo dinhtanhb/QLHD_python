@@ -63,5 +63,9 @@ urlpatterns = [
     path("thanh-toan/<int:pk>/", login_required(views.chi_tiet_dot_thanh_toan), name="chi_tiet_dot_thanh_toan"),
     path("thanh-toan/<int:pk>/xuat-de-nghi/", login_required(views.xuat_de_nghi_thanh_toan), name="xuat_de_nghi_thanh_toan"),
     path("thanh-toan/<int:pk>/xuat-danh-sach-tai-khoan/", login_required(views.xuat_danh_sach_tai_khoan), name="xuat_danh_sach_tai_khoan"),
+    path("hop-dong/<int:hop_dong_id>/nghiem-thu/", login_required(views.cap_nhat_nghiem_thu), name="cap_nhat_nghiem_thu"),
+    path("hop-dong/<int:hop_dong_id>/thanh-ly/", login_required(views.cap_nhat_thanh_ly), name="cap_nhat_thanh_ly"),
+    path("hop-dong/<int:pk>/xuat-bien-ban-nghiem-thu/", login_required(views.xuat_bien_ban_nghiem_thu), name="xuat_bien_ban_nghiem_thu"),
+    path("hop-dong/<int:pk>/xuat-bien-ban-thanh-ly/", login_required(views.xuat_bien_ban_thanh_ly), name="xuat_bien_ban_thanh_ly"),
     path("thanh-toan/<int:dot_id>/chi-tiet/them/", login_required(views.them_chi_tiet_thanh_toan), name="them_chi_tiet_thanh_toan"),
 ]

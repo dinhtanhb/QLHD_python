@@ -24,6 +24,8 @@ from .models import (
 TEMPLATE_ROOT = Path(settings.BASE_DIR) / "quanly" / "document_templates"
 CONTRACT_TEMPLATE = TEMPLATE_ROOT / "hop_dong" / "Mau_HopDong.docx"
 ANNEX_TEMPLATE = TEMPLATE_ROOT / "phu_luc" / "Mau_PhuLucPhanCong.docx"
+ACCEPTANCE_TEMPLATE = TEMPLATE_ROOT / "nghiem_thu_thanh_ly" / "Mau_BBNT.docx"
+LIQUIDATION_TEMPLATE = TEMPLATE_ROOT / "nghiem_thu_thanh_ly" / "Mau_TLHD.docx"
 PLACEHOLDER_PATTERN = re.compile(r"\{\{[^{}]+\}\}")
 
 
@@ -96,6 +98,62 @@ def _date_parts(value):
         "Thang": str(value.month),
         "Nam": str(value.year),
     }
+
+
+def _export_simple_contract_record(hop_dong, record, template_path, context):
+    if not template_path.exists():
+        raise ValidationError(f"Chưa có template {template_path.name}.")
+    document = _document(template_path)
+    _replace_document(document, context)
+    output = BytesIO()
+    document.save(output)
+    output.seek(0)
+    return output
+
+
+def _record_context(hop_dong, record):
+    staff = hop_dong.can_bo
+    allocation = hop_dong.de_xuat.phan_bo
+    return {
+        "MaSoGVMN": staff.ma_can_bo,
+        "HoTenGVMN": staff.ho_ten,
+        "DanhXung": "Ông/Bà",
+        "SoHopDong": hop_dong.so_hop_dong,
+        "NgayKy_Ngay": hop_dong.ngay_ky.day if hop_dong.ngay_ky else "",
+        "NgayKy_Thang": hop_dong.ngay_ky.month if hop_dong.ngay_ky else "",
+        "NgayKy_Nam": hop_dong.ngay_ky.year if hop_dong.ngay_ky else "",
+        "NgayNghiemThu_Ngay": record.ngay_nghiem_thu.day if getattr(record, "ngay_nghiem_thu", None) else "",
+        "NgayNghiemThu_Thang": record.ngay_nghiem_thu.month if getattr(record, "ngay_nghiem_thu", None) else "",
+        "NgayNghiemThu_Nam": record.ngay_nghiem_thu.year if getattr(record, "ngay_nghiem_thu", None) else "",
+        "NgayNghiemThu": record.ngay_nghiem_thu.strftime("%d/%m/%Y") if getattr(record, "ngay_nghiem_thu", None) else "",
+        "NgayThanhLy_Ngay": record.ngay_thanh_ly.day if getattr(record, "ngay_thanh_ly", None) else "",
+        "NgayThanhLy_Thang": record.ngay_thanh_ly.month if getattr(record, "ngay_thanh_ly", None) else "",
+        "NgayThanhLy_Nam": record.ngay_thanh_ly.year if getattr(record, "ngay_thanh_ly", None) else "",
+        "DiaChi": staff.dia_chi or "",
+        "Cccd": staff.cccd or "",
+        "NgayCapCccd": staff.ngay_cap.strftime("%d/%m/%Y") if staff.ngay_cap else "",
+        "NoiCapCccd": staff.noi_cap or "",
+        "DienThoai": staff.dien_thoai or "",
+        "Email": staff.email or "",
+        "SoTrePHCN": allocation.so_tre_phcn,
+        "SoBuoiPHCN": allocation.so_buoi_phcn,
+        "SoTreCS": allocation.so_tre_cs,
+        "SoBuoiCS": allocation.so_buoi_cs,
+        "GiaTriNghiemThuBangChu": _number_to_words(getattr(record, "gia_tri_nghiem_thu", 0)),
+        "GiaTriNghiemThu": _money(getattr(record, "gia_tri_nghiem_thu", 0)),
+        "HoTenGVMN": staff.ho_ten,
+        "SoTaiKhoan": staff.tai_khoan or "",
+        "NganHang": staff.ngan_hang or "",
+        "ChiNhanh": staff.chi_nhanh or "",
+    }
+
+
+def export_acceptance_record(hop_dong, record):
+    return _export_simple_contract_record(hop_dong, record, ACCEPTANCE_TEMPLATE, _record_context(hop_dong, record))
+
+
+def export_liquidation_record(hop_dong, record):
+    return _export_simple_contract_record(hop_dong, record, LIQUIDATION_TEMPLATE, _record_context(hop_dong, record))
 
 
 def _service_display(value):
