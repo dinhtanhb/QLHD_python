@@ -45,6 +45,7 @@ urlpatterns = [
 
     path("hop-dong/tao-moi/", login_required(views.phan_bo_chi_tieu), name="phan_bo_chi_tieu"),
     path("hop-dong/danh-sach-phan-bo/", login_required(views.danh_sach_phan_bo), name="danh_sach_phan_bo"),
+    path("phan-bo/<int:pk>/xoa/", login_required(views.xoa_phan_bo), name="xoa_phan_bo"),
     path("hop-dong/import-phan-bo/", login_required(views.import_phan_bo), name="import_phan_bo"),
     path("hop-dong/import-phan-bo/confirm/", login_required(views.confirm_import_phan_bo), name="confirm_import_phan_bo"),
     path("phan-bo/<int:pk>/sua/", login_required(views.sua_phan_bo_chi_tieu), name="sua_phan_bo_chi_tieu"),

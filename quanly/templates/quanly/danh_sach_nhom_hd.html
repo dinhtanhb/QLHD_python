@@ -38,7 +38,7 @@
                         <td>{{ nhom.ten_nhom_hd }}</td>
                         <td class="text-center">
                             <a href="{% url 'sua_nhom_hd' nhom.id %}" class="btn btn-sm btn-primary">Sửa</a>
-                            <a href="{% url 'xoa_nhom_hd' nhom.id %}" class="btn btn-sm btn-danger" onclick="return confirm('Xác nhận xóa nhóm {{ nhom.ten_nhom_hd }}?');">Xóa</a>
+                            <form method="post" action="{% url 'xoa_nhom_hd' nhom.id %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa nhóm {{ nhom.ten_nhom_hd }}?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger">Xóa</button></form>
                         </td>
                     </tr>
                     {% empty %}

@@ -62,7 +62,7 @@
                         <td>{{ cb.email|default:"---" }}</td>
                         <td class="text-center" style="min-width: 120px;">
                             <a href="{% url 'sua_can_bo' cb.id %}" class="btn btn-sm btn-primary">Sửa</a>
-                            <a href="{% url 'xoa_can_bo' cb.id %}" class="btn btn-sm btn-danger" onclick="return confirm('Xác nhận xóa cán bộ {{ cb.ho_ten }}?');">Xóa</a>
+                            <form method="post" action="{% url 'xoa_can_bo' cb.id %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa cán bộ {{ cb.ho_ten }}?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger">Xóa</button></form>
                         </td>
                     </tr>
                     {% empty %}

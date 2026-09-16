@@ -61,6 +61,7 @@
                                     <a href="{% url 'sua_phan_bo_chi_tieu' item.pk %}" class="btn btn-sm btn-warning">Sửa</a>
                                     {% if item.danh_sach_phan_cong.exists %}<a href="{% url 'tao_de_xuat_hop_dong' item.pk %}" class="btn btn-sm btn-success">Tạo đề xuất</a>{% endif %}
                                     <a href="{% url 'khoa_phan_bo' item.pk %}" class="btn btn-sm btn-secondary">Khóa</a>
+                                    <form method="post" action="{% url 'xoa_phan_bo' item.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa Phân bổ chỉ tiêu này?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger">Xóa</button></form>
                                 {% else %}
                                     {% if item.danh_sach_phan_cong.exists %}<a href="{% url 'danh_sach_phan_cong' %}?phan_bo_id={{ item.pk }}" class="btn btn-sm btn-outline-primary">Xem phân công</a>{% endif %}
                                 {% endif %}

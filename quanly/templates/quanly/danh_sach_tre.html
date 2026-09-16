@@ -68,7 +68,7 @@
                         <td>{{ t.chi_nhanh|default:"---" }}</td>
                         <td class="text-center">
                             <a href="{% url 'sua_tre' t.id %}" class="btn btn-sm btn-primary mb-1">Sửa</a>
-                            <a href="{% url 'xoa_tre' t.id %}" class="btn btn-sm btn-danger mb-1" onclick="return confirm('Bạn có chắc chắn muốn xóa hồ sơ của {{ t.ho_ten }} không?');">Xóa</a>
+                            <form method="post" action="{% url 'xoa_tre' t.id %}" class="d-inline" onsubmit="return confirm('Bạn có chắc chắn muốn xóa hồ sơ của {{ t.ho_ten }} không?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger mb-1">Xóa</button></form>
                         </td>
                     </tr>
                     {% empty %}

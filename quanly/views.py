@@ -220,6 +220,8 @@ def sua_nhom_hd(request, id):
 
 @admin_required
 def xoa_nhom_hd(request, id):
+    if request.method != "POST":
+        return redirect("danh_sach_nhom_hd")
     nhom = get_object_or_404(NhomHD, pk=id)
     try:
         nhom.delete()
@@ -265,6 +267,8 @@ def sua_don_vi(request, id):
 
 @admin_required
 def xoa_don_vi(request, id):
+    if request.method != "POST":
+        return redirect("danh_sach_don_vi")
     don_vi = get_object_or_404(DonVi, pk=id)
     try:
         don_vi.delete()
@@ -315,6 +319,8 @@ def sua_tre(request, id):
 
 @admin_required
 def xoa_tre(request, id):
+    if request.method != "POST":
+        return redirect("danh_sach_tre")
     tre = get_object_or_404(Tre, pk=id)
     try:
         tre.delete()
@@ -410,6 +416,8 @@ def sua_can_bo(request, id):
 
 @admin_required
 def xoa_can_bo(request, id):
+    if request.method != "POST":
+        return redirect("danh_sach_can_bo")
     can_bo = get_object_or_404(CanBo, pk=id)
     try:
         can_bo.delete()
@@ -560,7 +568,7 @@ def sua_phan_cong(request, pk):
     return render(request, "quanly/sua_phan_cong.html", {"form": form, "item": item})
 
 
-@hopdong_required
+@admin_required
 def xoa_phan_cong(request, pk):
     item = get_object_or_404(PhanCongTre, pk=pk)
     if request.method == "POST":
@@ -762,6 +770,22 @@ def danh_sach_phan_bo(request):
         qs = qs.filter(Q(can_bo__ho_ten__icontains=query) | Q(can_bo__ma_can_bo__icontains=query) | Q(nhom_hd__ten_nhom_hd__icontains=query))
     page_obj = Paginator(qs.order_by("-ngay_lap", "-id"), 15).get_page(request.GET.get("page"))
     return render(request, "quanly/danh_sach_phan_bo.html", {"danh_sach": page_obj, "page_obj": page_obj, "query": query})
+
+
+@admin_required
+def xoa_phan_bo(request, pk):
+    if request.method != "POST":
+        return redirect("danh_sach_phan_bo")
+    item = get_object_or_404(PhanBoChiTieu, pk=pk)
+    if item.is_locked:
+        messages.error(request, "Phân bổ đã khóa, không thể xóa.")
+        return redirect("danh_sach_phan_bo")
+    try:
+        item.delete()
+        messages.success(request, "Đã xóa Phân bổ chỉ tiêu.")
+    except Exception as exc:
+        messages.error(request, f"Không thể xóa Phân bổ: {exc}")
+    return redirect("danh_sach_phan_bo")
 
 
 @admin_required
