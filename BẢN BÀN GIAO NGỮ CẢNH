@@ -3432,5 +3432,5 @@ sóc, tách khỏi tiền công cán bộ:
 - Trang Nhật ký luôn hiển thị tổng số bản ghi theo bộ lọc, giúp xác nhận kết quả
   import ngay sau khi quay về danh sách; không còn im lặng khi import rỗng hoặc
   toàn bộ dòng không khớp dữ liệu nền.
-- Chuẩn hóa hiển thị thông báo và bổ sung route nhập thủ công; 7 kiểm tra route/
-  nghiệp vụ dự kiến đạt sau lần chạy test tiếp theo.
+- Chuẩn hóa hiển thị thông báo và bổ sung route nhập thủ công; bộ 6 test route/
+  nghiệp vụ hiện đều đạt.
