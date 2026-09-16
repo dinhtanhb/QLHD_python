@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from .decorators import admin_required, dashboard_required, hopdong_required, readonly_required
-from .document_export import create_contract_from_proposal, export_contract_bundle
+from .document_export import create_contract_from_proposal, export_assignment_annex, export_contract_bundle
 from .financial import FinancialConfig
 from .forms import (
     CanBoForm,
@@ -904,7 +904,17 @@ def chi_tiet_hop_dong(request, pk):
     hop_dong = get_object_or_404(HopDong.objects.select_related("can_bo", "nhom_hd", "de_xuat"), pk=pk)
     khoi_luong = hop_dong.chi_tiet_khoi_luong.all().order_by("loai_dich_vu")
     phu_luc = hop_dong.phu_luc.all().prefetch_related("chi_tiet_phan_cong").order_by("-ngay_lap", "-id")
-    return render(request, "quanly/chi_tiet_hop_dong.html", {"hop_dong": hop_dong, "khoi_luong": khoi_luong, "phu_luc": phu_luc})
+    ky_choices = (
+        PhanCongTre.objects.filter(phan_bo=hop_dong.de_xuat.phan_bo, ky_phan_cong__gte=2)
+        .values_list("ky_phan_cong", flat=True)
+        .distinct()
+        .order_by("ky_phan_cong")
+    )
+    return render(
+        request,
+        "quanly/chi_tiet_hop_dong.html",
+        {"hop_dong": hop_dong, "khoi_luong": khoi_luong, "phu_luc": phu_luc, "ky_choices": ky_choices},
+    )
 
 
 @hopdong_required
@@ -925,6 +935,31 @@ def xuat_bo_hop_dong(request, pk):
     )
     safe_number = re.sub(r"[^A-Za-z0-9._-]+", "_", hop_dong.so_hop_dong)
     response["Content-Disposition"] = f'attachment; filename="HopDong_{safe_number}.docx"'
+    return response
+
+
+@hopdong_required
+def xuat_phu_luc_phan_cong(request, pk):
+    hop_dong = get_object_or_404(
+        HopDong.objects.select_related("can_bo", "de_xuat__phan_bo"),
+        pk=pk,
+    )
+    try:
+        ky = int(request.GET.get("ky", "0"))
+        output = export_assignment_annex(hop_dong, ky)
+    except (TypeError, ValueError):
+        messages.error(request, "Kỳ phân công không hợp lệ.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+    except ValidationError as exc:
+        messages.error(request, str(exc))
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+
+    safe_number = re.sub(r"[^A-Za-z0-9._-]+", "_", hop_dong.so_hop_dong)
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    response["Content-Disposition"] = f'attachment; filename="PhuLuc_{safe_number}_Ky{ky}.docx"'
     return response
 
 

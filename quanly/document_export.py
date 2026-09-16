@@ -217,18 +217,18 @@ def _allocation_context(hop_dong):
     return values
 
 
-def _annex_context(hop_dong, rows):
+def _annex_context(hop_dong, rows, ky=1):
     values = _allocation_context(hop_dong)
     values.update(
         {
-            "KyPhanCong": 1,
+            "KyPhanCong": ky,
             "NgayPhanCong": _one_date(rows),
         }
     )
     return values
 
 
-def _fill_assignment_table(document, hop_dong, rows):
+def _fill_assignment_table(document, hop_dong, rows, ky=1):
     for table in document.tables:
         if not table.rows:
             continue
@@ -238,7 +238,7 @@ def _fill_assignment_table(document, hop_dong, rows):
             continue
         row_template = table.rows[1]
         _remove_row(row_template)
-        base_context = _annex_context(hop_dong, rows)
+        base_context = _annex_context(hop_dong, rows, ky)
         for index, item in enumerate(rows, start=1):
             row = _clone_table_row(table, row_template)
             _replace_row(
@@ -306,6 +306,30 @@ def export_contract_bundle(hop_dong):
 
     output = BytesIO()
     contract.save(output)
+    output.seek(0)
+    return output
+
+
+def export_assignment_annex(hop_dong, ky):
+    """Xuất Phụ lục phân công riêng cho Kỳ 2 trở đi, không ghi DB."""
+    if ky < 2:
+        raise ValidationError("Phụ lục xuất riêng chỉ áp dụng từ Kỳ 2 trở đi.")
+    if not ANNEX_TEMPLATE.exists():
+        raise ValidationError("Chưa có template Word Phụ lục phân công.")
+
+    rows = list(
+        PhanCongTre.objects.filter(phan_bo=hop_dong.de_xuat.phan_bo, ky_phan_cong=ky)
+        .select_related("tre")
+        .order_by("id")
+    )
+    if not rows:
+        raise ValidationError(f"Chưa có phân công trẻ cho Kỳ {ky}.")
+
+    document = _document(ANNEX_TEMPLATE)
+    _fill_assignment_table(document, hop_dong, rows, ky=ky)
+    _replace_document(document, _annex_context(hop_dong, rows, ky=ky))
+    output = BytesIO()
+    document.save(output)
     output.seek(0)
     return output
 

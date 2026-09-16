@@ -3174,3 +3174,14 @@ cần phân biệt nhóm PHCN/CS khi tính, hiển thị, đối chiếu và là
 Số liệu kiểm tra hiện tại: 172 phân bổ, 1.857 chỉ tiêu trẻ PHCN, 1.154 chỉ tiêu
 trẻ CS, 4 phân công PHCN, 1 phân công CS, tổng giá trị phân bổ 12.182.500.000
 đồng và tổng giá trị hợp đồng lịch sử 130.000.000 đồng.
+
+77. XUẤT PHỤ LỤC PHÂN CÔNG KỲ 2 TRỞ ĐI
+
+Đã bổ sung endpoint xuất riêng Phụ lục phân công:
+
+- URL: /hop-dong/<id>/xuat-phu-luc-phan-cong/?ky=<so_ky>.
+- Chỉ cho phép Kỳ 2 trở đi.
+- Chỉ đọc các PhanCongTre thuộc đúng hợp đồng và kỳ được chọn.
+- Không tạo hoặc sửa PhuLucHopDong/ChiTietPhuLucPhanCong trong quá trình xuất.
+- Trang chi tiết hợp đồng chỉ hiển thị lựa chọn các kỳ thực sự có dữ liệu.
+- Kiểm tra hồi quy xuất bộ hợp đồng Kỳ 1 vẫn đạt, DOCX không còn placeholder.
