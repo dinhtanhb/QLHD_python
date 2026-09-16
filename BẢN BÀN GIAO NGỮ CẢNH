@@ -3471,3 +3471,17 @@ sóc, tách khỏi tiền công cán bộ:
   qua; không còn nối toàn bộ lỗi vào một dòng dài.
 - Đã tạo migration 0014 cho các trường mới; cần chạy `manage.py migrate` sau
   khi pull.
+
+98. QUẢN LÝ VÀ IMPORT HỢP ĐỒNG
+
+- Danh sách Hợp đồng chính thức bổ sung thao tác Sửa và Xóa; chỉ Admin được
+  sửa/xóa, Xóa dùng POST/CSRF/xác nhận và chặn hợp đồng đã khóa hoặc đã vào
+  trạng thái thực hiện/nghiệm thu/thanh lý.
+- Đã tạo trang Sửa hợp đồng dùng lại `HopDongForm`; dữ liệu cũ không bị thay
+  đổi nếu người dùng chưa bấm lưu.
+- Đã đọc mẫu `Mau_HopDong.xlsx`: importer khớp các cột MaCbct, NhomHD,
+  SoHopDong, NgayKy, TuNgay, DenNgay; cập nhật theo Số hợp đồng, không tạo
+  trùng. Bổ sung kiểm tra ngày bắt buộc/thứ tự ngày và transaction từng dòng.
+- Import hợp đồng cảnh báo từng dòng bị bỏ qua và xác nhận rõ khi dữ liệu đã
+  lưu vào database; mẫu hiện đủ điều kiện để kiểm thử với database đã có CBCT,
+  Nhóm HĐ và Phân bổ tương ứng.

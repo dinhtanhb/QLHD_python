@@ -1077,6 +1077,33 @@ def danh_sach_hop_dong(request):
 
 
 @admin_required
+def sua_hop_dong(request, pk):
+    hop_dong = get_object_or_404(HopDong, pk=pk)
+    form = HopDongForm(request.POST or None, instance=hop_dong)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, f"Đã cập nhật hợp đồng {hop_dong.so_hop_dong}.")
+        return redirect("danh_sach_hop_dong")
+    return render(request, "quanly/sua_hop_dong.html", {"form": form, "hop_dong": hop_dong})
+
+
+@admin_required
+def xoa_hop_dong(request, pk):
+    if request.method != "POST":
+        return redirect("danh_sach_hop_dong")
+    hop_dong = get_object_or_404(HopDong, pk=pk)
+    if hop_dong.is_locked or hop_dong.trang_thai not in {"DU_THAO", "HUY"}:
+        messages.error(request, "Chỉ được xóa hợp đồng dự thảo hoặc đã hủy và chưa khóa.")
+        return redirect("danh_sach_hop_dong")
+    try:
+        hop_dong.delete()
+        messages.success(request, "Đã xóa hợp đồng.")
+    except Exception as exc:
+        messages.error(request, f"Không thể xóa hợp đồng vì còn dữ liệu liên quan: {exc}")
+    return redirect("danh_sach_hop_dong")
+
+
+@admin_required
 def import_hop_dong(request):
     if request.method != "POST" or not request.FILES.get("file_excel"):
         return render(request, "quanly/import_hop_dong.html")
@@ -1092,8 +1119,7 @@ def import_hop_dong(request):
             ma_cb = clean_empty_excel_value(get_excel_value(row, "MaCbct", "MaCBCT", "Mã CBCT"))
             so_hd = clean_empty_excel_value(get_excel_value(row, "SoHopDong", "Số Hợp đồng", "Số HĐ"))
             if not ma_cb or not so_hd:
-                skipped += 1
-                continue
+                raise ValueError("Thiếu Mã CBCT hoặc Số hợp đồng")
             can_bo = get_object_or_404(CanBo, ma_can_bo=ma_cb)
             nhom_value = clean_empty_excel_value(get_excel_value(row, "NhomHD", "Nhóm HĐ"))
             nhom_hd = NhomHD.objects.filter(pk=int(float(nhom_value))).first() if nhom_value and str(nhom_value).isdigit() else NhomHD.objects.filter(Q(ma_nhom_hd=nhom_value) | Q(ten_nhom_hd__iexact=nhom_value)).first()
@@ -1102,11 +1128,19 @@ def import_hop_dong(request):
             phan_bo = PhanBoChiTieu.objects.filter(can_bo=can_bo, nhom_hd=nhom_hd).order_by("-ngay_lap", "-id").first()
             if not phan_bo:
                 raise ValueError("Không tìm thấy phân bổ tương ứng để liên kết hợp đồng")
-            proposal = phan_bo.de_xuat_hop_dong.order_by("-lan_de_xuat", "-id").first()
-            if not proposal:
-                proposal = DeXuatHopDong.objects.create(phan_bo=phan_bo, so_tre_phcn=phan_bo.so_tre_phcn, so_buoi_phcn=phan_bo.so_buoi_phcn, so_tre_cs=phan_bo.so_tre_cs, so_buoi_cs=phan_bo.so_buoi_cs, gia_tri_du_kien=phan_bo.gia_tri_du_kien, trang_thai="DA_DUYET")
-            defaults = {"de_xuat": proposal, "can_bo": can_bo, "nhom_hd": nhom_hd, "ngay_ky": parse_date(get_excel_value(row, "NgayKy", "Ngày ký")), "tu_ngay": parse_date(get_excel_value(row, "TuNgay", "Từ ngày")), "den_ngay": parse_date(get_excel_value(row, "DenNgay", "Đến ngày")), "don_gia_cong": FinancialConfig.DON_GIA_CONG, "dinh_muc_di_lai_phcn": phan_bo.dinh_muc_di_lai_phcn, "dinh_muc_di_lai_cs": phan_bo.dinh_muc_di_lai_cs, "gia_tri_hop_dong": proposal.gia_tri_du_kien, "trang_thai": "DA_KY"}
-            _, is_created = HopDong.objects.update_or_create(so_hop_dong=so_hd, defaults=defaults)
+            ngay_ky = parse_date(get_excel_value(row, "NgayKy", "Ngày ký"))
+            tu_ngay = parse_date(get_excel_value(row, "TuNgay", "Từ ngày"))
+            den_ngay = parse_date(get_excel_value(row, "DenNgay", "Đến ngày"))
+            if not tu_ngay or not den_ngay:
+                raise ValueError("Thiếu Từ ngày hoặc Đến ngày")
+            if den_ngay < tu_ngay:
+                raise ValueError("Đến ngày không được trước Từ ngày")
+            with transaction.atomic():
+                proposal = phan_bo.de_xuat_hop_dong.order_by("-lan_de_xuat", "-id").first()
+                if not proposal:
+                    proposal = DeXuatHopDong.objects.create(phan_bo=phan_bo, so_tre_phcn=phan_bo.so_tre_phcn, so_buoi_phcn=phan_bo.so_buoi_phcn, so_tre_cs=phan_bo.so_tre_cs, so_buoi_cs=phan_bo.so_buoi_cs, gia_tri_du_kien=phan_bo.gia_tri_du_kien, trang_thai="DA_DUYET")
+                defaults = {"de_xuat": proposal, "can_bo": can_bo, "nhom_hd": nhom_hd, "ngay_ky": ngay_ky, "tu_ngay": tu_ngay, "den_ngay": den_ngay, "don_gia_cong": FinancialConfig.DON_GIA_CONG, "dinh_muc_di_lai_phcn": phan_bo.dinh_muc_di_lai_phcn, "dinh_muc_di_lai_cs": phan_bo.dinh_muc_di_lai_cs, "gia_tri_hop_dong": proposal.gia_tri_du_kien, "trang_thai": "DA_KY"}
+                _, is_created = HopDong.objects.update_or_create(so_hop_dong=so_hd, defaults=defaults)
             created += int(is_created)
             updated += int(not is_created)
         except Exception as exc:

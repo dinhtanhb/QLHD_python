@@ -30,7 +30,7 @@
                             <td>{{ hd.ngay_ky|date:"d/m/Y" }}</td>
                             <td>{{ hd.tu_ngay|date:"d/m/Y" }} - {{ hd.den_ngay|date:"d/m/Y" }}</td>
                             <td><span class="badge bg-success">{{ hd.get_trang_thai_display }}</span></td>
-                            <td><a href="{% url 'chi_tiet_hop_dong' hd.pk %}" class="btn btn-sm btn-primary">Chi tiết</a></td>
+                            <td><a href="{% url 'chi_tiet_hop_dong' hd.pk %}" class="btn btn-sm btn-primary">Chi tiết</a> <a href="{% url 'sua_hop_dong' hd.pk %}" class="btn btn-sm btn-warning">Sửa</a> <form method="post" action="{% url 'xoa_hop_dong' hd.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa hợp đồng {{ hd.so_hop_dong }}?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger">Xóa</button></form></td>
                         </tr>
                     {% empty %}
                         <tr><td colspan="8" class="text-center text-muted py-4">Chưa có hợp đồng chính thức.</td></tr>
