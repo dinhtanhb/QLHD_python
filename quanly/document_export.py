@@ -114,6 +114,9 @@ def _export_simple_contract_record(hop_dong, record, template_path, context):
 def _record_context(hop_dong, record):
     staff = hop_dong.can_bo
     allocation = hop_dong.de_xuat.phan_bo
+    acceptance = getattr(hop_dong, "nghiem_thu", None)
+    acceptance_date = getattr(acceptance, "ngay_nghiem_thu", None) or getattr(record, "ngay_nghiem_thu", None)
+    acceptance_value = getattr(acceptance, "gia_tri_nghiem_thu", None) or getattr(record, "gia_tri_nghiem_thu", 0)
     return {
         "MaSoGVMN": staff.ma_can_bo,
         "HoTenGVMN": staff.ho_ten,
@@ -122,10 +125,10 @@ def _record_context(hop_dong, record):
         "NgayKy_Ngay": hop_dong.ngay_ky.day if hop_dong.ngay_ky else "",
         "NgayKy_Thang": hop_dong.ngay_ky.month if hop_dong.ngay_ky else "",
         "NgayKy_Nam": hop_dong.ngay_ky.year if hop_dong.ngay_ky else "",
-        "NgayNghiemThu_Ngay": record.ngay_nghiem_thu.day if getattr(record, "ngay_nghiem_thu", None) else "",
-        "NgayNghiemThu_Thang": record.ngay_nghiem_thu.month if getattr(record, "ngay_nghiem_thu", None) else "",
-        "NgayNghiemThu_Nam": record.ngay_nghiem_thu.year if getattr(record, "ngay_nghiem_thu", None) else "",
-        "NgayNghiemThu": record.ngay_nghiem_thu.strftime("%d/%m/%Y") if getattr(record, "ngay_nghiem_thu", None) else "",
+        "NgayNghiemThu_Ngay": acceptance_date.day if acceptance_date else "",
+        "NgayNghiemThu_Thang": acceptance_date.month if acceptance_date else "",
+        "NgayNghiemThu_Nam": acceptance_date.year if acceptance_date else "",
+        "NgayNghiemThu": acceptance_date.strftime("%d/%m/%Y") if acceptance_date else "",
         "NgayThanhLy_Ngay": record.ngay_thanh_ly.day if getattr(record, "ngay_thanh_ly", None) else "",
         "NgayThanhLy_Thang": record.ngay_thanh_ly.month if getattr(record, "ngay_thanh_ly", None) else "",
         "NgayThanhLy_Nam": record.ngay_thanh_ly.year if getattr(record, "ngay_thanh_ly", None) else "",
@@ -139,8 +142,8 @@ def _record_context(hop_dong, record):
         "SoBuoiPHCN": allocation.so_buoi_phcn,
         "SoTreCS": allocation.so_tre_cs,
         "SoBuoiCS": allocation.so_buoi_cs,
-        "GiaTriNghiemThuBangChu": _number_to_words(getattr(record, "gia_tri_nghiem_thu", 0)),
-        "GiaTriNghiemThu": _money(getattr(record, "gia_tri_nghiem_thu", 0)),
+        "GiaTriNghiemThuBangChu": _number_to_words(acceptance_value),
+        "GiaTriNghiemThu": _money(acceptance_value),
         "HoTenGVMN": staff.ho_ten,
         "SoTaiKhoan": staff.tai_khoan or "",
         "NganHang": staff.ngan_hang or "",
