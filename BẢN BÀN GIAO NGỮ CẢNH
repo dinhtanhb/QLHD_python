@@ -3361,3 +3361,18 @@ sóc, tách khỏi tiền công cán bộ:
 - Các số tiền/tổng quan ở Dashboard, danh sách hợp đồng và màn hình phân công
   đã chuyển sang định dạng Việt Nam; tiếp tục rà soát các màn hình nhập/xem
   còn lại trong UAT để bảo đảm không bỏ sót trường số.
+
+90. SỬA LỖI PLACEHOLDER NGÀY VÀ RÀ SOÁT ĐỊNH DẠNG SỐ
+
+- Đã xác định nguyên nhân `NgayKy_Ngay` bị thay bằng cả chuỗi `15/09/2026`:
+  hàm `_date_parts()` trả chuỗi đầy đủ ở khóa `Ngay`, sau đó được dùng đồng
+  thời cho ngày/tháng/năm. Nay `Ngay`, `Thang`, `Nam` tách riêng và thêm khóa
+  `Full` cho các trường ngày đầy đủ.
+- Bổ sung test hồi quy xác nhận ngày 15/09/2026 xuất thành `15`, `9`, `2026`
+  ở ba placeholder riêng và `15/09/2026` ở trường đầy đủ.
+- Rà soát các màn hình chính, chuyển các số tiền sang filter `vn_number`; alias
+  `intcomma` cũ cũng dùng dấu chấm hàng nghìn kiểu Việt Nam.
+- Đã biên dịch toàn bộ template, chạy system check, migration check và 4 test.
+- Sau khi phát hiện lỗi thực tế ở màn hình xuất hợp đồng, đã bổ sung test
+  context hợp đồng và xác nhận 5 test đều đạt; định dạng số các màn hình chi
+  tiết hợp đồng/thanh toán cũng đã chuyển sang `vn_number`.

@@ -94,9 +94,10 @@ def _number_to_words(value):
 def _date_parts(value):
     value = value or date.today()
     return {
-        "Ngay": value.strftime("%d/%m/%Y"),
+        "Ngay": str(value.day),
         "Thang": str(value.month),
         "Nam": str(value.year),
+        "Full": value.strftime("%d/%m/%Y"),
     }
 
 
@@ -271,8 +272,8 @@ def _allocation_context(hop_dong):
         "TongTien": _money(total),
         "GiaTriHopDong": _money(hop_dong.gia_tri_hop_dong),
         "GiaTriHopDongBangChu": _number_to_words(total),
-        "TuNgay": start_date["Ngay"],
-        "DenNgay": end_date["Ngay"],
+        "TuNgay": start_date["Full"],
+        "DenNgay": end_date["Full"],
     }
     values.update({f"NgayKy_{key}": value for key, value in contract_date.items()})
     return values

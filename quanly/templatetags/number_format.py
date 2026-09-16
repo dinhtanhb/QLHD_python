@@ -23,3 +23,9 @@ def vn_number(value):
     integer, _, fraction = text.partition(".")
     integer = f"{int(integer):,}".replace(",", ".")
     return f"{integer},{fraction}"
+
+
+@register.filter(name="intcomma")
+def vn_intcomma(value):
+    """Alias tương thích cho template cũ nhưng dùng dấu chấm Việt Nam."""
+    return vn_number(value)
