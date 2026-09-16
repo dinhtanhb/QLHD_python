@@ -579,6 +579,26 @@ class ChiTietThanhToanDiLaiPhuHuynh(TimeStampedModel):
         self.thanh_tien = Decimal(self.so_luot_di_lai) * Decimal(self.dinh_muc_di_lai)
         super().save(*args, **kwargs)
 
+    @property
+    def nguoi_nhan(self):
+        return self.nhat_ky.phan_cong.tre.ten_phu_huynh or ""
+
+    @property
+    def ten_tai_khoan(self):
+        return self.nhat_ky.phan_cong.tre.ten_tai_khoan or ""
+
+    @property
+    def tai_khoan(self):
+        return self.nhat_ky.phan_cong.tre.tai_khoan or ""
+
+    @property
+    def ngan_hang(self):
+        return self.nhat_ky.phan_cong.tre.ngan_hang or ""
+
+    @property
+    def chi_nhanh(self):
+        return self.nhat_ky.phan_cong.tre.chi_nhanh or ""
+
 
 class NghiemThu(TimeStampedModel):
     hop_dong = models.OneToOneField(HopDong, on_delete=models.PROTECT, related_name="nghiem_thu", verbose_name="Hợp đồng")

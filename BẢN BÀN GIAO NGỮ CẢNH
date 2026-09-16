@@ -3287,3 +3287,14 @@ sóc, tách khỏi tiền công cán bộ:
 - Đã tạo migration 0011 và các URL nhập/xem đợt thanh toán. Các mẫu Excel
   DNTT/DSTK theo nhóm CG/NCS/CBDA sẽ được nối tiếp sau khi chốt cách gom nhóm
   người nhận theo hồ sơ thực tế.
+
+85. THÔNG TIN TÀI KHOẢN PHỤ HUYNH
+
+Đã xác nhận và triển khai nguyên tắc nguồn dữ liệu:
+
+- Tên tài khoản, số tài khoản, ngân hàng và chi nhánh được đọc trực tiếp từ
+  bản ghi Tre tương ứng với nhật ký/phân công.
+- Chi tiết thanh toán chỉ lưu số lượt, định mức và thành tiền; không nhân bản
+  thông tin tài khoản vào bảng thanh toán và không cho nhập lại từ form.
+- Giao diện chi tiết đợt thanh toán đã hiển thị đủ bốn trường để kiểm tra trước
+  khi xuất file.
