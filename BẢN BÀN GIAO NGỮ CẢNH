@@ -3393,3 +3393,15 @@ sóc, tách khỏi tiền công cán bộ:
 - Xuất DSTK và ĐNCK Excel theo cùng tập nhật ký đã lọc; DSTK gộp theo CBCT.
 - Đã thêm menu truy cập trực tiếp và kiểm tra route/template, system check,
   migration check và 5 test nghiệp vụ.
+
+92. SỬA ROUTE NHẬT KÝ VÀ BỔ SUNG ĐNTT EXCEL
+
+- Đã đăng ký và kiểm thử route `import_nhat_ky_can_thiep` tại
+  `/nhat-ky-can-thiep/import/`; lỗi `NoReverseMatch` là do tiến trình Django
+  đang chạy mã cũ, cần dừng và khởi động lại server sau khi cập nhật mã.
+- Bổ sung nút và route Xuất ĐNTT Excel tại `/nhat-ky-can-thiep/xuat-dntt-excel/`,
+  dùng mẫu `Mau_DNTT.xlsx`, xuất theo đúng các bộ lọc CBCT/Nhóm HĐ/Kỳ/Tháng/Năm.
+- File Excel có các dòng kế hoạch, thực tế, tiền công, đi lại, thuế TNCN và
+  thực lĩnh; thuế chỉ tính trên tiền công từ 5.000.000 đồng, không tính đi lại.
+- Đã thêm test kiểm tra route import và route ĐNTT Excel; tổng 6 test đều đạt,
+  đồng thời đã chạy check, migration check và kiểm tra biên dịch template.

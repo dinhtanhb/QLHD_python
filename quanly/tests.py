@@ -3,6 +3,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from django.test import SimpleTestCase
+from django.urls import reverse
 
 from .financial import calculate_payment_breakdown, calculate_tncn
 from .document_export import _allocation_context, _date_parts
@@ -10,6 +11,10 @@ from .models import PhanCongTre
 
 
 class FinancialRulesTests(SimpleTestCase):
+    def test_intervention_journal_routes_are_registered(self):
+        self.assertEqual(reverse("import_nhat_ky_can_thiep"), "/nhat-ky-can-thiep/import/")
+        self.assertEqual(reverse("xuat_dntt_excel_nhat_ky"), "/nhat-ky-can-thiep/xuat-dntt-excel/")
+
     def test_contract_date_parts_keep_day_month_year_separate(self):
         parts = _date_parts(date(2026, 9, 15))
         self.assertEqual(parts["Ngay"], "15")

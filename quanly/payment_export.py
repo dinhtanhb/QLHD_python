@@ -279,6 +279,32 @@ def export_journal_account_list(journals):
     return output
 
 
+def export_journal_payment_request_excel(journals):
+    journals = list(journals)
+    if not journals:
+        raise ValidationError("Không có nhật ký phù hợp để xuất ĐNTT Excel.")
+    workbook = _workbook(INTERVENTION_PAYMENT_TEMPLATE)
+    ws = workbook["DNTT"]
+    _clear_detail_rows(ws)
+    for index, journal in enumerate(journals):
+        row = FIRST_DETAIL_ROW + index
+        if row > LAST_TEMPLATE_DETAIL_ROW:
+            raise ValidationError("Số dòng nhật ký vượt giới hạn template ĐNTT.")
+        assignment = journal.phan_cong
+        bucket = _location_bucket(assignment.dia_diem_ct)
+        values = {
+            "A": index + 1, "B": f"{journal.hop_dong.can_bo.ho_ten} - {assignment.tre.ho_ten}", "C": journal.hop_dong.so_hop_dong, "D": assignment.nhom_dich_vu,
+            "E": assignment.so_buoi_du_kien if bucket == "facility" else 0, "F": assignment.so_buoi_du_kien if bucket == "home" else 0, "G": assignment.so_buoi_du_kien if bucket == "other" else 0,
+            "H": journal.so_luot_di_lai if bucket == "home" else 0, "I": journal.don_gia_cong, "J": journal.dinh_muc_di_lai,
+            "K": f"=E{row}*I{row}+H{row}*J{row}", "L": journal.so_buoi_thuc_hien if bucket == "facility" else 0, "M": journal.so_buoi_thuc_hien if bucket == "home" else 0, "N": journal.so_buoi_thuc_hien if bucket == "other" else 0,
+            "O": journal.so_luot_di_lai, "P": f"=(L{row}+M{row}+N{row})*I{row}", "Q": f"=O{row}*J{row}", "R": f"=P{row}+Q{row}", "S": f"=IF(P{row}>=5000000,P{row}*10%,0)", "T": f"=R{row}-S{row}", "U": journal.ghi_chu or "",
+        }
+        for column, value in values.items(): ws[f"{column}{row}"] = value
+    end_row = FIRST_DETAIL_ROW + len(journals) - 1
+    for column in ("K", "P", "Q", "R", "S", "T"): ws[f"{column}{TOTAL_ROW}"] = f"=SUM({column}{FIRST_DETAIL_ROW}:{column}{end_row})"
+    output = BytesIO(); workbook.save(output); output.seek(0); return output
+
+
 def export_journal_commitment(journals, tu_ngay="", den_ngay=""):
     journals = list(journals)
     if not journals:

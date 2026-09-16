@@ -80,6 +80,7 @@ urlpatterns = [
     path("nhat-ky-can-thiep/", login_required(views.nhat_ky_can_thiep), name="nhat_ky_can_thiep"),
     path("nhat-ky-can-thiep/import/", login_required(views.import_nhat_ky_can_thiep), name="import_nhat_ky_can_thiep"),
     path("nhat-ky-can-thiep/xuat-dntt/", login_required(views.xuat_dntt_nhat_ky), name="xuat_dntt_nhat_ky"),
+    path("nhat-ky-can-thiep/xuat-dntt-excel/", login_required(views.xuat_dntt_excel_nhat_ky), name="xuat_dntt_excel_nhat_ky"),
     path("nhat-ky-can-thiep/xuat-dstk/", login_required(views.xuat_dstk_nhat_ky), name="xuat_dstk_nhat_ky"),
     path("nhat-ky-can-thiep/xuat-dnck/", login_required(views.xuat_dnck_nhat_ky), name="xuat_dnck_nhat_ky"),
 ]
