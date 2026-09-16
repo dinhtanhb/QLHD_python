@@ -3485,3 +3485,14 @@ sóc, tách khỏi tiền công cán bộ:
 - Import hợp đồng cảnh báo từng dòng bị bỏ qua và xác nhận rõ khi dữ liệu đã
   lưu vào database; mẫu hiện đủ điều kiện để kiểm thử với database đã có CBCT,
   Nhóm HĐ và Phân bổ tương ứng.
+
+99. SỬA LỖI IMPORT HỢP ĐỒNG VÀ XÁC NHẬN MẪU
+
+- Đã sửa lỗi importer gọi nhầm thuộc tính `PhanBoChiTieu.gia_tri_du_kien`
+  (trường này chỉ thuộc Đề xuất); nay giá trị đề xuất được tính từ các chỉ
+  tiêu và định mức của Phân bổ.
+- Mẫu `Mau_HopDong.xlsx` có đúng 6 cột cần thiết và đọc được 1 dòng dữ liệu.
+  Với database hiện tại, mã CBCT mẫu `ABP0494` chưa tồn tại nên dòng sẽ được
+  cảnh báo bỏ qua; cần import/tạo CBCT trước rồi import lại hợp đồng.
+- Import cập nhật theo Số HĐ, kiểm tra ngày và transaction từng dòng; không
+  xóa dữ liệu hợp đồng cũ.

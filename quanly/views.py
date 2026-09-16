@@ -1138,7 +1138,8 @@ def import_hop_dong(request):
             with transaction.atomic():
                 proposal = phan_bo.de_xuat_hop_dong.order_by("-lan_de_xuat", "-id").first()
                 if not proposal:
-                    proposal = DeXuatHopDong.objects.create(phan_bo=phan_bo, so_tre_phcn=phan_bo.so_tre_phcn, so_buoi_phcn=phan_bo.so_buoi_phcn, so_tre_cs=phan_bo.so_tre_cs, so_buoi_cs=phan_bo.so_buoi_cs, gia_tri_du_kien=phan_bo.gia_tri_du_kien, trang_thai="DA_DUYET")
+                    gia_tri_du_kien = calculate_expected_value(phan_bo.so_tre_phcn, phan_bo.so_buoi_phcn, phan_bo.dinh_muc_di_lai_phcn, phan_bo.so_tre_cs, phan_bo.so_buoi_cs, phan_bo.dinh_muc_di_lai_cs)
+                    proposal = DeXuatHopDong.objects.create(phan_bo=phan_bo, so_tre_phcn=phan_bo.so_tre_phcn, so_buoi_phcn=phan_bo.so_buoi_phcn, so_tre_cs=phan_bo.so_tre_cs, so_buoi_cs=phan_bo.so_buoi_cs, gia_tri_du_kien=gia_tri_du_kien, trang_thai="DA_DUYET")
                 defaults = {"de_xuat": proposal, "can_bo": can_bo, "nhom_hd": nhom_hd, "ngay_ky": ngay_ky, "tu_ngay": tu_ngay, "den_ngay": den_ngay, "don_gia_cong": FinancialConfig.DON_GIA_CONG, "dinh_muc_di_lai_phcn": phan_bo.dinh_muc_di_lai_phcn, "dinh_muc_di_lai_cs": phan_bo.dinh_muc_di_lai_cs, "gia_tri_hop_dong": proposal.gia_tri_du_kien, "trang_thai": "DA_KY"}
                 _, is_created = HopDong.objects.update_or_create(so_hop_dong=so_hd, defaults=defaults)
             created += int(is_created)
