@@ -39,7 +39,7 @@
                     {% for item in danh_sach %}
                         <tr>
                             <td>{{ forloop.counter }}</td>
-                            <td><strong>{{ item.can_bo.ma_can_bo }}</strong><br>{{ item.can_bo.ho_ten }}</td>
+                            <td>{% if item.can_bo %}<strong>{{ item.can_bo.ma_can_bo }}</strong><br>{{ item.can_bo.ho_ten }}{% else %}<span class="badge bg-warning text-dark">Chưa phân CBCT</span><br><small>CBDA: {{ item.cbda_quan_ly|default:"Chưa cập nhật" }}</small>{% endif %}</td>
                             <td>{{ item.nhom_hd.ma_nhom_hd }} - {{ item.nhom_hd.ten_nhom_hd }}</td>
                             <td>{{ item.ngay_lap|date:"d/m/Y" }}</td>
                             <td>{{ item.so_tre_phcn|vn_number }} trẻ / {{ item.so_buoi_phcn|vn_number }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_phcn|vn_number }} đ</td>

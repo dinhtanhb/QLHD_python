@@ -156,7 +156,8 @@ class Tre(TimeStampedModel):
 class PhanBoChiTieu(TimeStampedModel):
     """Phân bổ chỉ tiêu. Không chứa thông tin hợp đồng chính thức."""
 
-    can_bo = models.ForeignKey(CanBo, on_delete=models.PROTECT, related_name="phan_bo_chi_tieu", verbose_name="Cán bộ can thiệp")
+    can_bo = models.ForeignKey(CanBo, on_delete=models.PROTECT, null=True, blank=True, related_name="phan_bo_chi_tieu", verbose_name="Cán bộ can thiệp")
+    cbda_quan_ly = models.CharField(max_length=100, blank=True, null=True, verbose_name="CBDA quản lý")
     nhom_hd = models.ForeignKey(NhomHD, on_delete=models.PROTECT, related_name="phan_bo_chi_tieu", verbose_name="Nhóm hợp đồng")
     tham_gia_ct = models.BooleanField(default=True, verbose_name="Tham gia can thiệp")
     ngay_lap = models.DateField(default=timezone.now, verbose_name="Ngày lập phân bổ")
@@ -190,7 +191,8 @@ class PhanBoChiTieu(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"PBCT #{self.pk} - {self.can_bo.ho_ten}"
+        owner = self.can_bo.ho_ten if self.can_bo else (self.cbda_quan_ly or "Chưa phân CBCT")
+        return f"PBCT #{self.pk} - {owner}"
 
 
 class PhanCongTre(TimeStampedModel):

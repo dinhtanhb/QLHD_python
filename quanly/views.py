@@ -623,14 +623,15 @@ def import_phan_cong(request):
         messages.error(request, f"Không đọc được file Excel: {exc}")
         return render(request, "quanly/import_phan_cong.html")
 
-    created = skipped = 0
+    created = updated = skipped = 0
     errors = []
     for row_no, (_, row) in enumerate(df.iterrows(), start=2):
         try:
             ma_tre = clean_empty_excel_value(get_excel_value(row, "IDChild", "MaTre", "Mã trẻ"))
             ma_cb = clean_empty_excel_value(get_excel_value(row, "Mã CB", "MaCB", "MaCBCT", "Mã CBCT"))
-            if not ma_tre or not ma_cb:
-                raise ValueError("Thiếu mã trẻ hoặc mã CBCT")
+            cbda = clean_empty_excel_value(get_excel_value(row, "CBDA", "Mã CBDA", "CanBoDuAn"))
+            if not ma_tre:
+                raise ValueError("Thiếu mã trẻ")
 
             tre, _ = Tre.objects.get_or_create(
                 ma_tre=ma_tre,
@@ -640,30 +641,36 @@ def import_phan_cong(request):
                     "gioi_tinh": "Khác",
                 },
             )
-            can_bo = CanBo.objects.filter(ma_can_bo=ma_cb).first()
-            if not can_bo:
+            can_bo = CanBo.objects.filter(ma_can_bo=ma_cb).first() if ma_cb else None
+            if ma_cb and not can_bo:
                 raise ValueError(f"Không tìm thấy cán bộ '{ma_cb}'")
 
             nhom_value = clean_empty_excel_value(get_excel_value(row, "Nhóm HĐ", "NhomHD", "Mã nhóm HĐ"))
             nhom = None
             if nhom_value:
                 nhom = NhomHD.objects.filter(Q(ma_nhom_hd=nhom_value) | Q(ten_nhom_hd__iexact=nhom_value)).first()
-            if not nhom:
+            if not nhom and can_bo:
                 nhom = PhanBoChiTieu.objects.filter(can_bo=can_bo).order_by("-ngay_lap", "-id").values_list("nhom_hd", flat=True).first()
                 nhom = NhomHD.objects.filter(pk=nhom).first() if nhom else None
             if not nhom:
-                raise ValueError(f"Không tìm thấy Nhóm HĐ cho cán bộ '{ma_cb}'")
+                raise ValueError("Thiếu hoặc không tìm thấy Nhóm HĐ")
 
-            phan_bo = PhanBoChiTieu.objects.filter(can_bo=can_bo, nhom_hd=nhom).order_by("-ngay_lap", "-id").first()
+            if can_bo:
+                phan_bo = PhanBoChiTieu.objects.filter(can_bo=can_bo, nhom_hd=nhom).order_by("-ngay_lap", "-id").first()
+            else:
+                phan_bo = PhanBoChiTieu.objects.filter(can_bo__isnull=True, nhom_hd=nhom, cbda_quan_ly=cbda).order_by("-ngay_lap", "-id").first()
+                if not phan_bo:
+                    phan_bo = PhanBoChiTieu.objects.create(nhom_hd=nhom, cbda_quan_ly=cbda, ngay_lap=parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong"), timezone.localdate()))
             if not phan_bo:
-                raise ValueError("Chưa có Phân bổ chỉ tiêu tương ứng; không tự tạo phân bổ từ file phân công")
+                raise ValueError("Chưa có Phân bổ chỉ tiêu tương ứng")
 
             service = clean_empty_excel_value(get_excel_value(row, "Loại dịch vụ", "LoaiDichVu", "Chỉ định CT")) or "CSXH"
             service_upper = service.upper()
             service_map = {"VLTL": "VLTL", "HDTL": "HDTL", "NNTL": "NNTL", "GDDB": "GDDB", "CSXH": "CSXH", "CSYT": "CSYT"}
             service = service_map.get(service_upper, "CSXH" if "CS" in service_upper else "VLTL")
 
-            item = PhanCongTre.objects.create(
+            identity = PhanCongTre.objects.filter(phan_bo__nhom_hd=nhom, tre=tre, loai_dich_vu=service, dot_phan_cong=parse_int(get_excel_value(row, "Đợt phân công", "DotPhanCong"), 1), ky_phan_cong=parse_int(get_excel_value(row, "Kỳ phân công", "KyPhanCong"), 1)).order_by("-id").first()
+            item = identity or PhanCongTre(
                 phan_bo=phan_bo,
                 tre=tre,
                 loai_dich_vu=service,
@@ -681,18 +688,26 @@ def import_phan_cong(request):
                 ngay_phan_cong=parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong")),
                 ghi_chu=clean_empty_excel_value(get_excel_value(row, "Ghi chú", "GhiChu")),
             )
+            item.phan_bo = phan_bo
+            item.save()
             if item.so_buoi_du_kien <= 0:
                 item.delete()
                 raise ValueError("Số buổi dự kiến phải lớn hơn 0")
-            created += 1
+            if identity:
+                updated += 1
+            else:
+                created += 1
         except Exception as exc:
             skipped += 1
             errors.append(f"Dòng {row_no}: {exc}")
 
-    msg = f"Import phân công hoàn tất: thêm {created}, bỏ qua {skipped}."
+    msg = f"Import phân công hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
     if errors:
-        msg += " " + " | ".join(errors[:8])
-    messages.success(request, msg)
+        messages.warning(request, msg + " Chi tiết: " + " | ".join(errors[:8]))
+    elif created or updated:
+        messages.success(request, msg + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
+    else:
+        messages.warning(request, msg + " Không có dữ liệu nào được lưu.")
     return redirect("danh_sach_phan_cong")
 
 
@@ -909,6 +924,8 @@ def confirm_import_phan_bo(request):
 # ĐỀ XUẤT HỢP ĐỒNG
 # =========================================================
 def build_proposal_from_allocation(phan_bo):
+    if not phan_bo.can_bo_id:
+        raise ValueError("Phân bổ chưa có CBCT; chưa thể tạo đề xuất hợp đồng.")
     assignments = phan_bo.danh_sach_phan_cong.select_related("tre")
     if not assignments.exists():
         raise ValueError("Phân bổ chưa có phân công trẻ; không đủ điều kiện tạo đề xuất hợp đồng.")

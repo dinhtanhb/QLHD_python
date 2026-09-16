@@ -3442,7 +3442,17 @@ sóc, tách khỏi tiền công cán bộ:
 - Chuẩn hóa các nút Xóa của danh sách Trẻ, Cán bộ, Đơn vị, Nhóm HĐ và Phân
   công sang POST/CSRF; bản ghi khóa hoặc có quan hệ bảo toàn sẽ được cảnh báo,
   không xóa cưỡng bức.
-- Mẫu `Mau_PhanCong.xlsx` hiện có các cột Mã CB, Nhóm HĐ, CBDA, Số HĐ, đợt và
-  ngày phân công. Mô hình hiện tại bắt buộc Phân công thuộc Phân bổ có CBCT;
-  chưa tự gán CBDA vào CBCT khi thiếu mã để tránh sai dữ liệu. Cần chốt cách
-  lưu dòng chưa có CBCT trước khi mở rộng import lưu các dòng đó.
+- Mẫu `Mau_PhanCong.xlsx` có các cột Mã CB, Nhóm HĐ, CBDA, Số HĐ, đợt và ngày
+  phân công; đã chốt lưu được dòng thiếu CBCT theo mục 96 bên dưới.
+
+96. CHO PHÉP LƯU PHÂN CÔNG CHƯA CÓ CBCT
+
+- Phân bổ chỉ tiêu nay cho phép `can_bo` rỗng và có thêm `CBDA quản lý`; Phân
+  công vẫn được lưu với Trẻ, Nhóm HĐ, đợt, kỳ, ngày, dịch vụ và khối lượng.
+- Import Phân công đọc cột CBDA; nếu thiếu CBCT sẽ dùng Phân bổ chờ CBCT theo
+  Nhóm HĐ/CBDA, nếu có CBCT ở lần import sau sẽ cập nhật dòng cũ và chuyển sang
+  Phân bổ của CBCT khi đã tồn tại, tránh tạo trùng.
+- Không cho tạo Đề xuất/Hợp đồng từ Phân bổ chưa có CBCT; trường hợp chưa ký
+  hợp đồng vẫn giữ nguyên Phân công và không bị xóa khỏi database.
+- Đã tạo migration 0013, chạy system check, migration check, template check
+  và 6 test hiện có đều đạt.

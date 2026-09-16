@@ -96,7 +96,7 @@ class PhanBoChiTieuForm(BootstrapModelForm):
     class Meta:
         model = PhanBoChiTieu
         fields = [
-            "can_bo", "nhom_hd", "tham_gia_ct", "ngay_lap", "so_tre_phcn", "so_buoi_phcn",
+            "can_bo", "cbda_quan_ly", "nhom_hd", "tham_gia_ct", "ngay_lap", "so_tre_phcn", "so_buoi_phcn",
             "dinh_muc_di_lai_phcn", "so_tre_cs", "so_buoi_cs", "dinh_muc_di_lai_cs", "ghi_chu",
         ]
         widgets = {
@@ -164,7 +164,7 @@ class PhanCongTreForm(BootstrapModelForm):
             self.add_error("so_buoi_du_kien", "Số buổi dự kiến phải lớn hơn 0.")
         if tre and not tre.is_active:
             self.add_error("tre", "Trẻ đang ở trạng thái ngừng sử dụng.")
-        if phan_bo and not phan_bo.can_bo.is_active:
+        if phan_bo and phan_bo.can_bo and not phan_bo.can_bo.is_active:
             self.add_error("phan_bo", "Cán bộ can thiệp của phân bổ đang ở trạng thái ngừng hoạt động.")
         is_cs = PhanCongTre.service_group(loai_dich_vu) == "CS"
         if phan_bo and is_cs and phan_bo.so_tre_cs <= 0:
