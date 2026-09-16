@@ -3601,3 +3601,20 @@ sóc, tách khỏi tiền công cán bộ:
 - Sửa lỗi `MergedCell` trong mẫu DSTK và ĐNCK; kiểm thử Django và template đạt.
 - Đã tới mốc commit/push lên branch `dev`; không đưa mẫu trong
   `quanly/document_templates/` hoặc canvas vào commit.
+
+108. SỬA LẦN THANH TOÁN VÀ ĐÚNG CẤU TRÚC HỒ SƠ ĐNTT
+
+- Bổ sung `lan_thanh_toan` trên nhật ký và hỗ trợ cột `LanTT` trong file import.
+  Mỗi CBCT có thể có lần TT riêng; nếu không nhập LanTT, hệ thống lấy lần kế
+  tiếp từ các đợt thanh toán đã lưu (không đếm nhật ký chưa thanh toán).
+- ĐNTT Word theo từng CBCT nay đặt tên đúng dạng `Lx_DNTT - MãCBCT TênCBCT`;
+  mẫu được điền động Lần TT, tổng cộng, thuế TNCN, thực lĩnh, tài khoản và
+  bảng lịch sử thanh toán, không còn chuỗi cứng `L3`/`lần 03` hay placeholder.
+- ĐNTT Excel nay là một file tổng hợp chung cho Nhóm HĐ/Kỳ đã chọn, tự mở rộng
+  số dòng; không tách ZIP theo CBCT.
+- Đã kiểm tra Nhóm HĐ 15/Kỳ 14: xuất Excel tổng hợp 424 dòng thành công; Word
+  theo 12 CBCT vẫn xuất riêng đúng; DSTK và ĐNCK không còn lỗi ô merge.
+- Migration 0018 cho `lan_thanh_toan` đã áp dụng cục bộ; 9 test, system check,
+  template check và xuất thực tế đều đạt.
+- Cần commit/push mốc này lên branch `dev`; không đưa mẫu trong
+  `quanly/document_templates/` hoặc canvas vào commit.

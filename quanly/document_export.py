@@ -10,10 +10,11 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from .financial import FinancialConfig
+from .financial import FinancialConfig, calculate_payment_breakdown
 from .models import (
     ChiTietKhoiLuongHopDong,
     ChiTietPhuLucPhanCong,
+    ChiTietThanhToan,
     DeXuatHopDong,
     HopDong,
     PhanCongTre,
@@ -162,7 +163,7 @@ def export_liquidation_record(hop_dong, record):
     return _export_simple_contract_record(hop_dong, record, LIQUIDATION_TEMPLATE, _record_context(hop_dong, record))
 
 
-def export_journal_payment_request(journals, ky=None, thang=None, nam=None):
+def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_tt=None):
     """Xuất ĐNTT Word trực tiếp từ tập nhật ký đã lọc."""
     journals = list(journals)
     if not journals:
@@ -179,19 +180,44 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None):
         return sum((x.so_buoi_thuc_hien for x in rows), 0), labor, sum((x.so_luot_di_lai_cbct for x in rows), 0), travel
     phcn_sessions, phcn_labor, phcn_trips, phcn_travel = totals(phcn)
     cs_sessions, cs_labor, cs_trips, cs_travel = totals(cs)
+    labor_total = phcn_labor + cs_labor
+    travel_total = phcn_travel + cs_travel
+    breakdown = calculate_payment_breakdown(labor_total, travel_total)
+    payment_round = int(lan_tt or getattr(first, "lan_thanh_toan", 1) or 1)
+    contract_values = {x.hop_dong_id: x.hop_dong.gia_tri_hop_dong for x in journals}
+    previous_payments = list(ChiTietThanhToan.objects.filter(dot_thanh_toan__hop_dong_id__in=contract_values).select_related("dot_thanh_toan").order_by("dot_thanh_toan__nam", "dot_thanh_toan__thang", "id"))
+    previous_total = sum((Decimal(item.thanh_tien or 0) for item in previous_payments), Decimal("0"))
+    contract_total = sum(contract_values.values(), Decimal("0"))
     context = {
         "HoTenGVMN": staff.ho_ten, "DiaChi": staff.dia_chi or "", "DonViCongTac": staff.don_vi.ten_don_vi if staff.don_vi_id else "",
         "SoHopDong": first.hop_dong.so_hop_dong if len({x.hop_dong_id for x in journals}) == 1 else "Theo danh sách hợp đồng",
         "NgayKy_Ngay": first.hop_dong.ngay_ky.day if first.hop_dong.ngay_ky else "", "NgayKy_Thang": first.hop_dong.ngay_ky.month if first.hop_dong.ngay_ky else "", "NgayKy_Nam": first.hop_dong.ngay_ky.year if first.hop_dong.ngay_ky else "",
-        "ThangCanThiep": thang or (first.ngay_thuc_hien.month if first.ngay_thuc_hien else ""), "NamCanThiep": nam or (first.ngay_thuc_hien.year if first.ngay_thuc_hien else ""), "LanThanhToan": ky or "",
+        "ThangCanThiep": thang or (first.ngay_thuc_hien.month if first.ngay_thuc_hien else ""), "NamCanThiep": nam or (first.ngay_thuc_hien.year if first.ngay_thuc_hien else ""), "LanThanhToan": payment_round,
         "SoBuoiPHCN_Thang": phcn_sessions, "TienCongPHCN_Thang": _money(phcn_labor), "SoBuoiDiLaiPHCN_Thang": phcn_trips, "TienDiLaiPHCN_Thang": _money(phcn_travel),
         "SoBuoiCS_Thang": cs_sessions, "TienCongCS_Thang": _money(cs_labor), "SoBuoiDiLaiCS_Thang": cs_trips, "TienDiLaiCS_Thang": _money(cs_travel),
-        "GiaTriHopDong": _money(sum((x.hop_dong.gia_tri_hop_dong for x in journals), Decimal("0"))),
+        "GiaTriHopDong": _money(sum(contract_values.values(), Decimal("0"))),
+        "TongCong_Thang": _money(breakdown["tong_truoc_thue"]), "ThueTNCN": _money(breakdown["thue_tncn"]), "TongThucNhan": _money(breakdown["thuc_linh"]),
+        "SoTaiKhoan": staff.tai_khoan or "", "NganHang": staff.ngan_hang or "", "ChiNhanh": staff.chi_nhanh or "",
         "STT_Lan1": "1", "NoiDung_Lan1": "Thanh toán tiền công và đi lại PHCN", "SoTien_Lan1": _money(phcn_labor + phcn_travel),
         "STT_Lan2": "2", "NoiDung_Lan2": "Thanh toán tiền công và đi lại CS", "SoTien_Lan2": _money(cs_labor + cs_travel),
         "STT_Lan3": "", "NoiDung_Lan3": "", "SoTien_Lan3": "",
+        "TongSoTienDaThanhToan": _money(previous_total), "SoTienConLai": _money(max(Decimal("0"), contract_total - previous_total)),
     }
-    return _export_simple_contract_record(first.hop_dong, first, PAYMENT_REQUEST_TEMPLATE, context)
+    for index in range(4, 16):
+        context.update({f"STT_Lan{index}": "", f"NoiDung_Lan{index}": "", f"SoTien_Lan{index}": ""})
+    document = _document(PAYMENT_REQUEST_TEMPLATE)
+    _replace_document(document, context)
+    title = f"L{payment_round}_DNTT - {staff.ma_can_bo} {staff.ho_ten}"
+    sentence = f"Tôi đề nghị Quý đơn vị thanh toán phí dịch vụ lần {payment_round:02d}, chi tiết như sau:"
+    for paragraph in document.paragraphs:
+        if "NTT -" in paragraph.text:
+            paragraph.text = title
+        elif "thanh toán phí dịch vụ lần 03" in paragraph.text:
+            paragraph.text = sentence
+    output = BytesIO()
+    document.save(output)
+    output.seek(0)
+    return output
 
 
 def _service_display(value):
