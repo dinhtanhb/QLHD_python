@@ -32,6 +32,8 @@ from .forms import (
     PhuLucHopDongForm,
     TreForm,
     ThanhLyHopDongForm,
+    DotThanhToanDiLaiPhuHuynhForm,
+    ChiTietThanhToanDiLaiPhuHuynhForm,
 )
 from .models import (
     CanBo,
@@ -49,6 +51,8 @@ from .models import (
     Tinh,
     Xa,
     ThanhLyHopDong,
+    DotThanhToanDiLaiPhuHuynh,
+    ChiTietThanhToanDiLaiPhuHuynh,
 )
 
 
@@ -1120,6 +1124,54 @@ def xuat_bien_ban_thanh_ly(request, pk):
     except (ThanhLyHopDong.DoesNotExist, ValidationError) as exc:
         messages.error(request, "Chưa có hồ sơ thanh lý hợp lệ để xuất.")
         return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+
+
+@hopdong_required
+def tao_dot_thanh_toan_phu_huynh(request, hop_dong_id):
+    hop_dong = get_object_or_404(HopDong, pk=hop_dong_id)
+    if request.method == "POST":
+        form = DotThanhToanDiLaiPhuHuynhForm(request.POST)
+        if form.is_valid():
+            dot = form.save(commit=False)
+            dot.hop_dong = hop_dong
+            try:
+                dot.save()
+            except Exception as exc:
+                form.add_error(None, "Đợt thanh toán tháng/năm này đã tồn tại.")
+            else:
+                messages.success(request, "Đã tạo đợt thanh toán đi lại phụ huynh.")
+                return redirect("chi_tiet_dot_thanh_toan_phu_huynh", pk=dot.pk)
+    else:
+        form = DotThanhToanDiLaiPhuHuynhForm(initial={"nam": timezone.localdate().year, "thang": timezone.localdate().month})
+    return render(request, "quanly/tao_dot_thanh_toan_phu_huynh.html", {"form": form, "hop_dong": hop_dong})
+
+
+@hopdong_required
+def chi_tiet_dot_thanh_toan_phu_huynh(request, pk):
+    dot = get_object_or_404(DotThanhToanDiLaiPhuHuynh.objects.select_related("hop_dong"), pk=pk)
+    chi_tiet = dot.chi_tiet.select_related("nhat_ky__phan_cong__tre")
+    return render(request, "quanly/chi_tiet_dot_thanh_toan_phu_huynh.html", {"dot": dot, "chi_tiet": chi_tiet})
+
+
+@hopdong_required
+def them_chi_tiet_thanh_toan_phu_huynh(request, dot_id):
+    dot = get_object_or_404(DotThanhToanDiLaiPhuHuynh.objects.select_related("hop_dong"), pk=dot_id)
+    if request.method == "POST":
+        form = ChiTietThanhToanDiLaiPhuHuynhForm(request.POST, hop_dong=dot.hop_dong)
+        if form.is_valid():
+            item = form.save(commit=False)
+            item.dot_thanh_toan = dot
+            item.dinh_muc_di_lai = item.nhat_ky.dinh_muc_di_lai
+            try:
+                item.save()
+            except ValidationError as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(request, "Đã thêm chi tiết thanh toán đi lại phụ huynh.")
+                return redirect("chi_tiet_dot_thanh_toan_phu_huynh", pk=dot.pk)
+    else:
+        form = ChiTietThanhToanDiLaiPhuHuynhForm(hop_dong=dot.hop_dong)
+    return render(request, "quanly/them_chi_tiet_thanh_toan_phu_huynh.html", {"form": form, "dot": dot})
 
 
 @hopdong_required

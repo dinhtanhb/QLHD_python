@@ -1,0 +1,3 @@
+{% extends 'quanly/base.html' %}
+{% block title %}Thêm thanh toán đi lại phụ huynh{% endblock %}
+{% block content %}<div class="container mt-4"><div class="card shadow"><div class="card-header bg-info text-white">Thêm chi tiết đi lại phụ huynh</div><div class="card-body"><form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-info">Lưu</button> <a class="btn btn-outline-secondary" href="{% url 'chi_tiet_dot_thanh_toan_phu_huynh' dot.pk %}">Quay lại</a></form></div></div></div>{% endblock %}

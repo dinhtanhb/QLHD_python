@@ -531,6 +531,55 @@ class ChiTietThanhToan(TimeStampedModel):
         super().save(*args, **kwargs)
 
 
+class DotThanhToanDiLaiPhuHuynh(TimeStampedModel):
+    """Đợt thanh toán riêng cho khoản đi lại của phụ huynh."""
+    hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, related_name="dot_thanh_toan_phu_huynh", verbose_name="Hợp đồng")
+    nam = models.PositiveIntegerField(verbose_name="Năm")
+    thang = models.PositiveSmallIntegerField(verbose_name="Tháng")
+    ngay_de_nghi = models.DateField(default=timezone.now, verbose_name="Ngày đề nghị")
+    trang_thai = models.CharField(max_length=30, default="CHO_THANH_TOAN", verbose_name="Trạng thái")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    class Meta:
+        ordering = ["-nam", "-thang", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["hop_dong", "nam", "thang"], name="uq_dottt_phuhuynh_hd_nam_thang"),
+            models.CheckConstraint(condition=models.Q(thang__gte=1, thang__lte=12), name="ck_dottt_phuhuynh_thang"),
+        ]
+
+
+class ChiTietThanhToanDiLaiPhuHuynh(TimeStampedModel):
+    dot_thanh_toan = models.ForeignKey(DotThanhToanDiLaiPhuHuynh, on_delete=models.PROTECT, related_name="chi_tiet", verbose_name="Đợt thanh toán")
+    nhat_ky = models.ForeignKey(NhatKyThucHien, on_delete=models.PROTECT, related_name="chi_tiet_di_lai_phu_huynh", verbose_name="Nhật ký thực hiện")
+    so_luot_di_lai = models.PositiveIntegerField(default=0, verbose_name="Số lượt đi lại thanh toán")
+    dinh_muc_di_lai = models.DecimalField(max_digits=12, decimal_places=0, default=Decimal("0"), verbose_name="Định mức đi lại")
+    thanh_tien = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Thành tiền")
+    ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["dot_thanh_toan", "nhat_ky"], name="uq_cttt_phuhuynh_dot_nhatky"),
+            models.CheckConstraint(condition=models.Q(so_luot_di_lai__gte=0), name="ck_cttt_phuhuynh_luot_gte0"),
+        ]
+
+    def clean(self):
+        errors = {}
+        if self.dot_thanh_toan_id and self.nhat_ky_id:
+            if self.dot_thanh_toan.hop_dong_id != self.nhat_ky.hop_dong_id:
+                errors["nhat_ky"] = "Nhật ký không thuộc hợp đồng của đợt thanh toán phụ huynh."
+            if (self.so_luot_di_lai or 0) > self.nhat_ky.so_luot_di_lai:
+                errors["so_luot_di_lai"] = "Số lượt thanh toán không được vượt số lượt thực tế."
+        if self.so_luot_di_lai <= 0:
+            errors["so_luot_di_lai"] = "Số lượt đi lại phải lớn hơn 0."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        self.thanh_tien = Decimal(self.so_luot_di_lai) * Decimal(self.dinh_muc_di_lai)
+        super().save(*args, **kwargs)
+
+
 class NghiemThu(TimeStampedModel):
     hop_dong = models.OneToOneField(HopDong, on_delete=models.PROTECT, related_name="nghiem_thu", verbose_name="Hợp đồng")
     ngay_nghiem_thu = models.DateField(null=True, blank=True, verbose_name="Ngày nghiệm thu")

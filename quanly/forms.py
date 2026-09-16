@@ -14,6 +14,8 @@ from .models import (
     PhuLucHopDong,
     NghiemThu,
     ThanhLyHopDong,
+    DotThanhToanDiLaiPhuHuynh,
+    ChiTietThanhToanDiLaiPhuHuynh,
     NhatKyThucHien,
     ChiTietThanhToan,
     Tre,
@@ -313,3 +315,22 @@ class ThanhLyHopDongForm(BootstrapModelForm):
             "ngay_thanh_ly": forms.DateInput(attrs={"type": "date"}),
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),
         }
+
+
+class DotThanhToanDiLaiPhuHuynhForm(BootstrapModelForm):
+    class Meta:
+        model = DotThanhToanDiLaiPhuHuynh
+        fields = ["nam", "thang", "ngay_de_nghi", "ghi_chu"]
+        widgets = {"ngay_de_nghi": forms.DateInput(attrs={"type": "date"}), "ghi_chu": forms.Textarea(attrs={"rows": 3})}
+
+
+class ChiTietThanhToanDiLaiPhuHuynhForm(BootstrapModelForm):
+    class Meta:
+        model = ChiTietThanhToanDiLaiPhuHuynh
+        fields = ["nhat_ky", "so_luot_di_lai", "ghi_chu"]
+        widgets = {"so_luot_di_lai": forms.NumberInput(attrs={"min": "1"}), "ghi_chu": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, hop_dong=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if hop_dong is not None:
+            self.fields["nhat_ky"].queryset = NhatKyThucHien.objects.filter(hop_dong=hop_dong).select_related("phan_cong__tre")
