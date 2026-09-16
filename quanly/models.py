@@ -440,7 +440,33 @@ class NhatKyThucHien(TimeStampedModel):
             models.CheckConstraint(condition=models.Q(so_luot_di_lai__gte=0), name="ck_nk_di_lai_gte0"),
         ]
 
+    def clean(self):
+        errors = {}
+        if self.hop_dong_id and self.phan_cong_id:
+            phan_cong = self.phan_cong
+            hop_dong = self.hop_dong
+            if phan_cong.phan_bo_id != hop_dong.de_xuat.phan_bo_id:
+                errors["phan_cong"] = "Phân công không thuộc phân bổ của hợp đồng."
+            if hop_dong.tu_ngay and self.ngay_thuc_hien < hop_dong.tu_ngay:
+                errors["ngay_thuc_hien"] = "Ngày thực hiện trước thời hạn hợp đồng."
+            if hop_dong.den_ngay and self.ngay_thuc_hien > hop_dong.den_ngay:
+                errors["ngay_thuc_hien"] = "Ngày thực hiện sau thời hạn hợp đồng."
+
+            used = (
+                type(self).objects.filter(phan_cong_id=self.phan_cong_id)
+                .exclude(pk=self.pk)
+                .aggregate(total=models.Sum("so_buoi_thuc_hien"))["total"]
+                or 0
+            )
+            if used + (self.so_buoi_thuc_hien or 0) > phan_cong.so_buoi_du_kien:
+                errors["so_buoi_thuc_hien"] = (
+                    "Tổng số buổi thực hiện của phân công không được vượt số buổi dự kiến."
+                )
+        if errors:
+            raise ValidationError(errors)
+
     def save(self, *args, **kwargs):
+        self.full_clean()
         self.thanh_tien = Decimal(self.so_buoi_thuc_hien) * Decimal(self.don_gia_cong) + Decimal(self.so_luot_di_lai) * Decimal(self.dinh_muc_di_lai)
         super().save(*args, **kwargs)
 
@@ -469,7 +495,22 @@ class ChiTietThanhToan(TimeStampedModel):
     thanh_tien = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Thành tiền")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
 
+    def clean(self):
+        errors = {}
+        if self.dot_thanh_toan_id and self.nhat_ky_id:
+            if self.dot_thanh_toan.hop_dong_id != self.nhat_ky.hop_dong_id:
+                errors["nhat_ky"] = "Nhật ký không thuộc hợp đồng của đợt thanh toán."
+            if (self.so_buoi_thanh_toan or 0) > self.nhat_ky.so_buoi_thuc_hien:
+                errors["so_buoi_thanh_toan"] = "Số buổi thanh toán không được vượt số buổi thực hiện."
+            if (self.so_luot_di_lai or 0) > self.nhat_ky.so_luot_di_lai:
+                errors["so_luot_di_lai"] = "Số lượt đi lại thanh toán không được vượt số lượt thực tế."
+        if self.so_buoi_thanh_toan is not None and self.so_buoi_thanh_toan <= 0:
+            errors["so_buoi_thanh_toan"] = "Số buổi thanh toán phải lớn hơn 0."
+        if errors:
+            raise ValidationError(errors)
+
     def save(self, *args, **kwargs):
+        self.full_clean()
         self.thanh_tien = Decimal(self.so_buoi_thanh_toan) * Decimal(self.nhat_ky.don_gia_cong) + Decimal(self.so_luot_di_lai) * Decimal(self.nhat_ky.dinh_muc_di_lai)
         super().save(*args, **kwargs)
 

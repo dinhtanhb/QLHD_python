@@ -3185,3 +3185,20 @@ trẻ CS, 4 phân công PHCN, 1 phân công CS, tổng giá trị phân bổ 12.
 - Không tạo hoặc sửa PhuLucHopDong/ChiTietPhuLucPhanCong trong quá trình xuất.
 - Trang chi tiết hợp đồng chỉ hiển thị lựa chọn các kỳ thực sự có dữ liệu.
 - Kiểm tra hồi quy xuất bộ hợp đồng Kỳ 1 vẫn đạt, DOCX không còn placeholder.
+
+78. P4 - KIỂM SOÁT NHẬT KÝ VÀ THANH TOÁN
+
+Đã bổ sung lớp bảo vệ nghiệp vụ cho model:
+
+- Nhật ký thực hiện phải thuộc đúng phân bổ của hợp đồng.
+- Ngày thực hiện phải nằm trong thời hạn hợp đồng.
+- Tổng số buổi thực hiện của một phân công không được vượt số buổi dự kiến.
+- Chi tiết thanh toán phải thuộc đúng hợp đồng của đợt thanh toán.
+- Số buổi/lượt đi lại thanh toán không được vượt số liệu nhật ký.
+- Một nhật ký chỉ được gắn một chi tiết thanh toán nhờ OneToOneField.
+- Không thay đổi dữ liệu nhật ký/thanh toán cũ; hiện dữ liệu mẫu chưa có bản ghi
+  nhật ký hoặc chi tiết thanh toán.
+
+Các trường tiền vẫn được tính từ số buổi/lượt thực tế và đơn giá đã lưu tại
+nhật ký; phần giao diện nhập liệu và xuất bộ hồ sơ thanh toán sẽ làm tiếp sau
+khi hoàn tất xác nhận các mẫu thanh toán.
