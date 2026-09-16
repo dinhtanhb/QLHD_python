@@ -3507,3 +3507,13 @@ sóc, tách khỏi tiền công cán bộ:
   dòng; khuyến nghị chia file 2.000–5.000 dòng/lần trong giai đoạn kiểm thử.
 - Không xóa hoặc ghi đè dữ liệu ngoài khóa tự nhiên của nhật ký; có thể import
   lại từng phần khi cần.
+
+101. CẢNH BÁO IMPORT NHẬT KÝ VÀ KPI BUỔI CAN THIỆP
+
+- Cảnh báo Import Nhật ký nay tách mỗi lỗi theo từng dòng thành một message
+  riêng, dễ đọc và đối chiếu lại file Excel; vẫn có message tổng hợp số thêm,
+  cập nhật và bỏ qua.
+- Trang Nhật ký bổ sung KPI theo bộ lọc hiện tại: tổng số nhật ký, tổng số buổi
+  can thiệp, số buổi PHCN và số buổi CS. Số buổi tính theo `so_buoi_thuc_hien`,
+  không đếm số dòng nhật ký.
+- Đã chạy 6 test, system check và kiểm tra biên dịch toàn bộ template.

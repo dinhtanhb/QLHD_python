@@ -774,8 +774,9 @@ def import_nhat_ky_can_thiep(request):
             skipped += 1; errors.append(f"Dòng {row_no}: {exc}")
     msg = f"Import nhật ký hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
     if errors:
-        msg += " Chi tiết: " + " | ".join(errors[:8])
         messages.warning(request, msg)
+        for error in errors:
+            messages.warning(request, error)
     elif created or updated:
         messages.success(request, msg + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
     else:
@@ -1473,7 +1474,10 @@ def nhat_ky_can_thiep(request):
     if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
     if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
     page_obj = Paginator(qs, 25).get_page(request.GET.get("page"))
-    return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "tong_so": qs.count(), "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
+    total_sessions = qs.aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
+    phcn_sessions = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.PHCN_SERVICE_CODES).aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
+    cs_sessions = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.CS_SERVICE_CODES).aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
+    return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "tong_so": qs.count(), "total_sessions": total_sessions, "phcn_sessions": phcn_sessions, "cs_sessions": cs_sessions, "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
 
 
 @readonly_required
