@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from .decorators import admin_required, dashboard_required, hopdong_required, readonly_required
 from .document_export import create_contract_from_proposal, export_assignment_annex, export_contract_bundle
+from .payment_export import export_intervention_payment_request
 from .financial import FinancialConfig
 from .forms import (
     CanBoForm,
@@ -1015,6 +1016,23 @@ def chi_tiet_dot_thanh_toan(request, pk):
         pk=pk,
     )
     return render(request, "quanly/chi_tiet_dot_thanh_toan.html", {"dot": dot})
+
+
+@hopdong_required
+def xuat_de_nghi_thanh_toan(request, pk):
+    dot = get_object_or_404(DotThanhToan.objects.select_related("hop_dong"), pk=pk)
+    try:
+        output = export_intervention_payment_request(dot)
+    except ValidationError as exc:
+        messages.error(request, str(exc))
+        return redirect("chi_tiet_dot_thanh_toan", pk=dot.pk)
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    safe_number = re.sub(r"[^A-Za-z0-9._-]+", "_", dot.hop_dong.so_hop_dong)
+    response["Content-Disposition"] = f'attachment; filename="DNTT_{safe_number}_{dot.thang}_{dot.nam}.xlsx"'
+    return response
 
 
 @hopdong_required

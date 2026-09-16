@@ -3226,3 +3226,18 @@ khi hoàn tất xác nhận các mẫu thanh toán.
 - Các guard của model tiếp tục chặn sai hợp đồng, sai thời hạn, vượt buổi,
   vượt lượt đi lại và thanh toán trùng.
 - Chưa tạo bản ghi mẫu mới; dữ liệu cũ được giữ nguyên để kiểm thử.
+
+81. XUẤT ĐỀ NGHỊ THANH TOÁN CÔNG CÁN BỘ
+
+Đã bổ sung xuất Excel theo template:
+
+- URL: /thanh-toan/<id>/xuat-de-nghi/.
+- Dùng Mau_DNTT.xlsx, giữ các sheet và bố cục mẫu.
+- Dự toán lấy từ số buổi dự kiến và số lượt đi lại của phân công.
+- Thực tế lấy từ ChiTietThanhToan và NhatKyThucHien.
+- Phân loại địa điểm thành cơ sở, tại nhà và địa điểm khác.
+- Tiền công, đi lại, tổng trước thuế, thuế TNCN và thực lĩnh được tách riêng.
+- Thuế trong Excel chỉ xét tiền công >= 5.000.000 đồng.
+- Không ghi ngược dữ liệu và không tạo bản ghi khi xuất file.
+- Chưa render file thanh toán thực tế vì database mẫu chưa có nhật ký/chi tiết
+  thanh toán; đã kiểm tra template và các đường dẫn xuất.
