@@ -15,6 +15,7 @@ urlpatterns = [
     path("don-vi/them/", login_required(views.them_don_vi), name="them_don_vi"),
     path("don-vi/sua/<int:id>/", login_required(views.sua_don_vi), name="sua_don_vi"),
     path("don-vi/xoa/<int:id>/", login_required(views.xoa_don_vi), name="xoa_don_vi"),
+    path("don-vi/import/", login_required(views.import_don_vi), name="import_don_vi"),
 
     path("tre/", login_required(views.danh_sach_tre), name="danh_sach_tre"),
     path("tre/them/", login_required(views.them_tre), name="them_tre"),

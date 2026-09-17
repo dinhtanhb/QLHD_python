@@ -440,6 +440,15 @@ class NhatKyThucHien(TimeStampedModel):
 
     hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, related_name="nhat_ky_thuc_hien", verbose_name="Hợp đồng")
     phan_cong = models.ForeignKey(PhanCongTre, on_delete=models.PROTECT, related_name="nhat_ky_thuc_hien", verbose_name="Phân công")
+    nhom_hd_nguon = models.ForeignKey(
+        NhomHD,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="nhat_ky_lich_su",
+        verbose_name="Nhóm HĐ theo dữ liệu nguồn",
+    )
+    du_lieu_lich_su = models.BooleanField(default=False, verbose_name="Dữ liệu lịch sử")
     ngay_thuc_hien = models.DateField(verbose_name="Ngày thực hiện")
     gio_bat_dau = models.TimeField(null=True, blank=True, verbose_name="Giờ bắt đầu")
     gio_ket_thuc = models.TimeField(null=True, blank=True, verbose_name="Giờ kết thúc")
@@ -472,20 +481,20 @@ class NhatKyThucHien(TimeStampedModel):
         if self.hop_dong_id and self.phan_cong_id:
             phan_cong = self.phan_cong
             hop_dong = self.hop_dong
-            if phan_cong.phan_bo_id != hop_dong.de_xuat.phan_bo_id:
+            if not self.du_lieu_lich_su and phan_cong.phan_bo_id != hop_dong.de_xuat.phan_bo_id:
                 errors["phan_cong"] = "Phân công không thuộc phân bổ của hợp đồng."
-            if hop_dong.tu_ngay and self.ngay_thuc_hien < hop_dong.tu_ngay:
+            if not self.du_lieu_lich_su and hop_dong.tu_ngay and self.ngay_thuc_hien < hop_dong.tu_ngay:
                 errors["ngay_thuc_hien"] = "Ngày thực hiện trước thời hạn hợp đồng."
-            if hop_dong.den_ngay and self.ngay_thuc_hien > hop_dong.den_ngay:
+            if not self.du_lieu_lich_su and hop_dong.den_ngay and self.ngay_thuc_hien > hop_dong.den_ngay:
                 errors["ngay_thuc_hien"] = "Ngày thực hiện sau thời hạn hợp đồng."
 
             used = (
-                type(self).objects.filter(phan_cong_id=self.phan_cong_id)
+                type(self).objects.filter(phan_cong_id=self.phan_cong_id, du_lieu_lich_su=False)
                 .exclude(pk=self.pk)
                 .aggregate(total=models.Sum("so_buoi_thuc_hien"))["total"]
                 or 0
             )
-            if used + (self.so_buoi_thuc_hien or 0) > phan_cong.so_buoi_du_kien:
+            if not self.du_lieu_lich_su and used + (self.so_buoi_thuc_hien or 0) > phan_cong.so_buoi_du_kien:
                 errors["so_buoi_thuc_hien"] = (
                     "Tổng số buổi thực hiện của phân công không được vượt số buổi dự kiến."
                 )
@@ -500,7 +509,7 @@ class NhatKyThucHien(TimeStampedModel):
                 other_qs = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related("hop_dong", "phan_cong")
                 previous = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.hop_dong.can_bo_id, service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc) for x in other_qs]
                 conflicts = journal_conflict_types(current, previous)
-                if conflicts:
+                if conflicts and not self.du_lieu_lich_su:
                     errors["gio_bat_dau"] = "Cảnh báo: " + ", ".join(conflicts) + ". Vui lòng kiểm tra lại lịch."
         if errors:
             raise ValidationError(errors)
@@ -521,6 +530,11 @@ class NhatKyThucHien(TimeStampedModel):
             self.so_luot_di_lai = travel["so_luot_di_lai_ph"]
         self.thanh_tien = Decimal(self.so_buoi_thuc_hien) * Decimal(self.don_gia_cong) + Decimal(self.so_luot_di_lai_cbct) * Decimal(self.dinh_muc_di_lai)
         super().save(*args, **kwargs)
+
+    @property
+    def nhom_hd_hieu_luc(self):
+        """Ưu tiên nhóm trong file nguồn cho dữ liệu lịch sử."""
+        return self.nhom_hd_nguon or self.hop_dong.nhom_hd
 
 
 class DotThanhToan(TimeStampedModel):

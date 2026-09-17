@@ -3662,3 +3662,22 @@ sóc, tách khỏi tiền công cán bộ:
   tế với database hiện tại trả HTTP 200 và render 20.566 byte nội dung.
 - `manage.py check` và 11 test đều đạt khi chạy với biến môi trường kiểm thử
   `DEBUG=True`.
+
+111. PHÂN CÔNG, IMPORT ĐƠN VỊ VÀ NHẬT KÝ DỮ LIỆU LỊCH SỬ
+
+- Đưa `Phân công trẻ` vào menu `Quy trình hợp đồng`; bổ sung bộ lọc Nhóm HĐ,
+  Đợt phân công, nút Xóa lọc và tiêu đề cột Thao tác.
+- Trang Đơn vị được đồng bộ bố cục với Trẻ/CBCT và có import Excel. Import cập nhật
+  theo mã; nếu mã mới nhưng trùng chính xác tên đơn vị thì thay mã tự sinh trên bản
+  ghi cũ, không tạo thêm đơn vị trùng. Mã số thuế trùng đơn vị khác bị báo theo dòng.
+- Import nhật ký có `Chế độ dữ liệu lịch sử`: giữ Nhóm HĐ từ file nguồn, cho phép lưu
+  khi hợp đồng hiện có không bao phủ ngày/nhóm, dữ liệu thiếu giờ hoặc thời hạn hợp
+  đồng cuối cùng không phản ánh các lần gia hạn cũ. Các sai lệch được lưu trong ghi
+  chú và cảnh báo theo dòng; vẫn chặn khi thiếu CBCT, trẻ, phân công hoặc CBCT không
+  có bất kỳ hợp đồng nào để liên kết.
+- Bổ sung `nhom_hd_nguon` và `du_lieu_lich_su` trên nhật ký (migration 0020). Bộ lọc
+  nhật ký, Thanh quyết toán và ngữ cảnh xuất file ưu tiên nhóm nguồn để dữ liệu Nhóm
+  1-5 không bị tính nhầm sang nhóm của hợp đồng liên kết kỹ thuật.
+- Cần chạy migration 0020 sau khi nhận code. `manage.py check`, kiểm tra migration và
+  11 test hiện có đều đạt với `DEBUG=False`; cấu hình môi trường hiện tại có
+  `DEBUG=release`, không phải giá trị boolean hợp lệ.

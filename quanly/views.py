@@ -266,6 +266,79 @@ def danh_sach_don_vi(request):
 
 
 @admin_required
+def import_don_vi(request):
+    if request.method != "POST" or not request.FILES.get("file_excel"):
+        return render(request, "quanly/import_don_vi.html")
+
+    try:
+        df = normalized_columns(pd.read_excel(request.FILES["file_excel"]))
+    except Exception as exc:
+        messages.error(request, f"Không đọc được file Excel: {exc}")
+        return render(request, "quanly/import_don_vi.html")
+
+    created = updated = skipped = 0
+    errors = []
+    for row_no, (_, row) in enumerate(df.iterrows(), start=2):
+        try:
+            ma_don_vi = clean_empty_excel_value(
+                get_excel_value(row, "MaDonVi", "Mã đơn vị", "Mã Đơn Vị", "Mã")
+            )
+            ten_don_vi = clean_empty_excel_value(
+                get_excel_value(row, "TenDonVi", "Tên đơn vị", "Tên Đơn Vị")
+            )
+            if not ma_don_vi or not ten_don_vi:
+                raise ValueError("Thiếu Mã đơn vị hoặc Tên đơn vị")
+
+            mstdv = clean_empty_excel_value(
+                get_excel_value(row, "MST", "MSTDV", "MaSoThue", "Mã số thuế")
+            )
+            existing = DonVi.objects.filter(ma_don_vi=ma_don_vi).first()
+            if not existing:
+                existing = DonVi.objects.filter(ten_don_vi__iexact=ten_don_vi).first()
+            duplicate_tax_qs = DonVi.objects.filter(mstdv=mstdv) if mstdv else DonVi.objects.none()
+            if existing:
+                duplicate_tax_qs = duplicate_tax_qs.exclude(pk=existing.pk)
+            duplicate_tax = duplicate_tax_qs.first()
+            if duplicate_tax:
+                raise ValueError(
+                    f"Mã số thuế {mstdv} đang thuộc đơn vị {duplicate_tax.ma_don_vi}; vui lòng kiểm tra lại"
+                )
+
+            defaults = {
+                "ten_don_vi": ten_don_vi,
+                "mstdv": mstdv,
+                "nguoi_dai_dien": clean_empty_excel_value(
+                    get_excel_value(row, "NguoiDaiDien", "Người đại diện")
+                ) or "",
+                "dia_chi": clean_empty_excel_value(get_excel_value(row, "DiaChi", "Địa chỉ")),
+                "dien_thoai": clean_empty_excel_value(get_excel_value(row, "DienThoai", "Điện thoại", "SĐT")),
+                "email": clean_empty_excel_value(get_excel_value(row, "Email")),
+                "is_active": True,
+            }
+            if existing:
+                existing.ma_don_vi = ma_don_vi
+                for field, value in defaults.items():
+                    setattr(existing, field, value)
+                existing.save()
+                updated += 1
+            else:
+                DonVi.objects.create(ma_don_vi=ma_don_vi, **defaults)
+                created += 1
+        except Exception as exc:
+            skipped += 1
+            errors.append(f"Dòng {row_no}: {exc}")
+
+    summary = f"Import đơn vị hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
+    if errors:
+        messages.warning(request, summary)
+        for error in errors:
+            messages.warning(request, error)
+    else:
+        messages.success(request, summary + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
+    return redirect("danh_sach_don_vi")
+
+
+@admin_required
 def them_don_vi(request):
     form = DonViForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -520,10 +593,18 @@ def import_can_bo(request):
 def danh_sach_phan_cong(request):
     query = request.GET.get("q", "").strip()
     phan_bo_id = request.GET.get("phan_bo_id", "").strip()
+    nhom_hd_id = request.GET.get("nhom_hd", "").strip()
+    dot_phan_cong = request.GET.get("dot_phan_cong", "").strip()
     qs = PhanCongTre.objects.select_related("tre", "phan_bo__can_bo", "phan_bo__nhom_hd", "nhom_hd")
 
     if phan_bo_id.isdigit():
         qs = qs.filter(phan_bo_id=int(phan_bo_id))
+
+    if nhom_hd_id.isdigit():
+        qs = qs.filter(Q(nhom_hd_id=int(nhom_hd_id)) | Q(nhom_hd__isnull=True, phan_bo__nhom_hd_id=int(nhom_hd_id)))
+
+    if dot_phan_cong.isdigit():
+        qs = qs.filter(dot_phan_cong=int(dot_phan_cong))
 
     if query:
         qs = qs.filter(
@@ -553,6 +634,9 @@ def danh_sach_phan_cong(request):
             "total_count": total_count,
             "phcn_count": phcn_count,
             "cs_count": cs_count,
+            "nhom_list": NhomHD.objects.filter(is_active=True).order_by("ma_nhom_hd"),
+            "dot_choices": PhanCongTre.objects.order_by("dot_phan_cong").values_list("dot_phan_cong", flat=True).distinct(),
+            "filters": {"nhom_hd": nhom_hd_id, "dot_phan_cong": dot_phan_cong},
         },
     )
 
@@ -753,83 +837,164 @@ def import_phan_cong(request):
 
 @admin_required
 def import_nhat_ky_can_thiep(request):
+    """Import nhật ký mới hoặc dữ liệu lịch sử có hồ sơ hợp đồng không đầy đủ."""
     if request.method != "POST" or not request.FILES.get("file_excel"):
         return render(request, "quanly/import_nhat_ky_can_thiep.html")
+
+    historical_mode = request.POST.get("historical_mode") == "1"
     try:
         df = normalized_columns(pd.read_excel(request.FILES["file_excel"]))
     except Exception as exc:
         messages.error(request, f"Không đọc được file Excel: {exc}")
         return render(request, "quanly/import_nhat_ky_can_thiep.html")
+
     created = updated = skipped = 0
-    errors = []
+    errors, warnings = [], []
+    service_codes = {"PHCN": PhanCongTre.PHCN_SERVICE_CODES, "CS": PhanCongTre.CS_SERVICE_CODES}
+
     for row_no, (_, row) in enumerate(df.iterrows(), start=2):
+        row_warnings = []
         try:
             ma_cb = clean_empty_excel_value(get_excel_value(row, "MaCBCT", "Mã CBCT"))
             ma_tre = clean_empty_excel_value(get_excel_value(row, "MaTre", "Mã trẻ", "IDChild"))
             ngay = parse_date(get_excel_value(row, "NgayCanThiep", "Ngày can thiệp"))
             if not ma_cb or not ma_tre or not ngay:
                 raise ValueError("Thiếu mã CBCT, mã trẻ hoặc ngày can thiệp")
-            can_bo = CanBo.objects.get(ma_can_bo=ma_cb)
-            tre = Tre.objects.get(ma_tre=ma_tre)
+            can_bo = CanBo.objects.filter(ma_can_bo=ma_cb).first()
+            tre = Tre.objects.filter(ma_tre=ma_tre).first()
+            if not can_bo:
+                raise ValueError(f"Không tìm thấy CBCT {ma_cb}")
+            if not tre:
+                raise ValueError(f"Không tìm thấy trẻ {ma_tre}")
+
             nhom_value = clean_empty_excel_value(get_excel_value(row, "NhomHD", "Nhóm HĐ"))
-            contracts = HopDong.objects.filter(can_bo=can_bo, tu_ngay__lte=ngay, den_ngay__gte=ngay).select_related("nhom_hd", "de_xuat")
+            source_group = None
             if nhom_value:
-                group_filter = Q(nhom_hd__ma_nhom_hd=nhom_value) | Q(nhom_hd__ten_nhom_hd__iexact=nhom_value)
+                source_filter = Q(ma_nhom_hd=nhom_value) | Q(ten_nhom_hd__iexact=nhom_value)
                 if str(nhom_value).replace(".0", "", 1).isdigit():
-                    group_filter |= Q(nhom_hd_id=int(float(nhom_value)))
-                contracts = contracts.filter(group_filter)
+                    source_filter |= Q(pk=int(float(nhom_value)))
+                source_group = NhomHD.objects.filter(source_filter).first()
+                if not source_group and not historical_mode:
+                    raise ValueError(f"Không tìm thấy Nhóm HĐ {nhom_value}")
+                if not source_group:
+                    row_warnings.append(f"không tìm thấy danh mục Nhóm HĐ {nhom_value}")
+
+            contracts = HopDong.objects.filter(
+                can_bo=can_bo, tu_ngay__lte=ngay, den_ngay__gte=ngay
+            ).select_related("nhom_hd", "de_xuat__phan_bo")
+            if source_group:
+                contracts = contracts.filter(nhom_hd=source_group)
             hop_dong = contracts.order_by("-ngay_ky", "-id").first()
+
+            if not hop_dong and historical_mode:
+                fallback = HopDong.objects.filter(can_bo=can_bo).select_related("nhom_hd", "de_xuat__phan_bo")
+                if source_group:
+                    hop_dong = fallback.filter(nhom_hd=source_group).order_by("-ngay_ky", "-id").first()
+                if not hop_dong:
+                    hop_dong = fallback.order_by("-ngay_ky", "-id").first()
+                if hop_dong:
+                    row_warnings.append(
+                        f"dùng HĐ {hop_dong.so_hop_dong} làm liên kết kỹ thuật vì không có HĐ bao phủ ngày/nhóm nguồn"
+                    )
             if not hop_dong:
-                available = HopDong.objects.filter(can_bo=can_bo).select_related("nhom_hd").order_by("-ngay_ky", "-id")
-                if nhom_value:
-                    group_filter = Q(nhom_hd__ma_nhom_hd=nhom_value) | Q(nhom_hd__ten_nhom_hd__iexact=nhom_value)
-                    if str(nhom_value).replace(".0", "", 1).isdigit():
-                        group_filter |= Q(nhom_hd_id=int(float(nhom_value)))
-                    available = available.filter(group_filter)
-                periods = ", ".join(f"{item.so_hop_dong} ({item.tu_ngay:%d/%m/%Y}-{item.den_ngay:%d/%m/%Y})" for item in available[:3])
-                detail = f"; hợp đồng cùng điều kiện: {periods}" if periods else "; chưa có hợp đồng cùng CBCT/Nhóm HĐ"
-                raise ValueError(f"Không có hợp đồng bao phủ ngày {ngay:%d/%m/%Y} cho CBCT {ma_cb}, Nhóm HĐ {nhom_value or 'chưa có'}{detail}")
+                raise ValueError(
+                    f"Không có hợp đồng nào của CBCT {ma_cb} để liên kết dữ liệu"
+                    if historical_mode else
+                    f"Không có hợp đồng bao phủ ngày {ngay:%d/%m/%Y} cho CBCT {ma_cb}, Nhóm HĐ {nhom_value or 'chưa có'}"
+                )
+
             raw_service = (clean_empty_excel_value(get_excel_value(row, "MaLoaiDichVu", "Loại dịch vụ")) or "PHCN").upper()
-            service_codes = {"PHCN": PhanCongTre.PHCN_SERVICE_CODES, "CS": PhanCongTre.CS_SERVICE_CODES}
-            if raw_service in dict(PhanCongTre.LOAI_DV_CHOICES):
-                assignment_qs = PhanCongTre.objects.filter(phan_bo=hop_dong.de_xuat.phan_bo, tre=tre, loai_dich_vu=raw_service)
-            else:
-                group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} else "PHCN"
-                assignment_qs = PhanCongTre.objects.filter(phan_bo=hop_dong.de_xuat.phan_bo, tre=tre, loai_dich_vu__in=service_codes[group])
+            exact_service = raw_service if raw_service in dict(PhanCongTre.LOAI_DV_CHOICES) else None
+            service_group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} else "PHCN"
+            service_filter = Q(loai_dich_vu=exact_service) if exact_service else Q(loai_dich_vu__in=service_codes[service_group])
+
+            assignment_qs = PhanCongTre.objects.filter(
+                Q(phan_bo=hop_dong.de_xuat.phan_bo), Q(tre=tre), service_filter
+            )
             assignment = assignment_qs.order_by("id").first()
+            if not assignment and historical_mode:
+                fallback_assignments = PhanCongTre.objects.filter(Q(tre=tre), service_filter)
+                same_cb = fallback_assignments.filter(phan_bo__can_bo=can_bo)
+                if source_group:
+                    assignment = same_cb.filter(Q(nhom_hd=source_group) | Q(phan_bo__nhom_hd=source_group)).order_by("id").first()
+                if not assignment:
+                    assignment = same_cb.order_by("id").first()
+                if not assignment and source_group:
+                    assignment = fallback_assignments.filter(phan_bo__isnull=True, nhom_hd=source_group).order_by("id").first()
+                if assignment:
+                    row_warnings.append("phân công không cùng phân bổ với HĐ liên kết")
             if not assignment:
-                raise ValueError("Không tìm thấy phân công tương ứng")
-            is_cs = PhanCongTre.service_group(assignment.loai_dich_vu) == "CS"
+                raise ValueError(f"Không tìm thấy phân công của trẻ {ma_tre} cho CBCT {ma_cb} và dịch vụ {raw_service}")
+
             gio_bat_dau = parse_time(get_excel_value(row, "GioBatDau", "Giờ bắt đầu"))
             gio_ket_thuc = parse_time(get_excel_value(row, "GioKetThuc", "Giờ kết thúc"))
-            dia_diem_ct = clean_empty_excel_value(get_excel_value(row, "DiaDiem", "Địa điểm")) or assignment.dia_diem_ct
+            if (gio_bat_dau is None) != (gio_ket_thuc is None) or (
+                gio_bat_dau and gio_ket_thuc and gio_ket_thuc <= gio_bat_dau
+            ):
+                if historical_mode:
+                    gio_bat_dau = gio_ket_thuc = None
+                    row_warnings.append("giờ không đủ/không hợp lệ nên lưu trống")
+                else:
+                    raise ValueError("Giờ bắt đầu/kết thúc phải đủ cặp và giờ kết thúc phải lớn hơn giờ bắt đầu")
+            elif historical_mode and not gio_bat_dau:
+                row_warnings.append("thiếu giờ bắt đầu/kết thúc")
+
             ky_can_thiep = parse_int(get_excel_value(row, "KyCanThiep", "Kỳ can thiệp"), 0)
             if not 1 <= ky_can_thiep <= 30:
                 raise ValueError("Kỳ can thiệp phải từ 1 đến 30")
-            lan_tt = next_payment_round(can_bo, ky_can_thiep)
-            if (gio_bat_dau is None) != (gio_ket_thuc is None):
-                raise ValueError("Phải nhập đồng thời Giờ bắt đầu và Giờ kết thúc")
-            defaults = {"so_buoi_thuc_hien": parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0), "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0), "ky_can_thiep": ky_can_thiep, "lan_thanh_toan": lan_tt, "dia_diem_ct": dia_diem_ct, "don_gia_cong": hop_dong.don_gia_cong, "dinh_muc_di_lai": hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn, "ghi_chu": clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú"))}
-            obj, is_created = NhatKyThucHien.objects.update_or_create(
-                hop_dong=hop_dong,
-                phan_cong=assignment,
-                ngay_thuc_hien=ngay,
-                gio_bat_dau=gio_bat_dau,
-                gio_ket_thuc=gio_ket_thuc,
-                defaults=defaults,
+            sessions = parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0)
+            if sessions <= 0:
+                raise ValueError("Số buổi thực tế phải lớn hơn 0")
+
+            dia_diem_ct = clean_empty_excel_value(get_excel_value(row, "DiaDiem", "Địa điểm")) or assignment.dia_diem_ct
+            cbct_travel_raw = get_excel_value(row, "SoLuotDiLaiCBCT", "Số lượt đi lại CBCT")
+            cbct_travel = parse_int(cbct_travel_raw, -1)
+            if cbct_travel < 0:
+                location = (dia_diem_ct or "").strip().lower()
+                cbct_travel = sessions if location in {"nhà", "nha", "khác", "khac"} else 0
+                if historical_mode and not gio_bat_dau:
+                    row_warnings.append("lượt đi lại CBCT được suy ra theo địa điểm và số buổi")
+
+            is_cs = PhanCongTre.service_group(assignment.loai_dich_vu) == "CS"
+            note = clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú")) or ""
+            if row_warnings:
+                history_note = "Dữ liệu lịch sử: " + "; ".join(row_warnings)
+                note = f"{note}\n{history_note}".strip()
+            defaults = {
+                "nhom_hd_nguon": source_group,
+                "du_lieu_lich_su": historical_mode,
+                "so_buoi_thuc_hien": sessions,
+                "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0),
+                "so_luot_di_lai_cbct": cbct_travel,
+                "ky_can_thiep": ky_can_thiep,
+                "lan_thanh_toan": next_payment_round(can_bo, ky_can_thiep),
+                "dia_diem_ct": dia_diem_ct,
+                "don_gia_cong": hop_dong.don_gia_cong,
+                "dinh_muc_di_lai": hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn,
+                "ghi_chu": note,
+            }
+            _, is_created = NhatKyThucHien.objects.update_or_create(
+                hop_dong=hop_dong, phan_cong=assignment, ngay_thuc_hien=ngay,
+                gio_bat_dau=gio_bat_dau, gio_ket_thuc=gio_ket_thuc, defaults=defaults,
             )
-            created += int(is_created); updated += int(not is_created)
+            created += int(is_created)
+            updated += int(not is_created)
+            if row_warnings:
+                warnings.append(f"Dòng {row_no}: " + "; ".join(row_warnings))
         except Exception as exc:
-            skipped += 1; errors.append(f"Dòng {row_no}: {exc}")
-    msg = f"Import nhật ký hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
-    if errors:
-        messages.warning(request, msg)
-        for error in errors:
-            messages.warning(request, error)
-    elif created or updated:
-        messages.success(request, msg + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
+            skipped += 1
+            errors.append(f"Dòng {row_no}: {exc}")
+
+    summary = f"Import nhật ký hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}, cảnh báo {len(warnings)}."
+    if errors or warnings:
+        messages.warning(request, summary)
+        details = errors + warnings
+        for detail in details[:200]:
+            messages.warning(request, detail)
+        if len(details) > 200:
+            messages.warning(request, f"Còn {len(details) - 200} cảnh báo/lỗi khác; hãy chia file nhỏ hơn để xem chi tiết theo dòng.")
     else:
-        messages.warning(request, msg + " Không có dữ liệu nào được lưu.")
+        messages.success(request, summary + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
     return redirect("nhat_ky_can_thiep")
 
 
@@ -1520,11 +1685,12 @@ def nhat_ky_can_thiep(request):
     ky = request.GET.get("ky", "").strip()
     thang = request.GET.get("thang", "").strip()
     nam = request.GET.get("nam", "").strip()
-    qs = NhatKyThucHien.objects.select_related("hop_dong__can_bo", "hop_dong__nhom_hd", "phan_cong__tre").order_by("-ngay_thuc_hien", "-id")
+    qs = NhatKyThucHien.objects.select_related("hop_dong__can_bo", "hop_dong__nhom_hd", "nhom_hd_nguon", "phan_cong__tre").order_by("-ngay_thuc_hien", "-id")
     if query:
         qs = qs.filter(Q(phan_cong__tre__ma_tre__icontains=query) | Q(phan_cong__tre__ho_ten__icontains=query) | Q(hop_dong__so_hop_dong__icontains=query) | Q(hop_dong__can_bo__ho_ten__icontains=query))
     if cb_id.isdigit(): qs = qs.filter(hop_dong__can_bo_id=int(cb_id))
-    if nhom_id.isdigit(): qs = qs.filter(hop_dong__nhom_hd_id=int(nhom_id))
+    if nhom_id.isdigit():
+        qs = qs.filter(Q(nhom_hd_nguon_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, hop_dong__nhom_hd_id=int(nhom_id)))
     if ky.isdigit(): qs = qs.filter(ky_can_thiep=int(ky))
     if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
     if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
@@ -1549,9 +1715,10 @@ def thanh_quyet_toan(request):
         )
     rows = {}
     for journal in qs:
-        key = (journal.hop_dong.nhom_hd_id, journal.ky_can_thiep)
+        effective_group = journal.nhom_hd_hieu_luc
+        key = (effective_group.pk, journal.ky_can_thiep)
         item = rows.setdefault(key, {
-            "nhom": journal.hop_dong.nhom_hd,
+            "nhom": effective_group,
             "ky": journal.ky_can_thiep,
             "hop_dong_count": set(),
             "can_bo_count": set(),
@@ -1619,10 +1786,11 @@ def de_nghi_thanh_toan(request):
 
 
 def _journal_export_queryset(request):
-    qs = NhatKyThucHien.objects.select_related("hop_dong__can_bo__don_vi", "hop_dong__nhom_hd", "phan_cong__tre").order_by("ngay_thuc_hien", "id")
+    qs = NhatKyThucHien.objects.select_related("hop_dong__can_bo__don_vi", "hop_dong__nhom_hd", "nhom_hd_nguon", "phan_cong__tre").order_by("ngay_thuc_hien", "id")
     cb_id, nhom_id, ky, thang, nam = (request.GET.get(key, "").strip() for key in ("can_bo", "nhom_hd", "ky", "thang", "nam"))
     if cb_id.isdigit(): qs = qs.filter(hop_dong__can_bo_id=int(cb_id))
-    if nhom_id.isdigit(): qs = qs.filter(hop_dong__nhom_hd_id=int(nhom_id))
+    if nhom_id.isdigit():
+        qs = qs.filter(Q(nhom_hd_nguon_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, hop_dong__nhom_hd_id=int(nhom_id)))
     if ky.isdigit(): qs = qs.filter(ky_can_thiep=int(ky))
     if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
     if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
@@ -1633,7 +1801,7 @@ def _journal_export_file_stem(qs, ky):
     first = qs.first()
     if not first:
         return "NTatCaK" + (ky or "TatCa")
-    group_codes = list(qs.values_list("hop_dong__nhom_hd__ma_nhom_hd", flat=True).distinct()[:2])
+    group_codes = list({item.nhom_hd_hieu_luc.ma_nhom_hd for item in qs[:1000]})
     group_code = group_codes[0] if len(group_codes) == 1 else "TatCa"
     period = ky or (str(first.ky_can_thiep) if qs.values("ky_can_thiep").distinct().count() == 1 else "TatCa")
     return f"N{group_code}K{period}"

@@ -1,3 +1,13 @@
 {% extends 'quanly/base.html' %}
 {% block title %}Import nhật ký can thiệp{% endblock %}
-{% block content %}<div class="container mt-4"><div class="card shadow"><div class="card-header bg-primary text-white"><h5 class="mb-0">Import nhật ký can thiệp</h5></div><div class="card-body"><p class="text-muted">Theo mẫu: MaCBCT, MaTre, MaLoaiDichVu, NhomHD, KyCanThiep, DiaDiem, SoBuoiThucTe, SoLuotDiLaiPH, NgayCanThiep, GioBatDau, GioKetThuc. Lần thanh toán được hệ thống tự tính theo các kỳ can thiệp trước đó của từng CBCT, không cần nhập trong Excel.</p><div class="alert alert-warning py-2"><strong>Khuyến nghị:</strong> với file lớn, nên chia khoảng 2.000–5.000 dòng/lần để tránh timeout và dễ rà soát các dòng lỗi.</div><p class="small">Chỉ cán bộ Admin được import. Hệ thống chỉ ghi nhật ký khi tìm thấy hợp đồng đang hiệu lực và phân công tương ứng.</p><form method="post" enctype="multipart/form-data">{% csrf_token %}<input class="form-control mb-3" type="file" name="file_excel" accept=".xlsx,.xls" required><button class="btn btn-primary">Kiểm tra và tải lên dữ liệu</button> <a class="btn btn-outline-secondary" href="{% url 'nhat_ky_can_thiep' %}">Hủy</a></form></div></div></div>{% endblock %}
+{% block content %}
+<div class="container mt-4"><div class="card shadow"><div class="card-header bg-primary text-white"><h5 class="mb-0">Import nhật ký can thiệp</h5></div><div class="card-body">
+  <p class="text-muted">Theo mẫu: MaCBCT, MaTre, MaLoaiDichVu, NhomHD, KyCanThiep, DiaDiem, SoBuoiThucTe, SoLuotDiLaiPH, NgayCanThiep, GioBatDau, GioKetThuc. Có thể bổ sung SoLuotDiLaiCBCT.</p>
+  <div class="alert alert-warning py-2"><strong>Khuyến nghị:</strong> chia file khoảng 2.000–5.000 dòng/lần để tránh timeout và dễ rà soát cảnh báo theo dòng.</div>
+  <form method="post" enctype="multipart/form-data">{% csrf_token %}
+    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" value="1" id="historical_mode" name="historical_mode" checked><label class="form-check-label" for="historical_mode"><strong>Chế độ dữ liệu lịch sử</strong> — vẫn lưu khi thời hạn/nhóm hợp đồng hiện có không khớp hoặc thiếu giờ; hệ thống ghi cảnh báo và giữ Nhóm HĐ từ file nguồn.</label></div>
+    <div class="small text-muted mb-3">Chế độ này vẫn bỏ qua dòng không tìm thấy CBCT, trẻ, phân công tương ứng hoặc không có bất kỳ hợp đồng nào của CBCT để liên kết. Bỏ chọn để kiểm tra nghiêm ngặt dữ liệu mới.</div>
+    <input class="form-control mb-3" type="file" name="file_excel" accept=".xlsx,.xls" required><button class="btn btn-primary">Kiểm tra và tải lên dữ liệu</button> <a class="btn btn-outline-secondary" href="{% url 'nhat_ky_can_thiep' %}">Hủy</a>
+  </form>
+</div></div></div>
+{% endblock %}

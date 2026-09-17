@@ -338,7 +338,7 @@ def _group_journal_payment_rows(journals):
 def _selection_context(journals, ky="", thang="", nam=""):
     first = journals[0]
     dates = [item.ngay_thuc_hien for item in journals if item.ngay_thuc_hien]
-    group = first.hop_dong.nhom_hd
+    group = first.nhom_hd_hieu_luc
     location = _location_for_group(group.ma_nhom_hd)
     return {
         "KyThanhToan": ky or first.ky_can_thiep,
