@@ -3681,3 +3681,18 @@ sóc, tách khỏi tiền công cán bộ:
 - Cần chạy migration 0020 sau khi nhận code. `manage.py check`, kiểm tra migration và
   11 test hiện có đều đạt với `DEBUG=False`; cấu hình môi trường hiện tại có
   `DEBUG=release`, không phải giá trị boolean hợp lệ.
+
+112. SỬA NHẬT KÝ RỖNG KHI DATABASE CHƯA CÓ HỢP ĐỒNG
+
+- Database kiểm thử có 3.932 nhật ký và 0 hợp đồng; các `hop_dong_id` cũ trở thành
+  liên kết mồ côi. `COUNT` vẫn trả 3.932 nhưng `select_related` dùng INNER JOIN nên
+  danh sách và Thanh quyết toán đều không có dòng nào.
+- Nhật ký lịch sử nay cho phép `hop_dong` rỗng, lưu trực tiếp `can_bo_nguon` và lấy
+  CBCT/Nhóm HĐ theo thứ tự ưu tiên: dữ liệu nguồn -> hợp đồng -> phân công/phân bổ.
+  Migration 0021 sửa 3.932 liên kết mồ côi và khôi phục CBCT; migration 0022 khôi
+  phục Nhóm HĐ nguồn từ phân công/phân bổ khi dữ liệu cũ chưa lưu cột này.
+- Danh sách Nhật ký, bộ lọc, Thanh quyết toán và bốn nghiệp vụ xuất Word/Excel/DSTK/
+  ĐNCK không còn bắt buộc hợp đồng. Khi chưa có hợp đồng, giao diện ghi `Chưa có HĐ`;
+  tiền công và đi lại vẫn dùng số tiền đã lưu trên từng nhật ký.
+- Kiểm thử database thật: trang Nhật ký hiển thị 25 dòng/trang, Thanh quyết toán có
+  dữ liệu tổng hợp; lọc Nhóm HĐ + Kỳ hoạt động; cả bốn endpoint xuất file trả HTTP 200.

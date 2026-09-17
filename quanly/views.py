@@ -194,7 +194,9 @@ def trang_chu(request):
 
 def next_payment_round(can_bo, ky_can_thiep=None):
     """Tự tính lần TT theo số kỳ can thiệp trước đó có nhật ký của CBCT."""
-    qs = NhatKyThucHien.objects.filter(hop_dong__can_bo=can_bo)
+    qs = NhatKyThucHien.objects.filter(
+        Q(can_bo_nguon=can_bo) | Q(can_bo_nguon__isnull=True, hop_dong__can_bo=can_bo)
+    )
     if ky_can_thiep:
         qs = qs.filter(ky_can_thiep__lt=ky_can_thiep)
     return qs.values("ky_can_thiep").distinct().count() + 1
@@ -896,22 +898,23 @@ def import_nhat_ky_can_thiep(request):
                     row_warnings.append(
                         f"dùng HĐ {hop_dong.so_hop_dong} làm liên kết kỹ thuật vì không có HĐ bao phủ ngày/nhóm nguồn"
                     )
-            if not hop_dong:
+            if not hop_dong and not historical_mode:
                 raise ValueError(
-                    f"Không có hợp đồng nào của CBCT {ma_cb} để liên kết dữ liệu"
-                    if historical_mode else
                     f"Không có hợp đồng bao phủ ngày {ngay:%d/%m/%Y} cho CBCT {ma_cb}, Nhóm HĐ {nhom_value or 'chưa có'}"
                 )
+            if not hop_dong:
+                row_warnings.append("chưa có hợp đồng; nhật ký được lưu độc lập theo phân công")
 
             raw_service = (clean_empty_excel_value(get_excel_value(row, "MaLoaiDichVu", "Loại dịch vụ")) or "PHCN").upper()
             exact_service = raw_service if raw_service in dict(PhanCongTre.LOAI_DV_CHOICES) else None
             service_group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} else "PHCN"
             service_filter = Q(loai_dich_vu=exact_service) if exact_service else Q(loai_dich_vu__in=service_codes[service_group])
 
-            assignment_qs = PhanCongTre.objects.filter(
-                Q(phan_bo=hop_dong.de_xuat.phan_bo), Q(tre=tre), service_filter
-            )
-            assignment = assignment_qs.order_by("id").first()
+            assignment = None
+            if hop_dong:
+                assignment = PhanCongTre.objects.filter(
+                    Q(phan_bo=hop_dong.de_xuat.phan_bo), Q(tre=tre), service_filter
+                ).order_by("id").first()
             if not assignment and historical_mode:
                 fallback_assignments = PhanCongTre.objects.filter(Q(tre=tre), service_filter)
                 same_cb = fallback_assignments.filter(phan_bo__can_bo=can_bo)
@@ -962,6 +965,7 @@ def import_nhat_ky_can_thiep(request):
                 note = f"{note}\n{history_note}".strip()
             defaults = {
                 "nhom_hd_nguon": source_group,
+                "can_bo_nguon": can_bo,
                 "du_lieu_lich_su": historical_mode,
                 "so_buoi_thuc_hien": sessions,
                 "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0),
@@ -969,8 +973,11 @@ def import_nhat_ky_can_thiep(request):
                 "ky_can_thiep": ky_can_thiep,
                 "lan_thanh_toan": next_payment_round(can_bo, ky_can_thiep),
                 "dia_diem_ct": dia_diem_ct,
-                "don_gia_cong": hop_dong.don_gia_cong,
-                "dinh_muc_di_lai": hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn,
+                "don_gia_cong": hop_dong.don_gia_cong if hop_dong else Decimal(str(FinancialConfig.DON_GIA_CONG)),
+                "dinh_muc_di_lai": (
+                    (hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn)
+                    if hop_dong else (assignment.dinh_muc_di_lai or Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)))
+                ),
                 "ghi_chu": note,
             }
             _, is_created = NhatKyThucHien.objects.update_or_create(
@@ -1685,12 +1692,16 @@ def nhat_ky_can_thiep(request):
     ky = request.GET.get("ky", "").strip()
     thang = request.GET.get("thang", "").strip()
     nam = request.GET.get("nam", "").strip()
-    qs = NhatKyThucHien.objects.select_related("hop_dong__can_bo", "hop_dong__nhom_hd", "nhom_hd_nguon", "phan_cong__tre").order_by("-ngay_thuc_hien", "-id")
+    qs = NhatKyThucHien.objects.select_related(
+        "can_bo_nguon", "nhom_hd_nguon", "phan_cong__tre",
+        "phan_cong__nhom_hd", "phan_cong__phan_bo__can_bo", "phan_cong__phan_bo__nhom_hd",
+    ).prefetch_related("hop_dong__can_bo", "hop_dong__nhom_hd").order_by("-ngay_thuc_hien", "-id")
     if query:
-        qs = qs.filter(Q(phan_cong__tre__ma_tre__icontains=query) | Q(phan_cong__tre__ho_ten__icontains=query) | Q(hop_dong__so_hop_dong__icontains=query) | Q(hop_dong__can_bo__ho_ten__icontains=query))
-    if cb_id.isdigit(): qs = qs.filter(hop_dong__can_bo_id=int(cb_id))
+        qs = qs.filter(Q(phan_cong__tre__ma_tre__icontains=query) | Q(phan_cong__tre__ho_ten__icontains=query) | Q(hop_dong__so_hop_dong__icontains=query) | Q(can_bo_nguon__ho_ten__icontains=query) | Q(phan_cong__phan_bo__can_bo__ho_ten__icontains=query))
+    if cb_id.isdigit():
+        qs = qs.filter(Q(can_bo_nguon_id=int(cb_id)) | Q(can_bo_nguon__isnull=True, phan_cong__phan_bo__can_bo_id=int(cb_id)))
     if nhom_id.isdigit():
-        qs = qs.filter(Q(nhom_hd_nguon_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, hop_dong__nhom_hd_id=int(nhom_id)))
+        qs = qs.filter(Q(nhom_hd_nguon_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd__isnull=True, phan_cong__phan_bo__nhom_hd_id=int(nhom_id)))
     if ky.isdigit(): qs = qs.filter(ky_can_thiep=int(ky))
     if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
     if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
@@ -1711,11 +1722,15 @@ def thanh_quyet_toan(request):
             Q(phan_cong__tre__ma_tre__icontains=query)
             | Q(phan_cong__tre__ho_ten__icontains=query)
             | Q(hop_dong__so_hop_dong__icontains=query)
-            | Q(hop_dong__can_bo__ho_ten__icontains=query)
+            | Q(can_bo_nguon__ho_ten__icontains=query)
+            | Q(phan_cong__phan_bo__can_bo__ho_ten__icontains=query)
         )
     rows = {}
     for journal in qs:
         effective_group = journal.nhom_hd_hieu_luc
+        effective_staff = journal.can_bo_hieu_luc
+        if not effective_group or not effective_staff:
+            continue
         key = (effective_group.pk, journal.ky_can_thiep)
         item = rows.setdefault(key, {
             "nhom": effective_group,
@@ -1729,15 +1744,16 @@ def thanh_quyet_toan(request):
             "tien_di_lai": Decimal("0"),
             "staff_amounts": {},
         })
-        item["hop_dong_count"].add(journal.hop_dong_id)
-        item["can_bo_count"].add(journal.hop_dong.can_bo_id)
+        if journal.hop_dong_hieu_luc:
+            item["hop_dong_count"].add(journal.hop_dong_id)
+        item["can_bo_count"].add(effective_staff.pk)
         item["journal_count"] += 1
         item["so_buoi"] += Decimal(journal.so_buoi_thuc_hien)
         item["di_lai"] += Decimal(journal.so_luot_di_lai_cbct)
         item["tien_cong"] += Decimal(journal.so_buoi_thuc_hien) * Decimal(journal.don_gia_cong)
         item["tien_di_lai"] += Decimal(journal.so_luot_di_lai_cbct) * Decimal(journal.dinh_muc_di_lai)
         staff_amount = item["staff_amounts"].setdefault(
-            journal.hop_dong.can_bo_id,
+            effective_staff.pk,
             {"labor": Decimal("0"), "travel": Decimal("0")},
         )
         staff_amount["labor"] += Decimal(journal.so_buoi_thuc_hien) * Decimal(journal.don_gia_cong)
@@ -1780,17 +1796,21 @@ def de_nghi_thanh_toan(request):
         "nam": nam,
         "journal_count": qs.count(),
         "so_buoi": qs.aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0,
-        "can_bo_count": qs.values("hop_dong__can_bo_id").distinct().count(),
+        "can_bo_count": len({item.can_bo_hieu_luc_id for item in qs if item.can_bo_hieu_luc_id}),
         "query_string": request.GET.urlencode(),
     })
 
 
 def _journal_export_queryset(request):
-    qs = NhatKyThucHien.objects.select_related("hop_dong__can_bo__don_vi", "hop_dong__nhom_hd", "nhom_hd_nguon", "phan_cong__tre").order_by("ngay_thuc_hien", "id")
+    qs = NhatKyThucHien.objects.select_related(
+        "can_bo_nguon__don_vi", "nhom_hd_nguon", "phan_cong__tre",
+        "phan_cong__nhom_hd", "phan_cong__phan_bo__can_bo__don_vi", "phan_cong__phan_bo__nhom_hd",
+    ).prefetch_related("hop_dong__can_bo__don_vi", "hop_dong__nhom_hd").order_by("ngay_thuc_hien", "id")
     cb_id, nhom_id, ky, thang, nam = (request.GET.get(key, "").strip() for key in ("can_bo", "nhom_hd", "ky", "thang", "nam"))
-    if cb_id.isdigit(): qs = qs.filter(hop_dong__can_bo_id=int(cb_id))
+    if cb_id.isdigit():
+        qs = qs.filter(Q(can_bo_nguon_id=int(cb_id)) | Q(can_bo_nguon__isnull=True, phan_cong__phan_bo__can_bo_id=int(cb_id)))
     if nhom_id.isdigit():
-        qs = qs.filter(Q(nhom_hd_nguon_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, hop_dong__nhom_hd_id=int(nhom_id)))
+        qs = qs.filter(Q(nhom_hd_nguon_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd__isnull=True, phan_cong__phan_bo__nhom_hd_id=int(nhom_id)))
     if ky.isdigit(): qs = qs.filter(ky_can_thiep=int(ky))
     if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
     if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
@@ -1818,9 +1838,11 @@ def xuat_dntt_nhat_ky(request):
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
             grouped = {}
             for journal in qs:
-                grouped.setdefault(journal.hop_dong.can_bo_id, []).append(journal)
+                staff = journal.can_bo_hieu_luc
+                if staff:
+                    grouped.setdefault(staff.pk, []).append(journal)
             for journals in grouped.values():
-                staff = journals[0].hop_dong.can_bo
+                staff = journals[0].can_bo_hieu_luc
                 period = int(ky) if ky.isdigit() else journals[0].ky_can_thiep
                 payment_round = next_payment_round(staff, period)
                 output = export_journal_payment_request(journals, ky=ky, thang=thang, nam=nam, lan_tt=payment_round)

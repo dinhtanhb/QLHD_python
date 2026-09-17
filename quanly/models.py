@@ -438,8 +438,16 @@ class ChiTietPhuLucPhanCong(TimeStampedModel):
 class NhatKyThucHien(TimeStampedModel):
     """Ghi nhận thực tế thực hiện, tách khỏi khối lượng hợp đồng và thanh toán."""
 
-    hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, related_name="nhat_ky_thuc_hien", verbose_name="Hợp đồng")
+    hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, null=True, blank=True, related_name="nhat_ky_thuc_hien", verbose_name="Hợp đồng")
     phan_cong = models.ForeignKey(PhanCongTre, on_delete=models.PROTECT, related_name="nhat_ky_thuc_hien", verbose_name="Phân công")
+    can_bo_nguon = models.ForeignKey(
+        CanBo,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="nhat_ky_lich_su",
+        verbose_name="CBCT theo dữ liệu nguồn",
+    )
     nhom_hd_nguon = models.ForeignKey(
         NhomHD,
         on_delete=models.PROTECT,
@@ -478,9 +486,9 @@ class NhatKyThucHien(TimeStampedModel):
 
     def clean(self):
         errors = {}
-        if self.hop_dong_id and self.phan_cong_id:
+        hop_dong = self.hop_dong_hieu_luc
+        if hop_dong and self.phan_cong_id:
             phan_cong = self.phan_cong
-            hop_dong = self.hop_dong
             if not self.du_lieu_lich_su and phan_cong.phan_bo_id != hop_dong.de_xuat.phan_bo_id:
                 errors["phan_cong"] = "Phân công không thuộc phân bổ của hợp đồng."
             if not self.du_lieu_lich_su and hop_dong.tu_ngay and self.ngay_thuc_hien < hop_dong.tu_ngay:
@@ -502,12 +510,12 @@ class NhatKyThucHien(TimeStampedModel):
                 if self.gio_ket_thuc <= self.gio_bat_dau:
                     errors["gio_ket_thuc"] = "Giờ kết thúc phải lớn hơn giờ bắt đầu."
                 current = SimpleNamespace(
-                    child_id=phan_cong.tre_id, cb_id=hop_dong.can_bo_id,
+                    child_id=phan_cong.tre_id, cb_id=self.can_bo_hieu_luc_id,
                     service=phan_cong.loai_dich_vu, date=self.ngay_thuc_hien,
                     start=self.gio_bat_dau, end=self.gio_ket_thuc,
                 )
-                other_qs = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related("hop_dong", "phan_cong")
-                previous = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.hop_dong.can_bo_id, service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc) for x in other_qs]
+                other_qs = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related("can_bo_nguon", "phan_cong__phan_bo__can_bo")
+                previous = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.can_bo_hieu_luc_id, service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc) for x in other_qs]
                 conflicts = journal_conflict_types(current, previous)
                 if conflicts and not self.du_lieu_lich_su:
                     errors["gio_bat_dau"] = "Cảnh báo: " + ", ".join(conflicts) + ". Vui lòng kiểm tra lại lịch."
@@ -518,13 +526,13 @@ class NhatKyThucHien(TimeStampedModel):
         self.full_clean()
         if self.gio_bat_dau and self.gio_ket_thuc:
             current = SimpleNamespace(
-                child_id=self.phan_cong.tre_id, cb_id=self.hop_dong.can_bo_id,
+                child_id=self.phan_cong.tre_id, cb_id=self.can_bo_hieu_luc_id,
                 ace=self.phan_cong.tre.ace_ruot or "", service=self.phan_cong.loai_dich_vu,
                 date=self.ngay_thuc_hien, start=self.gio_bat_dau, end=self.gio_ket_thuc,
                 location=self.dia_diem_ct or self.phan_cong.dia_diem_ct or "", record_id=self.pk,
             )
-            existing = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related("hop_dong", "phan_cong__tre")
-            records = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.hop_dong.can_bo_id, ace=x.phan_cong.tre.ace_ruot or "", service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc, location=x.dia_diem_ct or x.phan_cong.dia_diem_ct or "", record_id=x.pk) for x in existing]
+            existing = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related("can_bo_nguon", "phan_cong__tre", "phan_cong__phan_bo__can_bo")
+            records = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.can_bo_hieu_luc_id, ace=x.phan_cong.tre.ace_ruot or "", service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc, location=x.dia_diem_ct or x.phan_cong.dia_diem_ct or "", record_id=x.pk) for x in existing]
             travel = calculate_travel_flags(current, records)
             self.so_luot_di_lai_cbct = travel["so_luot_di_lai_cbct"]
             self.so_luot_di_lai = travel["so_luot_di_lai_ph"]
@@ -532,9 +540,42 @@ class NhatKyThucHien(TimeStampedModel):
         super().save(*args, **kwargs)
 
     @property
+    def hop_dong_hieu_luc(self):
+        if not self.hop_dong_id:
+            return None
+        try:
+            return self.hop_dong
+        except HopDong.DoesNotExist:
+            return None
+
+    @property
+    def can_bo_hieu_luc(self):
+        if self.can_bo_nguon_id:
+            return self.can_bo_nguon
+        hop_dong = self.hop_dong_hieu_luc
+        if hop_dong:
+            return hop_dong.can_bo
+        return self.phan_cong.phan_bo.can_bo if self.phan_cong.phan_bo_id else None
+
+    @property
+    def can_bo_hieu_luc_id(self):
+        can_bo = self.can_bo_hieu_luc
+        return can_bo.pk if can_bo else None
+
+    @property
     def nhom_hd_hieu_luc(self):
         """Ưu tiên nhóm trong file nguồn cho dữ liệu lịch sử."""
-        return self.nhom_hd_nguon or self.hop_dong.nhom_hd
+        if self.nhom_hd_nguon_id:
+            return self.nhom_hd_nguon
+        hop_dong = self.hop_dong_hieu_luc
+        if hop_dong:
+            return hop_dong.nhom_hd
+        return self.phan_cong.nhom_hd or (self.phan_cong.phan_bo.nhom_hd if self.phan_cong.phan_bo_id else None)
+
+    @property
+    def so_hop_dong_hieu_luc(self):
+        hop_dong = self.hop_dong_hieu_luc
+        return hop_dong.so_hop_dong if hop_dong else "Chưa có HĐ"
 
 
 class DotThanhToan(TimeStampedModel):

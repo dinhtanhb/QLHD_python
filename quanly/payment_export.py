@@ -277,7 +277,9 @@ def _group_journal_payment_rows(journals):
     """
     grouped = OrderedDict()
     for journal in journals:
-        staff = journal.hop_dong.can_bo
+        staff = getattr(journal, "can_bo_hieu_luc", None) or getattr(getattr(journal, "hop_dong", None), "can_bo", None)
+        if not staff:
+            continue
         staff_key = staff.pk
         if staff_key not in grouped:
             grouped[staff_key] = {
@@ -286,7 +288,9 @@ def _group_journal_payment_rows(journals):
                 "details": OrderedDict(),
             }
         staff_group = grouped[staff_key]
-        staff_group["contracts"][journal.hop_dong_id] = journal.hop_dong
+        contract = getattr(journal, "hop_dong_hieu_luc", None) or getattr(journal, "hop_dong", None)
+        if contract:
+            staff_group["contracts"][contract.pk] = contract
         detail_key = journal.phan_cong_id
         if detail_key not in staff_group["details"]:
             assignment = journal.phan_cong
@@ -362,8 +366,9 @@ def export_journal_account_list(journals):
             cell.value = None
     grouped = {}
     for journal in journals:
-        staff = journal.hop_dong.can_bo
-        grouped.setdefault(staff.pk, (staff, []))[1].append(journal)
+        staff = getattr(journal, "can_bo_hieu_luc", None) or getattr(getattr(journal, "hop_dong", None), "can_bo", None)
+        if staff:
+            grouped.setdefault(staff.pk, (staff, []))[1].append(journal)
     if len(grouped) > 15:
         raise ValidationError("DSTK hiện hỗ trợ tối đa 15 CBCT trong một Nhóm HĐ/kỳ.")
     total_net = Decimal("0")
@@ -494,8 +499,9 @@ def export_journal_commitment(journals, tu_ngay="", den_ngay=""):
                 pass
     grouped = {}
     for journal in journals:
-        staff = journal.hop_dong.can_bo
-        grouped.setdefault(staff.pk, (staff, []))[1].append(journal)
+        staff = getattr(journal, "can_bo_hieu_luc", None) or getattr(getattr(journal, "hop_dong", None), "can_bo", None)
+        if staff:
+            grouped.setdefault(staff.pk, (staff, []))[1].append(journal)
     if len(grouped) > 14:
         raise ValidationError("ĐNCK hiện hỗ trợ tối đa 14 CBCT trong một Nhóm HĐ/kỳ.")
     total_net = Decimal("0")

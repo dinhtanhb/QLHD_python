@@ -171,7 +171,11 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_
     if not PAYMENT_REQUEST_TEMPLATE.exists():
         raise ValidationError("Chưa có template ĐNTT Word.")
     first = journals[0]
-    staff = first.hop_dong.can_bo
+    staff = first.can_bo_hieu_luc
+    if not staff:
+        raise ValidationError("Nhật ký chưa xác định được CBCT để xuất ĐNTT.")
+    contracts = [item.hop_dong_hieu_luc for item in journals if item.hop_dong_hieu_luc]
+    first_contract = contracts[0] if contracts else None
     phcn = [x for x in journals if x.phan_cong.nhom_dich_vu == "PHCN"]
     cs = [x for x in journals if x.phan_cong.nhom_dich_vu == "CS"]
     def totals(rows):
@@ -184,14 +188,14 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_
     travel_total = phcn_travel + cs_travel
     breakdown = calculate_payment_breakdown(labor_total, travel_total)
     payment_round = int(lan_tt or getattr(first, "lan_thanh_toan", 1) or 1)
-    contract_values = {x.hop_dong_id: x.hop_dong.gia_tri_hop_dong for x in journals}
+    contract_values = {item.pk: item.gia_tri_hop_dong for item in contracts}
     previous_payments = list(ChiTietThanhToan.objects.filter(dot_thanh_toan__hop_dong_id__in=contract_values).select_related("dot_thanh_toan").order_by("dot_thanh_toan__nam", "dot_thanh_toan__thang", "id"))
     previous_total = sum((Decimal(item.thanh_tien or 0) for item in previous_payments), Decimal("0"))
     contract_total = sum(contract_values.values(), Decimal("0"))
     context = {
         "HoTenGVMN": staff.ho_ten, "DiaChi": staff.dia_chi or "", "DonViCongTac": staff.don_vi.ten_don_vi if staff.don_vi_id else "",
-        "SoHopDong": first.hop_dong.so_hop_dong if len({x.hop_dong_id for x in journals}) == 1 else "Theo danh sách hợp đồng",
-        "NgayKy_Ngay": first.hop_dong.ngay_ky.day if first.hop_dong.ngay_ky else "", "NgayKy_Thang": first.hop_dong.ngay_ky.month if first.hop_dong.ngay_ky else "", "NgayKy_Nam": first.hop_dong.ngay_ky.year if first.hop_dong.ngay_ky else "",
+        "SoHopDong": first_contract.so_hop_dong if len(contract_values) == 1 else ("Theo danh sách hợp đồng" if contract_values else "Chưa có HĐ"),
+        "NgayKy_Ngay": first_contract.ngay_ky.day if first_contract and first_contract.ngay_ky else "", "NgayKy_Thang": first_contract.ngay_ky.month if first_contract and first_contract.ngay_ky else "", "NgayKy_Nam": first_contract.ngay_ky.year if first_contract and first_contract.ngay_ky else "",
         "ThangCanThiep": thang or (first.ngay_thuc_hien.month if first.ngay_thuc_hien else ""), "NamCanThiep": nam or (first.ngay_thuc_hien.year if first.ngay_thuc_hien else ""), "LanThanhToan": payment_round,
         "SoBuoiPHCN_Thang": phcn_sessions, "TienCongPHCN_Thang": _money(phcn_labor), "SoBuoiDiLaiPHCN_Thang": phcn_trips, "TienDiLaiPHCN_Thang": _money(phcn_travel),
         "SoBuoiCS_Thang": cs_sessions, "TienCongCS_Thang": _money(cs_labor), "SoBuoiDiLaiCS_Thang": cs_trips, "TienDiLaiCS_Thang": _money(cs_travel),
