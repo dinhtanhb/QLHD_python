@@ -1,16 +1,18 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 import re
 import unicodedata
 import zipfile
+from urllib.parse import quote
 
 import pandas as pd
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models.deletion import ProtectedError
+from django.db.models import Count, F, IntegerField, Max, Min, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -141,6 +143,36 @@ def get_excel_value(row, *names):
     return None
 
 
+def resolve_contract_group(value):
+    """Ưu tiên mã nhóm nghiệp vụ; chỉ dùng khóa chính để tương thích dữ liệu cũ."""
+    normalized = clean_empty_excel_value(value)
+    if not normalized:
+        return None
+    group = NhomHD.objects.filter(
+        Q(ma_nhom_hd__iexact=normalized) | Q(ten_nhom_hd__iexact=normalized)
+    ).first()
+    if group:
+        return group
+    if normalized.isdigit():
+        return NhomHD.objects.filter(pk=int(normalized)).first()
+    return None
+
+
+def safe_download_component(value):
+    """Giữ tên dễ đọc nhưng loại ký tự không hợp lệ trong tên file Windows."""
+    value = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", str(value or ""))
+    value = re.sub(r"\s+", " ", value).strip(" .")
+    return value or "Khong_ro"
+
+
+def content_disposition_filename(filename):
+    """Trả cả tên ASCII dự phòng và tên UTF-8 để trình duyệt giữ đúng tiếng Việt."""
+    ascii_name = unicodedata.normalize("NFKD", filename.replace("Đ", "D").replace("đ", "d"))
+    ascii_name = "".join(char for char in ascii_name if not unicodedata.combining(char))
+    ascii_name = ascii_name.encode("ascii", "ignore").decode("ascii") or "download"
+    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename)}'
+
+
 def normalized_reference_keys(value, prefixes=()):
     """Sinh các khóa tra cứu không phân biệt hoa/thường, dấu và tiền tố hành chính."""
     value = clean_empty_excel_value(value)
@@ -185,6 +217,21 @@ def take_import_occurrence(identity_cache, occurrence_counts, key, loader):
     existing_items = identity_cache[key]
     identity = existing_items[occurrence] if occurrence < len(existing_items) else None
     return identity, existing_items
+
+
+def journal_import_identity_key(can_bo_id, tre_id, service, group_id, period, intervention_date, start, end, location):
+    """Khóa đầy đủ của một dòng nhật ký; kỳ và dịch vụ không được phép ghi đè lẫn nhau."""
+    return (
+        can_bo_id,
+        tre_id,
+        service,
+        group_id,
+        period,
+        intervention_date,
+        start,
+        end,
+        (location or "").strip().casefold(),
+    )
 
 
 def normalize_service_code(value):
@@ -1011,6 +1058,7 @@ def import_nhat_ky_can_thiep(request):
     created = updated = skipped = 0
     errors, warnings = [], []
     service_codes = {"PHCN": PhanCongTre.PHCN_SERVICE_CODES, "CS": PhanCongTre.CS_SERVICE_CODES}
+    identity_cache, identity_occurrences = {}, {}
 
     for row_no, (_, row) in enumerate(df.iterrows(), start=2):
         row_warnings = []
@@ -1018,8 +1066,13 @@ def import_nhat_ky_can_thiep(request):
             ma_cb = clean_empty_excel_value(get_excel_value(row, "MaCBCT", "Mã CBCT"))
             ma_tre = clean_empty_excel_value(get_excel_value(row, "MaTre", "Mã trẻ", "IDChild"))
             ngay = parse_date(get_excel_value(row, "NgayCanThiep", "Ngày can thiệp"))
-            if not ma_cb or not ma_tre or not ngay:
-                raise ValueError("Thiếu mã CBCT, mã trẻ hoặc ngày can thiệp")
+            if not ma_cb or not ma_tre:
+                raise ValueError("Thiếu mã CBCT hoặc mã trẻ")
+            if not ngay:
+                if historical_mode:
+                    row_warnings.append("thiếu ngày can thiệp; bản ghi vẫn được lưu để bảo toàn dữ liệu nguồn")
+                else:
+                    raise ValueError("Thiếu ngày can thiệp")
             can_bo = CanBo.objects.filter(ma_can_bo=ma_cb).first()
             tre = Tre.objects.filter(ma_tre=ma_tre).first()
             if not can_bo:
@@ -1039,12 +1092,26 @@ def import_nhat_ky_can_thiep(request):
                 if not source_group:
                     row_warnings.append(f"không tìm thấy danh mục Nhóm HĐ {nhom_value}")
 
-            contracts = HopDong.objects.filter(
-                can_bo=can_bo, tu_ngay__lte=ngay, den_ngay__gte=ngay
-            ).select_related("nhom_hd", "de_xuat__phan_bo")
+            contracts = HopDong.objects.none()
+            if ngay:
+                contracts = HopDong.objects.filter(
+                    can_bo=can_bo, tu_ngay__lte=ngay, den_ngay__gte=ngay
+                ).select_related("nhom_hd", "de_xuat__phan_bo", "don_vi")
             if source_group:
                 contracts = contracts.filter(nhom_hd=source_group)
             hop_dong = contracts.order_by("-ngay_ky", "-id").first()
+
+            # Nếu CBCT làm việc trong nhóm ký HĐ với đơn vị, liên kết nhật ký với HĐ đơn vị
+            # để tiếp tục thanh toán đi lại PH; tiền công CBCT của HĐ này được giữ bằng 0.
+            if not hop_dong and source_group:
+                unit_contracts = HopDong.objects.filter(
+                    can_bo__isnull=True,
+                    don_vi__isnull=False,
+                    nhom_hd=source_group,
+                ).select_related("nhom_hd", "don_vi")
+                if ngay:
+                    unit_contracts = unit_contracts.filter(tu_ngay__lte=ngay, den_ngay__gte=ngay)
+                hop_dong = unit_contracts.order_by("-ngay_ky", "-id").first()
 
             if not hop_dong and historical_mode:
                 fallback = HopDong.objects.filter(can_bo=can_bo).select_related("nhom_hd", "de_xuat__phan_bo")
@@ -1055,6 +1122,16 @@ def import_nhat_ky_can_thiep(request):
                 if hop_dong:
                     row_warnings.append(
                         f"dùng HĐ {hop_dong.so_hop_dong} làm liên kết kỹ thuật vì không có HĐ bao phủ ngày/nhóm nguồn"
+                    )
+            if not hop_dong and historical_mode and source_group:
+                hop_dong = HopDong.objects.filter(
+                    can_bo__isnull=True,
+                    don_vi__isnull=False,
+                    nhom_hd=source_group,
+                ).select_related("nhom_hd", "don_vi").order_by("-ngay_ky", "-id").first()
+                if hop_dong:
+                    row_warnings.append(
+                        f"dùng HĐ đơn vị {hop_dong.so_hop_dong} làm liên kết kỹ thuật theo Nhóm HĐ"
                     )
             if not hop_dong and not historical_mode:
                 raise ValueError(
@@ -1067,13 +1144,16 @@ def import_nhat_ky_can_thiep(request):
             exact_service = normalize_service_code(raw_service)
             service_group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} or exact_service in PhanCongTre.CS_SERVICE_CODES else "PHCN"
             service_filter = Q(loai_dich_vu=exact_service) if exact_service else Q(loai_dich_vu__in=service_codes[service_group])
+            ky_can_thiep = parse_int(get_excel_value(row, "KyCanThiep", "Kỳ can thiệp"), 0)
+            if not 1 <= ky_can_thiep <= 30:
+                raise ValueError("Kỳ can thiệp phải từ 1 đến 30")
             sessions = parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0)
             if sessions <= 0:
                 raise ValueError("Số buổi thực tế phải lớn hơn 0")
             source_location = clean_empty_excel_value(get_excel_value(row, "DiaDiem", "Địa điểm"))
 
             assignment = None
-            if hop_dong:
+            if hop_dong and hop_dong.de_xuat_id:
                 assignment = PhanCongTre.objects.filter(
                     Q(phan_bo=hop_dong.de_xuat.phan_bo), Q(tre=tre), service_filter
                 ).order_by("id").first()
@@ -1123,6 +1203,24 @@ def import_nhat_ky_can_thiep(request):
                         tu_dong_tu_nhat_ky=True,
                     )
                     row_warnings.append(f"đã tạo phân công lịch sử cho dịch vụ {exact_service}")
+            if not assignment and historical_mode and exact_service:
+                assignment = PhanCongTre.objects.create(
+                    phan_bo=None,
+                    can_bo_nguon=can_bo,
+                    nhom_hd=source_group,
+                    tre=tre,
+                    loai_dich_vu=exact_service,
+                    so_buoi_du_kien=max(sessions, 1),
+                    dinh_muc_di_lai=Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)),
+                    dia_diem_ct=source_location,
+                    dot_phan_cong=1,
+                    ky_phan_cong=ky_can_thiep if 1 <= ky_can_thiep <= 30 else 1,
+                    ngay_phan_cong=ngay,
+                    trang_thai="DA_HOAN_THANH",
+                    ghi_chu="Tự tạo từ import nhật ký lịch sử do chưa có dữ liệu phân công nguồn.",
+                    tu_dong_tu_nhat_ky=True,
+                )
+                row_warnings.append(f"đã tạo phân công kỹ thuật độc lập cho dịch vụ {exact_service}")
             if not assignment:
                 raise ValueError(f"Không tìm thấy phân công của trẻ {ma_tre} cho CBCT {ma_cb} và dịch vụ {raw_service}")
 
@@ -1139,9 +1237,6 @@ def import_nhat_ky_can_thiep(request):
             elif historical_mode and not gio_bat_dau:
                 row_warnings.append("thiếu giờ bắt đầu/kết thúc")
 
-            ky_can_thiep = parse_int(get_excel_value(row, "KyCanThiep", "Kỳ can thiệp"), 0)
-            if not 1 <= ky_can_thiep <= 30:
-                raise ValueError("Kỳ can thiệp phải từ 1 đến 30")
             dia_diem_ct = source_location or assignment.dia_diem_ct
             cbct_travel_raw = get_excel_value(row, "SoLuotDiLaiCBCT", "Số lượt đi lại CBCT")
             cbct_travel = parse_int(cbct_travel_raw, -1)
@@ -1166,31 +1261,56 @@ def import_nhat_ky_can_thiep(request):
                 "ky_can_thiep": ky_can_thiep,
                 "lan_thanh_toan": next_payment_round(can_bo, ky_can_thiep),
                 "dia_diem_ct": dia_diem_ct,
-                "don_gia_cong": hop_dong.don_gia_cong if hop_dong else Decimal(str(FinancialConfig.DON_GIA_CONG)),
+                "don_gia_cong": (
+                    Decimal("0") if hop_dong and hop_dong.la_hop_dong_don_vi
+                    else hop_dong.don_gia_cong if hop_dong
+                    else Decimal(str(FinancialConfig.DON_GIA_CONG))
+                ),
                 "dinh_muc_di_lai": (
-                    (hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn)
+                    Decimal("0") if hop_dong and hop_dong.la_hop_dong_don_vi
+                    else (hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn)
                     if hop_dong else Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1))
                 ),
                 "ghi_chu": note,
             }
-            identity = NhatKyThucHien.objects.filter(
-                can_bo_nguon=can_bo, phan_cong=assignment, ngay_thuc_hien=ngay,
-                gio_bat_dau=gio_bat_dau, gio_ket_thuc=gio_ket_thuc,
-            ).first()
-            if not identity and historical_mode:
-                legacy_candidates = NhatKyThucHien.objects.filter(
+            identity_key = journal_import_identity_key(
+                can_bo.pk,
+                tre.pk,
+                exact_service,
+                source_group.pk if source_group else None,
+                ky_can_thiep,
+                ngay,
+                gio_bat_dau,
+                gio_ket_thuc,
+                dia_diem_ct,
+            )
+
+            def load_existing_journals():
+                candidates = NhatKyThucHien.objects.filter(
                     can_bo_nguon=can_bo,
                     phan_cong__tre=tre,
+                    phan_cong__loai_dich_vu=exact_service,
+                    ky_can_thiep=ky_can_thiep,
                     ngay_thuc_hien=ngay,
-                    du_lieu_lich_su=True,
+                    gio_bat_dau=gio_bat_dau,
+                    gio_ket_thuc=gio_ket_thuc,
                 )
                 if source_group:
-                    legacy_candidates = legacy_candidates.filter(
-                        Q(nhom_hd_nguon=source_group) | Q(nhom_hd_nguon__isnull=True)
-                    )
-                if legacy_candidates.count() == 1:
-                    identity = legacy_candidates.first()
-                    row_warnings.append("đã sửa bản ghi import cũ duy nhất của cùng CBCT/trẻ/ngày")
+                    candidates = candidates.filter(nhom_hd_nguon=source_group)
+                else:
+                    candidates = candidates.filter(nhom_hd_nguon__isnull=True)
+                if dia_diem_ct:
+                    candidates = candidates.filter(dia_diem_ct__iexact=dia_diem_ct.strip())
+                else:
+                    candidates = candidates.filter(Q(dia_diem_ct__isnull=True) | Q(dia_diem_ct=""))
+                return candidates.order_by("id")
+
+            identity, _ = take_import_occurrence(
+                identity_cache,
+                identity_occurrences,
+                identity_key,
+                load_existing_journals,
+            )
 
             if identity:
                 identity.hop_dong = hop_dong
@@ -1216,14 +1336,21 @@ def import_nhat_ky_can_thiep(request):
             skipped += 1
             errors.append(f"Dòng {row_no}: {exc}")
 
-    summary = f"Import nhật ký hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}, cảnh báo {len(warnings)}."
+    summary = (
+        f"Import nhật ký hoàn tất: thêm {created}, cập nhật {updated}, "
+        f"bỏ qua {skipped} (không lưu/không tính KPI), "
+        f"đã lưu kèm cảnh báo {len(warnings)} (vẫn tính KPI)."
+    )
     if errors or warnings:
         messages.warning(request, summary)
-        details = errors + warnings
-        for detail in details[:200]:
+        for detail in errors[:200]:
+            messages.error(request, detail)
+        remaining_slots = max(200 - len(errors), 0)
+        for detail in warnings[:remaining_slots]:
             messages.warning(request, detail)
-        if len(details) > 200:
-            messages.warning(request, f"Còn {len(details) - 200} cảnh báo/lỗi khác; hãy chia file nhỏ hơn để xem chi tiết theo dòng.")
+        hidden_count = len(errors) + len(warnings) - min(len(errors), 200) - min(len(warnings), remaining_slots)
+        if hidden_count > 0:
+            messages.warning(request, f"Còn {hidden_count} cảnh báo/lỗi khác; hãy chia file nhỏ hơn để xem chi tiết theo dòng.")
     else:
         messages.success(request, summary + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
     return redirect("nhat_ky_can_thiep")
@@ -1245,6 +1372,9 @@ def phan_bo_chi_tieu(request):
 @hopdong_required
 def danh_sach_phan_bo(request):
     query = request.GET.get("q", "").strip()
+    nhom_id = request.GET.get("nhom_hd", "").strip()
+    trang_thai = request.GET.get("trang_thai", "").strip()
+    tien_do = request.GET.get("tien_do", "").strip()
     qs = (
         PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd")
         .annotate(
@@ -1256,9 +1386,67 @@ def danh_sach_phan_bo(request):
         )
     )
     if query:
-        qs = qs.filter(Q(can_bo__ho_ten__icontains=query) | Q(can_bo__ma_can_bo__icontains=query) | Q(nhom_hd__ten_nhom_hd__icontains=query))
+        qs = qs.filter(
+            Q(can_bo__ho_ten__icontains=query)
+            | Q(can_bo__ma_can_bo__icontains=query)
+            | Q(cbda_quan_ly__icontains=query)
+            | Q(nhom_hd__ma_nhom_hd__icontains=query)
+            | Q(nhom_hd__ten_nhom_hd__icontains=query)
+        )
+    if nhom_id.isdigit():
+        qs = qs.filter(nhom_hd_id=int(nhom_id))
+    if trang_thai == "mo":
+        qs = qs.filter(is_locked=False)
+    elif trang_thai == "khoa":
+        qs = qs.filter(is_locked=True)
+    if tien_do == "chua_phan_cong":
+        qs = qs.filter(official_assignment_count=0)
+    elif tien_do == "da_phan_cong":
+        qs = qs.filter(official_assignment_count__gt=0)
+
+    filtered_allocations = PhanBoChiTieu.objects.filter(pk__in=qs.values("pk"))
+    kpi = filtered_allocations.aggregate(
+        total_allocations=Count("id"),
+        assigned_staff=Count("can_bo", distinct=True),
+        allocations_without_staff=Count("id", filter=Q(can_bo__isnull=True)),
+        open_allocations=Count("id", filter=Q(is_locked=False)),
+        locked_allocations=Count("id", filter=Q(is_locked=True)),
+        phcn_children=Sum("so_tre_phcn"),
+        cs_children=Sum("so_tre_cs"),
+        phcn_sessions=Sum(F("so_tre_phcn") * F("so_buoi_phcn"), output_field=IntegerField()),
+        cs_sessions=Sum(F("so_tre_cs") * F("so_buoi_cs"), output_field=IntegerField()),
+    )
+    for key in (
+        "total_allocations", "assigned_staff", "allocations_without_staff", "open_allocations",
+        "locked_allocations", "phcn_children", "cs_children", "phcn_sessions", "cs_sessions",
+    ):
+        kpi[key] = kpi[key] or 0
+    kpi["target_children"] = kpi["phcn_children"] + kpi["cs_children"]
+    kpi["target_sessions"] = kpi["phcn_sessions"] + kpi["cs_sessions"]
+    official_assignments = PhanCongTre.objects.filter(
+        phan_bo_id__in=qs.values("pk"),
+        tu_dong_tu_nhat_ky=False,
+    )
+    kpi["official_assignments"] = official_assignments.count()
+    kpi["allocations_without_assignments"] = max(
+        kpi["total_allocations"] - official_assignments.values("phan_bo_id").distinct().count(),
+        0,
+    )
+    kpi["assignment_percent"] = round(
+        kpi["official_assignments"] * 100 / kpi["target_children"]
+    ) if kpi["target_children"] else 0
     page_obj = Paginator(qs.order_by("-ngay_lap", "-id"), 15).get_page(request.GET.get("page"))
-    return render(request, "quanly/danh_sach_phan_bo.html", {"danh_sach": page_obj, "page_obj": page_obj, "query": query})
+    pagination_params = request.GET.copy()
+    pagination_params.pop("page", None)
+    return render(request, "quanly/danh_sach_phan_bo.html", {
+        "danh_sach": page_obj,
+        "page_obj": page_obj,
+        "query": query,
+        "kpi": kpi,
+        "nhom_list": NhomHD.objects.filter(is_active=True),
+        "filters": {"nhom_hd": nhom_id, "trang_thai": trang_thai, "tien_do": tien_do},
+        "pagination_query": pagination_params.urlencode(),
+    })
 
 
 @admin_required
@@ -1448,37 +1636,60 @@ def tao_de_xuat_hop_dong(request, pk):
 @hopdong_required
 def danh_sach_de_xuat(request):
     query = request.GET.get("q", "").strip()
-    qs = DeXuatHopDong.objects.select_related("phan_bo__can_bo", "phan_bo__nhom_hd").order_by("-ngay_de_xuat", "-id")
+    nhom_id = request.GET.get("nhom_hd", "").strip()
+    trang_thai = request.GET.get("trang_thai", "").strip()
+    hop_dong_status = request.GET.get("hop_dong", "").strip()
+    qs = DeXuatHopDong.objects.select_related(
+        "phan_bo__can_bo", "phan_bo__nhom_hd"
+    ).prefetch_related("hop_dong")
     if query:
-        qs = qs.filter(Q(phan_bo__can_bo__ho_ten__icontains=query) | Q(phan_bo__can_bo__ma_can_bo__icontains=query))
-    page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
-    return render(request, "quanly/danh_sach_de_xuat.html", {"page_obj": page_obj, "query": query})
+        qs = qs.filter(
+            Q(phan_bo__can_bo__ho_ten__icontains=query)
+            | Q(phan_bo__can_bo__ma_can_bo__icontains=query)
+            | Q(phan_bo__nhom_hd__ma_nhom_hd__icontains=query)
+            | Q(phan_bo__nhom_hd__ten_nhom_hd__icontains=query)
+        )
+    if nhom_id.isdigit():
+        qs = qs.filter(phan_bo__nhom_hd_id=int(nhom_id))
+    valid_proposal_statuses = {value for value, _ in DeXuatHopDong.TRANG_THAI_CHOICES}
+    if trang_thai in valid_proposal_statuses:
+        qs = qs.filter(trang_thai=trang_thai)
+    if hop_dong_status == "chua_tao":
+        qs = qs.filter(hop_dong__isnull=True)
+    elif hop_dong_status == "da_tao":
+        qs = qs.filter(hop_dong__isnull=False)
+    qs = qs.distinct()
 
+    filtered_proposals = DeXuatHopDong.objects.filter(pk__in=qs.values("pk"))
+    proposal_totals = filtered_proposals.aggregate(
+        total=Count("id"),
+        expected_value=Sum("gia_tri_du_kien"),
+        phcn_children=Sum("so_tre_phcn"),
+        cs_children=Sum("so_tre_cs"),
+    )
+    kpi = {key: value or 0 for key, value in proposal_totals.items()}
+    kpi["target_children"] = kpi["phcn_children"] + kpi["cs_children"]
+    kpi["pending_review"] = filtered_proposals.filter(
+        trang_thai__in={"CHO_KIEM_TRA", "DU_DIEU_KIEN"}
+    ).count()
+    kpi["approved_without_contract"] = filtered_proposals.filter(
+        trang_thai="DA_DUYET", hop_dong__isnull=True
+    ).count()
+    kpi["contracts_created"] = filtered_proposals.filter(hop_dong__isnull=False).distinct().count()
+    kpi["rejected_or_cancelled"] = filtered_proposals.filter(trang_thai__in={"TU_CHOI", "HUY"}).count()
 
-@hopdong_required
-def tao_de_xuat_hop_dong(request, pk):
-    phan_bo = get_object_or_404(PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd"), pk=pk)
-    if request.method == "POST":
-        try:
-            with transaction.atomic():
-                proposal = build_proposal_from_allocation(phan_bo)
-                phan_bo.is_locked = True
-                phan_bo.save(update_fields=["is_locked", "updated_at"])
-            messages.success(request, f"Đã tạo Đề xuất HĐ #{proposal.pk} cho {phan_bo.can_bo.ho_ten}.")
-            return redirect("danh_sach_de_xuat")
-        except ValueError as exc:
-            messages.error(request, str(exc))
-    return render(request, "quanly/xac_nhan_tao_de_xuat.html", {"phan_bo": phan_bo})
-
-
-@hopdong_required
-def danh_sach_de_xuat(request):
-    query = request.GET.get("q", "").strip()
-    qs = DeXuatHopDong.objects.select_related("phan_bo__can_bo", "phan_bo__nhom_hd").order_by("-ngay_de_xuat", "-id")
-    if query:
-        qs = qs.filter(Q(phan_bo__can_bo__ho_ten__icontains=query) | Q(phan_bo__can_bo__ma_can_bo__icontains=query))
-    page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
-    return render(request, "quanly/danh_sach_de_xuat.html", {"page_obj": page_obj, "query": query})
+    page_obj = Paginator(qs.order_by("-ngay_de_xuat", "-id"), 15).get_page(request.GET.get("page"))
+    pagination_params = request.GET.copy()
+    pagination_params.pop("page", None)
+    return render(request, "quanly/danh_sach_de_xuat.html", {
+        "page_obj": page_obj,
+        "query": query,
+        "kpi": kpi,
+        "nhom_list": NhomHD.objects.filter(is_active=True),
+        "status_choices": DeXuatHopDong.TRANG_THAI_CHOICES,
+        "filters": {"nhom_hd": nhom_id, "trang_thai": trang_thai, "hop_dong": hop_dong_status},
+        "pagination_query": pagination_params.urlencode(),
+    })
 
 
 @hopdong_required
@@ -1509,9 +1720,6 @@ def tao_hop_dong_chinh_thuc(request, pk):
                 return redirect("danh_sach_hop_dong")
     else:
         form = HopDongForm(initial={
-            "de_xuat": proposal,
-            "can_bo": proposal.phan_bo.can_bo,
-            "nhom_hd": proposal.phan_bo.nhom_hd,
             "don_gia_cong": FinancialConfig.DON_GIA_CONG,
             "dinh_muc_di_lai_phcn": proposal.phan_bo.dinh_muc_di_lai_phcn,
             "dinh_muc_di_lai_cs": proposal.phan_bo.dinh_muc_di_lai_cs,
@@ -1524,11 +1732,64 @@ def tao_hop_dong_chinh_thuc(request, pk):
 @hopdong_required
 def danh_sach_hop_dong(request):
     query = request.GET.get("q", "").strip()
-    qs = HopDong.objects.select_related("can_bo", "nhom_hd", "de_xuat").order_by("-ngay_ky", "-id")
+    nhom_id = request.GET.get("nhom_hd", "").strip()
+    trang_thai = request.GET.get("trang_thai", "").strip()
+    thoi_han = request.GET.get("thoi_han", "").strip()
+    today = timezone.localdate()
+    next_30_days = today + timedelta(days=30)
+    qs = HopDong.objects.select_related("can_bo", "don_vi", "nhom_hd", "de_xuat").order_by("-ngay_ky", "-id")
     if query:
-        qs = qs.filter(Q(so_hop_dong__icontains=query) | Q(can_bo__ma_can_bo__icontains=query) | Q(can_bo__ho_ten__icontains=query))
+        qs = qs.filter(
+            Q(so_hop_dong__icontains=query)
+            | Q(can_bo__ma_can_bo__icontains=query)
+            | Q(can_bo__ho_ten__icontains=query)
+            | Q(don_vi__ma_don_vi__icontains=query)
+            | Q(don_vi__ten_don_vi__icontains=query)
+            | Q(nhom_hd__ma_nhom_hd__icontains=query)
+            | Q(nhom_hd__ten_nhom_hd__icontains=query)
+        )
+    if nhom_id.isdigit():
+        qs = qs.filter(nhom_hd_id=int(nhom_id))
+    valid_contract_statuses = {value for value, _ in HopDong.TRANG_THAI_CHOICES}
+    if trang_thai in valid_contract_statuses:
+        qs = qs.filter(trang_thai=trang_thai)
+    if thoi_han == "hieu_luc":
+        qs = qs.filter(tu_ngay__lte=today, den_ngay__gte=today).exclude(trang_thai__in={"HUY", "THANH_LY"})
+    elif thoi_han == "sap_het_han":
+        qs = qs.filter(den_ngay__gte=today, den_ngay__lte=next_30_days).exclude(trang_thai__in={"HUY", "THANH_LY"})
+    elif thoi_han == "qua_han":
+        qs = qs.filter(den_ngay__lt=today)
+
+    contract_totals = qs.aggregate(
+        total=Count("id"),
+        total_value=Sum("gia_tri_hop_dong"),
+        staff_count=Count("can_bo", distinct=True),
+        unit_count=Count("don_vi", distinct=True),
+        missing_signed_date=Count("id", filter=Q(ngay_ky__isnull=True)),
+    )
+    kpi = {key: value or 0 for key, value in contract_totals.items()}
+    kpi["active"] = qs.filter(tu_ngay__lte=today, den_ngay__gte=today).exclude(
+        trang_thai__in={"HUY", "THANH_LY"}
+    ).count()
+    kpi["expiring"] = qs.filter(den_ngay__gte=today, den_ngay__lte=next_30_days).exclude(
+        trang_thai__in={"HUY", "THANH_LY"}
+    ).count()
+    kpi["expired"] = qs.filter(den_ngay__lt=today).count()
     page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
-    return render(request, "quanly/danh_sach_hop_dong.html", {"hop_dongs": page_obj, "page_obj": page_obj, "query": query})
+    pagination_params = request.GET.copy()
+    pagination_params.pop("page", None)
+    return render(request, "quanly/danh_sach_hop_dong.html", {
+        "hop_dongs": page_obj,
+        "page_obj": page_obj,
+        "query": query,
+        "kpi": kpi,
+        "today": today,
+        "next_30_days": next_30_days,
+        "nhom_list": NhomHD.objects.filter(is_active=True),
+        "status_choices": HopDong.TRANG_THAI_CHOICES,
+        "filters": {"nhom_hd": nhom_id, "trang_thai": trang_thai, "thoi_han": thoi_han},
+        "pagination_query": pagination_params.urlencode(),
+    })
 
 
 @admin_required
@@ -1567,22 +1828,45 @@ def import_hop_dong(request):
     except Exception as exc:
         messages.error(request, f"Không đọc được file Excel: {exc}")
         return render(request, "quanly/import_hop_dong.html")
-    created = updated = skipped = 0
+    created = updated = skipped = linked_journals = 0
     errors = []
     for row_no, (_, row) in enumerate(df.iterrows(), start=2):
         try:
-            ma_cb = clean_empty_excel_value(get_excel_value(row, "MaCbct", "MaCBCT", "Mã CBCT"))
+            ma_doi_tac = clean_empty_excel_value(
+                get_excel_value(row, "MaCbct", "MaCBCT", "Mã CBCT", "MaDoiTac", "Mã đối tác")
+            )
             so_hd = clean_empty_excel_value(get_excel_value(row, "SoHopDong", "Số Hợp đồng", "Số HĐ"))
-            if not ma_cb or not so_hd:
-                raise ValueError("Thiếu Mã CBCT hoặc Số hợp đồng")
-            can_bo = get_object_or_404(CanBo, ma_can_bo=ma_cb)
+            if not ma_doi_tac or not so_hd:
+                raise ValueError("Thiếu Mã CBCT/Đơn vị hoặc Số hợp đồng")
+
+            ma_doi_tac = ma_doi_tac.upper()
+            can_bo = None
+            don_vi = None
+            if ma_doi_tac.startswith("DV"):
+                don_vi = DonVi.objects.filter(ma_don_vi__iexact=ma_doi_tac).first()
+                if not don_vi:
+                    raise ValueError(f"Không tìm thấy Đơn vị {ma_doi_tac}")
+            else:
+                can_bo = CanBo.objects.filter(ma_can_bo__iexact=ma_doi_tac).first()
+                if not can_bo:
+                    raise ValueError(f"Không tìm thấy CBCT {ma_doi_tac}")
+
             nhom_value = clean_empty_excel_value(get_excel_value(row, "NhomHD", "Nhóm HĐ"))
-            nhom_hd = NhomHD.objects.filter(pk=int(float(nhom_value))).first() if nhom_value and str(nhom_value).isdigit() else NhomHD.objects.filter(Q(ma_nhom_hd=nhom_value) | Q(ten_nhom_hd__iexact=nhom_value)).first()
+            nhom_hd = resolve_contract_group(nhom_value)
             if not nhom_hd:
                 raise ValueError(f"Không tìm thấy Nhóm hợp đồng '{nhom_value}'")
-            phan_bo = PhanBoChiTieu.objects.filter(can_bo=can_bo, nhom_hd=nhom_hd).order_by("-ngay_lap", "-id").first()
-            if not phan_bo:
-                raise ValueError("Không tìm thấy phân bổ tương ứng để liên kết hợp đồng")
+
+            phan_bo = None
+            if can_bo:
+                phan_bo = PhanBoChiTieu.objects.filter(
+                    can_bo=can_bo,
+                    nhom_hd=nhom_hd,
+                ).order_by("-ngay_lap", "-id").first()
+                if not phan_bo:
+                    raise ValueError(
+                        f"Không tìm thấy phân bổ của CBCT {ma_doi_tac} cho Nhóm HĐ {nhom_hd.ma_nhom_hd}"
+                    )
+
             ngay_ky = parse_date(get_excel_value(row, "NgayKy", "Ngày ký"))
             tu_ngay = parse_date(get_excel_value(row, "TuNgay", "Từ ngày"))
             den_ngay = parse_date(get_excel_value(row, "DenNgay", "Đến ngày"))
@@ -1591,18 +1875,87 @@ def import_hop_dong(request):
             if den_ngay < tu_ngay:
                 raise ValueError("Đến ngày không được trước Từ ngày")
             with transaction.atomic():
-                proposal = phan_bo.de_xuat_hop_dong.order_by("-lan_de_xuat", "-id").first()
-                if not proposal:
-                    gia_tri_du_kien = calculate_expected_value(phan_bo.so_tre_phcn, phan_bo.so_buoi_phcn, phan_bo.dinh_muc_di_lai_phcn, phan_bo.so_tre_cs, phan_bo.so_buoi_cs, phan_bo.dinh_muc_di_lai_cs)
-                    proposal = DeXuatHopDong.objects.create(phan_bo=phan_bo, so_tre_phcn=phan_bo.so_tre_phcn, so_buoi_phcn=phan_bo.so_buoi_phcn, so_tre_cs=phan_bo.so_tre_cs, so_buoi_cs=phan_bo.so_buoi_cs, gia_tri_du_kien=gia_tri_du_kien, trang_thai="DA_DUYET")
-                defaults = {"de_xuat": proposal, "can_bo": can_bo, "nhom_hd": nhom_hd, "ngay_ky": ngay_ky, "tu_ngay": tu_ngay, "den_ngay": den_ngay, "don_gia_cong": FinancialConfig.DON_GIA_CONG, "dinh_muc_di_lai_phcn": phan_bo.dinh_muc_di_lai_phcn, "dinh_muc_di_lai_cs": phan_bo.dinh_muc_di_lai_cs, "gia_tri_hop_dong": proposal.gia_tri_du_kien, "trang_thai": "DA_KY"}
-                _, is_created = HopDong.objects.update_or_create(so_hop_dong=so_hd, defaults=defaults)
+                proposal = None
+                if phan_bo:
+                    proposal = phan_bo.de_xuat_hop_dong.order_by("-lan_de_xuat", "-id").first()
+                    if not proposal:
+                        gia_tri_du_kien = calculate_expected_value(
+                            phan_bo.so_tre_phcn,
+                            phan_bo.so_buoi_phcn,
+                            phan_bo.dinh_muc_di_lai_phcn,
+                            phan_bo.so_tre_cs,
+                            phan_bo.so_buoi_cs,
+                            phan_bo.dinh_muc_di_lai_cs,
+                        )
+                        proposal = DeXuatHopDong.objects.create(
+                            phan_bo=phan_bo,
+                            so_tre_phcn=phan_bo.so_tre_phcn,
+                            so_buoi_phcn=phan_bo.so_buoi_phcn,
+                            so_tre_cs=phan_bo.so_tre_cs,
+                            so_buoi_cs=phan_bo.so_buoi_cs,
+                            gia_tri_du_kien=gia_tri_du_kien,
+                            trang_thai="DA_DUYET",
+                        )
+
+                defaults = {
+                    "de_xuat": proposal,
+                    "can_bo": can_bo,
+                    "don_vi": don_vi,
+                    "nhom_hd": nhom_hd,
+                    "ngay_ky": ngay_ky,
+                    "tu_ngay": tu_ngay,
+                    "den_ngay": den_ngay,
+                    # Đơn vị thanh toán công can thiệp theo cơ chế riêng.
+                    "don_gia_cong": FinancialConfig.DON_GIA_CONG if can_bo else Decimal("0"),
+                    "dinh_muc_di_lai_phcn": phan_bo.dinh_muc_di_lai_phcn if phan_bo else Decimal("0"),
+                    "dinh_muc_di_lai_cs": phan_bo.dinh_muc_di_lai_cs if phan_bo else Decimal("0"),
+                    "gia_tri_hop_dong": proposal.gia_tri_du_kien if proposal else Decimal("0"),
+                    "trang_thai": "DA_KY",
+                    "ghi_chu": "Hợp đồng đơn vị; thanh toán công can thiệp theo cơ chế riêng."
+                    if don_vi else None,
+                }
+                contract, is_created = HopDong.objects.update_or_create(
+                    so_hop_dong=so_hd,
+                    defaults=defaults,
+                )
+                journal_group_filter = (
+                    Q(nhom_hd_nguon=nhom_hd)
+                    | Q(phan_cong__nhom_hd=nhom_hd)
+                    | Q(phan_cong__phan_bo__nhom_hd=nhom_hd)
+                )
+                journal_candidates = NhatKyThucHien.objects.filter(
+                    journal_group_filter,
+                    ngay_thuc_hien__gte=tu_ngay,
+                    ngay_thuc_hien__lte=den_ngay,
+                ).filter(Q(hop_dong__isnull=True) | Q(hop_dong=contract))
+                if can_bo:
+                    journal_candidates = journal_candidates.filter(
+                        Q(can_bo_nguon=can_bo)
+                        | Q(phan_cong__can_bo_nguon=can_bo)
+                        | Q(phan_cong__phan_bo__can_bo=can_bo)
+                    )
+                    linked_journals += journal_candidates.filter(hop_dong__isnull=True).count()
+                    journal_candidates.update(hop_dong=contract)
+                else:
+                    linked_journals += journal_candidates.filter(hop_dong__isnull=True).count()
+                    journal_candidates.update(
+                        hop_dong=contract,
+                        don_gia_cong=Decimal("0"),
+                        dinh_muc_di_lai=Decimal("0"),
+                        thanh_tien=Decimal("0"),
+                    )
+                if proposal and proposal.trang_thai != "DA_TAO_HOP_DONG":
+                    proposal.trang_thai = "DA_TAO_HOP_DONG"
+                    proposal.save(update_fields=["trang_thai", "updated_at"])
             created += int(is_created)
             updated += int(not is_created)
         except Exception as exc:
             skipped += 1
             errors.append(f"Dòng {row_no}: {exc}")
-    msg = f"Import hợp đồng hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
+    msg = (
+        f"Import hợp đồng hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}; "
+        f"liên kết thêm {linked_journals} nhật ký."
+    )
     if errors:
         messages.warning(request, msg)
         for error in errors:
@@ -1614,17 +1967,119 @@ def import_hop_dong(request):
 
 @hopdong_required
 def chi_tiet_hop_dong(request, pk):
-    hop_dong = get_object_or_404(HopDong.objects.select_related("can_bo", "nhom_hd", "de_xuat"), pk=pk)
+    hop_dong = get_object_or_404(
+        HopDong.objects.select_related("can_bo", "don_vi", "nhom_hd", "de_xuat__phan_bo"),
+        pk=pk,
+    )
     khoi_luong = hop_dong.chi_tiet_khoi_luong.all().order_by("loai_dich_vu")
     phu_luc = hop_dong.phu_luc.all().prefetch_related("chi_tiet_phan_cong").order_by("-ngay_lap", "-id")
-    ky_choices = (
-        PhanCongTre.objects.filter(phan_bo=hop_dong.de_xuat.phan_bo, ky_phan_cong__gte=2, tu_dong_tu_nhat_ky=False)
-        .values_list("ky_phan_cong", flat=True)
-        .distinct()
-        .order_by("ky_phan_cong")
-    )
-    nhat_ky = hop_dong.nhat_ky_thuc_hien.select_related("phan_cong__tre").order_by("-ngay_thuc_hien", "-id")
+    ky_choices = []
+    if hop_dong.de_xuat_id:
+        ky_choices = (
+            PhanCongTre.objects.filter(
+                phan_bo=hop_dong.de_xuat.phan_bo,
+                ky_phan_cong__gte=2,
+                tu_dong_tu_nhat_ky=False,
+            )
+            .values_list("ky_phan_cong", flat=True)
+            .distinct()
+            .order_by("ky_phan_cong")
+        )
+
+    journals = hop_dong.nhat_ky_thuc_hien.all()
+    if hop_dong.de_xuat_id:
+        snapshots = list(
+            ChiTietPhuLucPhanCong.objects.filter(
+                phu_luc__hop_dong=hop_dong,
+                phu_luc__loai_phu_luc="KY_1",
+            ).order_by("id")
+        )
+        if snapshots:
+            summary_sources = [
+                {
+                    "ma_tre": item.ma_tre,
+                    "ten_tre": item.ten_tre,
+                    "loai_dich_vu": item.loai_dich_vu,
+                    "loai_dich_vu_display": item.get_loai_dich_vu_display(),
+                    "planned_sessions": item.so_buoi_du_kien,
+                }
+                for item in snapshots
+            ]
+        else:
+            assignments = (
+                PhanCongTre.objects.filter(
+                    phan_bo=hop_dong.de_xuat.phan_bo,
+                    ky_phan_cong=1,
+                    tu_dong_tu_nhat_ky=False,
+                )
+                .select_related("tre")
+                .order_by("id")
+            )
+            summary_sources = [
+                {
+                    "ma_tre": item.tre.ma_tre,
+                    "ten_tre": item.tre.ho_ten,
+                    "loai_dich_vu": item.loai_dich_vu,
+                    "loai_dich_vu_display": item.get_loai_dich_vu_display(),
+                    "planned_sessions": item.so_buoi_du_kien,
+                }
+                for item in assignments
+            ]
+    else:
+        assignments = (
+            PhanCongTre.objects.filter(nhat_ky_thuc_hien__hop_dong=hop_dong)
+            .select_related("tre")
+            .distinct()
+            .order_by("tre__ho_ten", "loai_dich_vu", "id")
+        )
+        summary_sources = [
+            {
+                "ma_tre": item.tre.ma_tre,
+                "ten_tre": item.tre.ho_ten,
+                "loai_dich_vu": item.loai_dich_vu,
+                "loai_dich_vu_display": item.get_loai_dich_vu_display(),
+                "planned_sessions": item.so_buoi_du_kien,
+            }
+            for item in assignments
+        ]
+
+    actual_by_child_service = {
+        (row["phan_cong__tre__ma_tre"], row["phan_cong__loai_dich_vu"]): row
+        for row in journals.values(
+            "phan_cong__tre__ma_tre",
+            "phan_cong__loai_dich_vu",
+        ).annotate(
+            actual_sessions=Sum("so_buoi_thuc_hien"),
+            parent_travel=Sum("so_luot_di_lai"),
+        )
+    }
+    journal_summary = []
+    for source in summary_sources:
+        actual = actual_by_child_service.get(
+            (source["ma_tre"], source["loai_dich_vu"]),
+            {},
+        )
+        actual_sessions = actual.get("actual_sessions") or 0
+        planned_sessions = source["planned_sessions"] or 0
+        if actual_sessions <= 0:
+            status = "Chưa can thiệp"
+            status_class = "bg-secondary"
+        elif planned_sessions > 0 and actual_sessions >= planned_sessions:
+            status = "Hoàn thành"
+            status_class = "bg-success"
+        else:
+            status = "Đang can thiệp"
+            status_class = "bg-warning text-dark"
+        journal_summary.append({
+            **source,
+            "planned_sessions": planned_sessions,
+            "actual_sessions": actual_sessions,
+            "parent_travel": actual.get("parent_travel") or 0,
+            "status": status,
+            "status_class": status_class,
+        })
     dot_thanh_toan = hop_dong.dot_thanh_toan.prefetch_related("chi_tiet").order_by("-nam", "-thang", "-id")
+    dot_thanh_toan_ph = hop_dong.dot_thanh_toan_phu_huynh.prefetch_related("chi_tiet").order_by("-nam", "-thang", "-id")
     return render(
         request,
         "quanly/chi_tiet_hop_dong.html",
@@ -1633,8 +2088,9 @@ def chi_tiet_hop_dong(request, pk):
             "khoi_luong": khoi_luong,
             "phu_luc": phu_luc,
             "ky_choices": ky_choices,
-            "nhat_ky": nhat_ky,
+            "journal_summary": journal_summary,
             "dot_thanh_toan": dot_thanh_toan,
+            "dot_thanh_toan_ph": dot_thanh_toan_ph,
         },
     )
 
@@ -1642,9 +2098,12 @@ def chi_tiet_hop_dong(request, pk):
 @hopdong_required
 def xuat_bo_hop_dong(request, pk):
     hop_dong = get_object_or_404(
-        HopDong.objects.select_related("can_bo", "de_xuat__phan_bo"),
+        HopDong.objects.select_related("can_bo", "don_vi", "de_xuat__phan_bo"),
         pk=pk,
     )
+    if hop_dong.la_hop_dong_don_vi:
+        messages.error(request, "Hợp đồng đơn vị sử dụng cơ chế hồ sơ riêng, không xuất theo mẫu HĐ cá nhân.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     try:
         output = export_contract_bundle(hop_dong)
     except ValidationError as exc:
@@ -1655,8 +2114,12 @@ def xuat_bo_hop_dong(request, pk):
         output.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
-    safe_number = re.sub(r"[^A-Za-z0-9._-]+", "_", hop_dong.so_hop_dong)
-    response["Content-Disposition"] = f'attachment; filename="HopDong_{safe_number}.docx"'
+    filename = (
+        f"HDDV - {safe_download_component(hop_dong.so_hop_dong)} - "
+        f"{safe_download_component(hop_dong.can_bo.ma_can_bo)}_"
+        f"{safe_download_component(hop_dong.can_bo.ho_ten)}.docx"
+    )
+    response["Content-Disposition"] = content_disposition_filename(filename)
     return response
 
 
@@ -1695,13 +2158,18 @@ def them_nhat_ky_thuc_hien(request, hop_dong_id):
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
         item.hop_dong = hop_dong
-        if not item.pk:
-            item.lan_thanh_toan = next_payment_round(hop_dong.can_bo, item.ky_can_thiep)
-        item.don_gia_cong = FinancialConfig.DON_GIA_CONG
+        effective_staff = item.can_bo_hieu_luc
+        if not item.pk and effective_staff:
+            item.lan_thanh_toan = next_payment_round(effective_staff, item.ky_can_thiep)
         item.dia_diem_ct = item.dia_diem_ct or item.phan_cong.dia_diem_ct
         is_cs = PhanCongTre.service_group(item.phan_cong.loai_dich_vu) == "CS"
-        allocation = hop_dong.de_xuat.phan_bo
-        item.dinh_muc_di_lai = allocation.dinh_muc_di_lai_cs if is_cs else allocation.dinh_muc_di_lai_phcn
+        if hop_dong.la_hop_dong_don_vi:
+            item.don_gia_cong = Decimal("0")
+            item.dinh_muc_di_lai = Decimal("0")
+        else:
+            item.don_gia_cong = FinancialConfig.DON_GIA_CONG
+            allocation = hop_dong.de_xuat.phan_bo
+            item.dinh_muc_di_lai = allocation.dinh_muc_di_lai_cs if is_cs else allocation.dinh_muc_di_lai_phcn
         item.save()
         messages.success(request, "Đã ghi nhận nhật ký thực hiện.")
         return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
@@ -1713,15 +2181,68 @@ def them_nhat_ky_can_thiep(request):
     form = NhatKyCanThiepForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
-        if not item.pk:
-            item.lan_thanh_toan = next_payment_round(item.hop_dong.can_bo, item.ky_can_thiep)
-        item.don_gia_cong = FinancialConfig.DON_GIA_CONG
+        effective_staff = item.can_bo_hieu_luc
+        if not item.pk and effective_staff:
+            item.lan_thanh_toan = next_payment_round(effective_staff, item.ky_can_thiep)
         item.dia_diem_ct = item.dia_diem_ct or item.phan_cong.dia_diem_ct
-        item.dinh_muc_di_lai = item.hop_dong.dinh_muc_di_lai_cs if PhanCongTre.service_group(item.phan_cong.loai_dich_vu) == "CS" else item.hop_dong.dinh_muc_di_lai_phcn
+        if item.hop_dong.la_hop_dong_don_vi:
+            item.don_gia_cong = Decimal("0")
+            item.dinh_muc_di_lai = Decimal("0")
+        else:
+            item.don_gia_cong = FinancialConfig.DON_GIA_CONG
+            item.dinh_muc_di_lai = item.hop_dong.dinh_muc_di_lai_cs if PhanCongTre.service_group(item.phan_cong.loai_dich_vu) == "CS" else item.hop_dong.dinh_muc_di_lai_phcn
         item.save()
         messages.success(request, "Đã thêm nhật ký và lưu vào cơ sở dữ liệu.")
         return redirect("nhat_ky_can_thiep")
     return render(request, "quanly/them_nhat_ky_can_thiep.html", {"form": form})
+
+
+@hopdong_required
+def sua_nhat_ky_can_thiep(request, pk):
+    item = get_object_or_404(
+        NhatKyThucHien.objects.select_related("hop_dong", "phan_cong"),
+        pk=pk,
+    )
+    form = NhatKyCanThiepForm(
+        request.POST or None,
+        instance=item,
+        require_contract=False,
+    )
+    if request.method == "POST" and form.is_valid():
+        updated = form.save(commit=False)
+        updated.dia_diem_ct = updated.dia_diem_ct or updated.phan_cong.dia_diem_ct
+        if updated.hop_dong_id:
+            if updated.hop_dong.la_hop_dong_don_vi:
+                updated.don_gia_cong = Decimal("0")
+                updated.dinh_muc_di_lai = Decimal("0")
+            else:
+                updated.don_gia_cong = updated.hop_dong.don_gia_cong
+                updated.dinh_muc_di_lai = (
+                    updated.hop_dong.dinh_muc_di_lai_cs
+                    if PhanCongTre.service_group(updated.phan_cong.loai_dich_vu) == "CS"
+                    else updated.hop_dong.dinh_muc_di_lai_phcn
+                )
+        updated.save()
+        messages.success(request, "Đã cập nhật nhật ký can thiệp.")
+        return redirect("nhat_ky_can_thiep")
+    return render(request, "quanly/them_nhat_ky_can_thiep.html", {
+        "form": form,
+        "page_title": "Sửa nhật ký can thiệp",
+        "submit_label": "Lưu thay đổi",
+    })
+
+
+@hopdong_required
+def xoa_nhat_ky_can_thiep(request, pk):
+    if request.method != "POST":
+        return redirect("nhat_ky_can_thiep")
+    item = get_object_or_404(NhatKyThucHien, pk=pk)
+    try:
+        item.delete()
+        messages.success(request, "Đã xóa nhật ký can thiệp.")
+    except ProtectedError:
+        messages.error(request, "Không thể xóa nhật ký đã được sử dụng trong hồ sơ thanh toán.")
+    return redirect("nhat_ky_can_thiep")
 
 
 @hopdong_required
@@ -1939,10 +2460,35 @@ def nhat_ky_can_thiep(request):
     if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
     if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
     page_obj = Paginator(qs, 25).get_page(request.GET.get("page"))
-    total_sessions = qs.aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
-    phcn_sessions = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.PHCN_SERVICE_CODES).aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
-    cs_sessions = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.CS_SERVICE_CODES).aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0
-    return render(request, "quanly/nhat_ky_can_thiep.html", {"page_obj": page_obj, "danh_sach": page_obj, "query": query, "tong_so": qs.count(), "total_sessions": total_sessions, "phcn_sessions": phcn_sessions, "cs_sessions": cs_sessions, "can_bo_list": CanBo.objects.filter(is_active=True), "nhom_list": NhomHD.objects.filter(is_active=True), "ky_choices": FinancialConfig.KY_CAN_THIEP_CHOICES, "month_choices": range(1, 13), "year_choices": FinancialConfig.NAM_CAN_THIEP_CHOICES, "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam}})
+    total_records = qs.count()
+    phcn_records = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.PHCN_SERVICE_CODES).count()
+    cs_records = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.CS_SERVICE_CODES).count()
+    period_summary = list(
+        NhatKyThucHien.objects.values("ky_can_thiep")
+        .annotate(
+            journal_count=Count("id"),
+            session_count=Sum("so_buoi_thuc_hien"),
+            first_date=Min("ngay_thuc_hien"),
+            last_date=Max("ngay_thuc_hien"),
+        )
+        .order_by("ky_can_thiep")
+    )
+    return render(request, "quanly/nhat_ky_can_thiep.html", {
+        "page_obj": page_obj,
+        "danh_sach": page_obj,
+        "query": query,
+        "tong_so": total_records,
+        "phcn_records": phcn_records,
+        "cs_records": cs_records,
+        "period_count": len(period_summary),
+        "period_summary": period_summary,
+        "can_bo_list": CanBo.objects.filter(is_active=True),
+        "nhom_list": NhomHD.objects.filter(is_active=True),
+        "ky_choices": FinancialConfig.KY_CAN_THIEP_CHOICES,
+        "month_choices": range(1, 13),
+        "year_choices": FinancialConfig.NAM_CAN_THIEP_CHOICES,
+        "filters": {"can_bo": cb_id, "nhom_hd": nhom_id, "ky": ky, "thang": thang, "nam": nam},
+    })
 
 
 @readonly_required
@@ -2022,6 +2568,16 @@ def de_nghi_thanh_toan(request):
     qs, ky, thang, nam = _journal_export_queryset(request)
     nhom_id = request.GET.get("nhom_hd", "").strip()
     nhom = get_object_or_404(NhomHD, pk=int(nhom_id)) if nhom_id.isdigit() else None
+    tu_ngay = request.GET.get("tu_ngay", "").strip()
+    den_ngay = request.GET.get("den_ngay", "").strip()
+    date_error = ""
+    if tu_ngay or den_ngay:
+        start_date = parse_date(tu_ngay)
+        end_date = parse_date(den_ngay)
+        if not start_date or not end_date:
+            date_error = "Vui lòng chọn đủ Từ ngày và Đến ngày."
+        elif start_date > end_date:
+            date_error = "Từ ngày không được sau Đến ngày."
     return render(request, "quanly/de_nghi_thanh_toan.html", {
         "nhom": nhom,
         "ky": ky,
@@ -2030,8 +2586,22 @@ def de_nghi_thanh_toan(request):
         "journal_count": qs.count(),
         "so_buoi": qs.aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0,
         "can_bo_count": len({item.can_bo_hieu_luc_id for item in qs if item.can_bo_hieu_luc_id}),
+        "tu_ngay": tu_ngay,
+        "den_ngay": den_ngay,
+        "date_error": date_error,
+        "dates_ready": bool(tu_ngay and den_ngay and not date_error),
         "query_string": request.GET.urlencode(),
     })
+
+
+def _selected_payment_date_range(request):
+    tu_ngay = parse_date(request.GET.get("tu_ngay", ""))
+    den_ngay = parse_date(request.GET.get("den_ngay", ""))
+    if not tu_ngay or not den_ngay:
+        raise ValidationError("Vui lòng chọn đủ Từ ngày và Đến ngày trước khi xuất file.")
+    if tu_ngay > den_ngay:
+        raise ValidationError("Từ ngày không được sau Đến ngày.")
+    return tu_ngay.strftime("%d/%m/%Y"), den_ngay.strftime("%d/%m/%Y")
 
 
 def _journal_export_queryset(request):
@@ -2092,7 +2662,15 @@ def xuat_dntt_nhat_ky(request):
 def xuat_dntt_excel_nhat_ky(request):
     qs, ky, thang, nam = _journal_export_queryset(request)
     try:
-        output = export_journal_payment_request_excel(qs, ky=ky, thang=thang, nam=nam)
+        tu_ngay, den_ngay = _selected_payment_date_range(request)
+        output = export_journal_payment_request_excel(
+            qs,
+            ky=ky,
+            thang=thang,
+            nam=nam,
+            tu_ngay=tu_ngay,
+            den_ngay=den_ngay,
+        )
     except ValidationError as exc:
         messages.error(request, str(exc)); return redirect(f"{reverse('de_nghi_thanh_toan')}?{request.GET.urlencode()}")
     response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -2115,12 +2693,11 @@ def xuat_dstk_nhat_ky(request):
 def xuat_dnck_nhat_ky(request):
     qs, ky, _, _ = _journal_export_queryset(request)
     try:
-        journals = list(qs)
-        dates = [item.ngay_thuc_hien for item in journals]
+        tu_ngay, den_ngay = _selected_payment_date_range(request)
         output = export_journal_commitment(
-            journals,
-            tu_ngay=min(dates).strftime("%d/%m/%Y") if dates else "",
-            den_ngay=max(dates).strftime("%d/%m/%Y") if dates else "",
+            qs,
+            tu_ngay=tu_ngay,
+            den_ngay=den_ngay,
         )
     except ValidationError as exc:
         messages.error(request, str(exc)); return redirect(f"{reverse('de_nghi_thanh_toan')}?{request.GET.urlencode()}")

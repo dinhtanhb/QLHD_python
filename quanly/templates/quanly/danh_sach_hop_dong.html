@@ -11,26 +11,36 @@
             <div><a href="{% url 'import_hop_dong' %}" class="btn btn-light btn-sm">Import Excel</a> <span class="badge bg-light text-dark">DB là nguồn dữ liệu gốc</span></div>
         </div>
         <div class="card-body">
-            <form method="get" class="row g-2 mb-3">
-                <div class="col-md-5"><input class="form-control" name="q" value="{{ query }}" placeholder="Số HĐ, mã CBCT, họ tên..."></div>
-                <div class="col-auto"><button class="btn btn-primary">Tìm kiếm</button></div>
+            <div class="row row-cols-1 row-cols-md-2 row-cols-xl-5 g-3 mb-3">
+                <div class="col"><div class="card border-primary h-100"><div class="card-body py-3"><div class="text-muted small">Tổng hợp đồng</div><div class="fs-3 fw-bold text-primary">{{ kpi.total|vn_number }}</div><small class="text-muted">{{ kpi.staff_count|vn_number }} CBCT, {{ kpi.unit_count|vn_number }} đơn vị</small></div></div></div>
+                <div class="col"><div class="card border-success h-100"><div class="card-body py-3"><div class="text-muted small">Tổng giá trị hợp đồng</div><div class="fs-4 fw-bold text-success">{{ kpi.total_value|vn_number }} đ</div><small class="text-muted">Theo bộ lọc hiện tại</small></div></div></div>
+                <div class="col"><div class="card border-info h-100"><div class="card-body py-3"><div class="text-muted small">Đang hiệu lực theo ngày</div><div class="fs-3 fw-bold text-info">{{ kpi.active|vn_number }}</div><small class="text-muted">Không gồm hủy/thanh lý</small></div></div></div>
+                <div class="col"><div class="card border-warning h-100"><div class="card-body py-3"><div class="text-muted small">Sắp hết hạn trong 30 ngày</div><div class="fs-3 fw-bold text-warning">{{ kpi.expiring|vn_number }}</div><small class="text-muted">Cần rà soát gia hạn</small></div></div></div>
+                <div class="col"><div class="card border-danger h-100"><div class="card-body py-3"><div class="text-muted small">Quá hạn theo ngày</div><div class="fs-3 fw-bold text-danger">{{ kpi.expired|vn_number }}</div><small class="text-danger">{{ kpi.missing_signed_date|vn_number }} HĐ thiếu ngày ký</small></div></div></div>
+            </div>
+            <form method="get" class="row g-2 align-items-end mb-3">
+                <div class="col-lg-4"><label class="form-label">Tìm kiếm</label><input class="form-control" name="q" value="{{ query }}" placeholder="Số HĐ, CBCT/đơn vị, nhóm HĐ..."></div>
+                <div class="col-lg-3"><label class="form-label">Nhóm HĐ</label><select class="form-select select2-search" name="nhom_hd"><option value="">Tất cả nhóm HĐ</option>{% for nhom in nhom_list %}<option value="{{ nhom.pk }}" {% if filters.nhom_hd == nhom.pk|stringformat:'s' %}selected{% endif %}>{{ nhom.ma_nhom_hd }} - {{ nhom.ten_nhom_hd }}</option>{% endfor %}</select></div>
+                <div class="col-lg-2"><label class="form-label">Trạng thái</label><select class="form-select" name="trang_thai"><option value="">Tất cả</option>{% for value, label in status_choices %}<option value="{{ value }}" {% if filters.trang_thai == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+                <div class="col-lg-2"><label class="form-label">Thời hạn</label><select class="form-select" name="thoi_han"><option value="">Tất cả</option><option value="hieu_luc" {% if filters.thoi_han == 'hieu_luc' %}selected{% endif %}>Đang hiệu lực</option><option value="sap_het_han" {% if filters.thoi_han == 'sap_het_han' %}selected{% endif %}>Sắp hết hạn 30 ngày</option><option value="qua_han" {% if filters.thoi_han == 'qua_han' %}selected{% endif %}>Quá hạn</option></select></div>
+                <div class="col-lg-1 d-flex gap-1"><button class="btn btn-primary">Lọc</button><a class="btn btn-outline-secondary" href="{% url 'danh_sach_hop_dong' %}" title="Xóa lọc">×</a></div>
             </form>
             <div class="table-responsive">
                 <table class="table table-bordered table-hover align-middle">
                     <thead class="table-dark text-center">
-                        <tr><th>Số HĐ</th><th>CBCT</th><th>Nhóm HĐ</th><th>Giá trị</th><th>Ngày ký</th><th>Thời hạn</th><th>Trạng thái</th><th></th></tr>
+                        <tr><th>Số HĐ</th><th>Đối tác</th><th>Nhóm HĐ</th><th>Giá trị</th><th>Ngày ký</th><th>Thời hạn</th><th>Trạng thái</th><th>Thao tác</th></tr>
                     </thead>
                     <tbody>
                     {% for hd in hop_dongs %}
                         <tr>
                             <td class="fw-bold text-primary">{{ hd.so_hop_dong }}</td>
-                            <td>{{ hd.can_bo.ma_can_bo }}<br>{{ hd.can_bo.ho_ten }}</td>
+                            <td>{% if hd.can_bo_id %}{{ hd.can_bo.ma_can_bo }}<br>{{ hd.can_bo.ho_ten }}{% else %}<span class="badge bg-info text-dark">Đơn vị</span> {{ hd.don_vi.ma_don_vi }}<br>{{ hd.don_vi.ten_don_vi }}{% endif %}</td>
                             <td>{{ hd.nhom_hd.ma_nhom_hd }} - {{ hd.nhom_hd.ten_nhom_hd }}</td>
                             <td class="fw-bold text-success">{{ hd.gia_tri_hop_dong|vn_number }} đ</td>
-                            <td>{{ hd.ngay_ky|date:"d/m/Y" }}</td>
-                            <td>{{ hd.tu_ngay|date:"d/m/Y" }} - {{ hd.den_ngay|date:"d/m/Y" }}</td>
-                            <td><span class="badge bg-success">{{ hd.get_trang_thai_display }}</span></td>
-                            <td><a href="{% url 'chi_tiet_hop_dong' hd.pk %}" class="btn btn-sm btn-primary">Chi tiết</a> <a href="{% url 'sua_hop_dong' hd.pk %}" class="btn btn-sm btn-warning">Sửa</a> <form method="post" action="{% url 'xoa_hop_dong' hd.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa hợp đồng {{ hd.so_hop_dong }}?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger">Xóa</button></form></td>
+                            <td>{% if hd.ngay_ky %}{{ hd.ngay_ky|date:"d/m/Y" }}{% else %}<span class="badge bg-danger">Thiếu ngày ký</span>{% endif %}</td>
+                            <td>{{ hd.tu_ngay|date:"d/m/Y" }} - {{ hd.den_ngay|date:"d/m/Y" }}<br>{% if hd.den_ngay < today %}<span class="badge bg-danger">Quá hạn</span>{% elif hd.den_ngay <= next_30_days %}<span class="badge bg-warning text-dark">Sắp hết hạn</span>{% else %}<span class="badge bg-light text-dark">Còn hiệu lực</span>{% endif %}</td>
+                            <td>{% if hd.trang_thai == 'HUY' or hd.trang_thai == 'THANH_LY' %}<span class="badge bg-secondary">{{ hd.get_trang_thai_display }}</span>{% elif hd.trang_thai == 'DU_THAO' %}<span class="badge bg-warning text-dark">{{ hd.get_trang_thai_display }}</span>{% else %}<span class="badge bg-success">{{ hd.get_trang_thai_display }}</span>{% endif %}</td>
+                            <td><div class="d-flex flex-wrap gap-1"><a href="{% url 'chi_tiet_hop_dong' hd.pk %}" class="btn btn-sm btn-primary">Chi tiết</a><a href="{% url 'sua_hop_dong' hd.pk %}" class="btn btn-sm btn-warning">Sửa</a><form method="post" action="{% url 'xoa_hop_dong' hd.pk %}" onsubmit="return confirm('Xác nhận xóa hợp đồng {{ hd.so_hop_dong }}?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger">Xóa</button></form></div></td>
                         </tr>
                     {% empty %}
                         <tr><td colspan="8" class="text-center text-muted py-4">Chưa có hợp đồng chính thức.</td></tr>

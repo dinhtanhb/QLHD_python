@@ -63,6 +63,22 @@ def _fill_placeholders(workbook, context):
                         cell.value = cell.value.replace("{{" + key + "}}", str(value or ""))
 
 
+def _blank_zero(value):
+    """Giữ kiểu số trong Excel nhưng không hiển thị các giá trị bằng 0."""
+    if isinstance(value, (int, float, Decimal)) and value == 0:
+        return None
+    return value
+
+
+def _payment_note(value):
+    """Loại ghi chú kỹ thuật khi import; chỉ giữ ghi chú nghiệp vụ do người dùng nhập."""
+    lines = [line.strip() for line in str(value or "").splitlines() if line.strip()]
+    return "\n".join(
+        line for line in lines
+        if not line.casefold().startswith("dữ liệu lịch sử:")
+    )
+
+
 @lru_cache(maxsize=64)
 def _location_for_group(group_code):
     workbook = _workbook(INTERVENTION_PAYMENT_TEMPLATE)
@@ -199,7 +215,13 @@ def _parent_template(category, prefix):
 
 
 def export_parent_travel_payment_request(dot, category="NCS"):
-    rows = list(dot.chi_tiet.select_related("nhat_ky__hop_dong__can_bo", "nhat_ky__phan_cong__tre").order_by("id"))
+    rows = list(dot.chi_tiet.select_related(
+        "nhat_ky__can_bo_nguon",
+        "nhat_ky__hop_dong__can_bo",
+        "nhat_ky__hop_dong__don_vi",
+        "nhat_ky__phan_cong__tre",
+        "nhat_ky__phan_cong__phan_bo__can_bo",
+    ).order_by("id"))
     if not rows:
         raise ValidationError("Đợt thanh toán chưa có chi tiết để xuất.")
     workbook = _workbook(_parent_template(category, "DNTT"))
@@ -215,8 +237,10 @@ def export_parent_travel_payment_request(dot, category="NCS"):
         journal = item.nhat_ky
         assignment = journal.phan_cong
         child = assignment.tre
+        provider = journal.can_bo_hieu_luc or journal.hop_dong.doi_tac
+        provider_name = getattr(provider, "ho_ten", None) or getattr(provider, "ten_don_vi", "")
         ws.cell(row, 1).value = index
-        ws.cell(row, 2).value = f"{journal.hop_dong.can_bo.ho_ten} - {child.ho_ten}"
+        ws.cell(row, 2).value = f"{provider_name} - {child.ho_ten}"
         ws.cell(row, 3).value = child.ten_phu_huynh or ""
         ws.cell(row, 4).value = journal.hop_dong.so_hop_dong
         ws.cell(row, 5).value = assignment.nhom_dich_vu
@@ -320,8 +344,9 @@ def _group_journal_payment_rows(journals):
         detail["actual_travel"] += int(journal.so_luot_di_lai_cbct or 0)
         detail["labor"] += Decimal(journal.so_buoi_thuc_hien or 0) * Decimal(journal.don_gia_cong)
         detail["travel"] += Decimal(journal.so_luot_di_lai_cbct or 0) * Decimal(journal.dinh_muc_di_lai)
-        if journal.ghi_chu and journal.ghi_chu not in detail["notes"]:
-            detail["notes"].append(journal.ghi_chu)
+        note = _payment_note(journal.ghi_chu)
+        if note and note not in detail["notes"]:
+            detail["notes"].append(note)
 
     for staff_group in grouped.values():
         details = list(staff_group["details"].values())
@@ -339,15 +364,14 @@ def _group_journal_payment_rows(journals):
     return list(grouped.values())
 
 
-def _selection_context(journals, ky="", thang="", nam=""):
+def _selection_context(journals, ky="", thang="", nam="", tu_ngay="", den_ngay=""):
     first = journals[0]
-    dates = [item.ngay_thuc_hien for item in journals if item.ngay_thuc_hien]
     group = first.nhom_hd_hieu_luc
     location = _location_for_group(group.ma_nhom_hd)
     return {
         "KyThanhToan": ky or first.ky_can_thiep,
-        "TuNgay": min(dates).strftime("%d/%m/%Y") if dates else "",
-        "DenNgay": max(dates).strftime("%d/%m/%Y") if dates else "",
+        "TuNgay": tu_ngay,
+        "DenNgay": den_ngay,
         "DiaDiemThucHien": location,
         "NhomHD": group.ma_nhom_hd,
         "Thang": thang,
@@ -390,7 +414,9 @@ def export_journal_account_list(journals):
     return output
 
 
-def export_journal_payment_request_excel(journals, ky="", thang="", nam=""):
+def export_journal_payment_request_excel(
+    journals, ky="", thang="", nam="", tu_ngay="", den_ngay=""
+):
     journals = list(journals)
     if not journals:
         raise ValidationError("Không có nhật ký phù hợp để xuất ĐNTT Excel.")
@@ -434,7 +460,7 @@ def export_journal_payment_request_excel(journals, ky="", thang="", nam=""):
             group["labor"], group["travel"], breakdown["tong_truoc_thue"], breakdown["thue_tncn"], breakdown["thuc_linh"], "",
         )
         for column, value in enumerate(summary_values, start=1):
-            ws.cell(row, column).value = value
+            ws.cell(row, column).value = _blank_zero(value)
             ws.cell(row, column).fill = copy(summary_fill)
             font = copy(ws.cell(row, column).font)
             font.bold = True
@@ -454,7 +480,7 @@ def export_journal_payment_request_excel(journals, ky="", thang="", nam=""):
                 detail["labor"], detail["travel"], gross, "", gross, "; ".join(detail["notes"]),
             )
             for column, value in enumerate(detail_values, start=1):
-                ws.cell(row, column).value = value
+                ws.cell(row, column).value = _blank_zero(value)
             row += 1
 
     totals = {
@@ -470,8 +496,15 @@ def export_journal_payment_request_excel(journals, ky="", thang="", nam=""):
     totals["S"] = sum((calculate_payment_breakdown(group["labor"], group["travel"])["thue_tncn"] for group in staff_groups), Decimal("0"))
     totals["T"] = totals["R"] - totals["S"]
     for column, value in totals.items():
-        ws[f"{column}{total_row}"] = value
-    context = _selection_context(journals, ky=ky, thang=thang, nam=nam)
+        ws[f"{column}{total_row}"] = _blank_zero(value)
+    context = _selection_context(
+        journals,
+        ky=ky,
+        thang=thang,
+        nam=nam,
+        tu_ngay=tu_ngay,
+        den_ngay=den_ngay,
+    )
     _fill_placeholders(workbook, context)
     ws.print_title_rows = "8:11"
     ws.sheet_properties.pageSetUpPr.fitToPage = True

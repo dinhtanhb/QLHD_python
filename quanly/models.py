@@ -324,7 +324,12 @@ class DeXuatHopDong(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"Đề xuất #{self.pk} - {self.phan_bo.can_bo.ho_ten}"
+        try:
+            allocation = self.phan_bo
+        except PhanBoChiTieu.DoesNotExist:
+            return f"Đề xuất #{self.pk} - phân bổ #{self.phan_bo_id} không còn tồn tại"
+        staff_name = allocation.can_bo.ho_ten if allocation.can_bo_id else "Chưa phân CBCT"
+        return f"Đề xuất #{self.pk} - {staff_name}"
 
 
 class HopDong(TimeStampedModel):
@@ -341,8 +346,30 @@ class HopDong(TimeStampedModel):
         ("HUY", "Hủy"),
     ]
 
-    de_xuat = models.ForeignKey(DeXuatHopDong, on_delete=models.PROTECT, related_name="hop_dong", verbose_name="Đề xuất hợp đồng")
-    can_bo = models.ForeignKey(CanBo, on_delete=models.PROTECT, related_name="hop_dong", verbose_name="Cán bộ can thiệp")
+    de_xuat = models.ForeignKey(
+        DeXuatHopDong,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="hop_dong",
+        verbose_name="Đề xuất hợp đồng",
+    )
+    can_bo = models.ForeignKey(
+        CanBo,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="hop_dong",
+        verbose_name="Cán bộ can thiệp",
+    )
+    don_vi = models.ForeignKey(
+        DonVi,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="hop_dong",
+        verbose_name="Đơn vị ký hợp đồng",
+    )
     nhom_hd = models.ForeignKey(NhomHD, on_delete=models.PROTECT, related_name="hop_dong", verbose_name="Nhóm hợp đồng")
     so_hop_dong = models.CharField(max_length=50, unique=True, verbose_name="Số hợp đồng")
     ngay_ky = models.DateField(null=True, blank=True, verbose_name="Ngày ký")
@@ -365,12 +392,23 @@ class HopDong(TimeStampedModel):
         constraints = [
             models.CheckConstraint(condition=models.Q(den_ngay__gte=models.F("tu_ngay")), name="ck_hd_ngay_hop_le"),
             models.CheckConstraint(condition=models.Q(gia_tri_hop_dong__gte=0), name="ck_hd_gia_tri_duong"),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(can_bo__isnull=False, don_vi__isnull=True)
+                    | models.Q(can_bo__isnull=True, don_vi__isnull=False)
+                ),
+                name="ck_hd_mot_doi_tac",
+            ),
         ]
 
     def clean(self):
         errors = {}
         if self.den_ngay and self.tu_ngay and self.den_ngay < self.tu_ngay:
             errors["den_ngay"] = "Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu."
+        if bool(self.can_bo_id) == bool(self.don_vi_id):
+            errors["can_bo"] = "Hợp đồng phải thuộc đúng một CBCT hoặc một Đơn vị."
+        if self.don_vi_id and self.de_xuat_id:
+            errors["de_xuat"] = "Hợp đồng đơn vị không sử dụng đề xuất/phân bổ của CBCT."
         if self.de_xuat_id and self.can_bo_id and self.de_xuat.phan_bo.can_bo_id != self.can_bo_id:
             errors["can_bo"] = "Cán bộ của hợp đồng phải khớp cán bộ của đề xuất."
         if self.de_xuat_id and self.nhom_hd_id and self.de_xuat.phan_bo.nhom_hd_id != self.nhom_hd_id:
@@ -380,6 +418,14 @@ class HopDong(TimeStampedModel):
 
     def __str__(self):
         return self.so_hop_dong
+
+    @property
+    def doi_tac(self):
+        return self.can_bo or self.don_vi
+
+    @property
+    def la_hop_dong_don_vi(self):
+        return bool(self.don_vi_id)
 
 
 class ChiTietKhoiLuongHopDong(TimeStampedModel):
@@ -474,7 +520,7 @@ class NhatKyThucHien(TimeStampedModel):
         verbose_name="Nhóm HĐ theo dữ liệu nguồn",
     )
     du_lieu_lich_su = models.BooleanField(default=False, verbose_name="Dữ liệu lịch sử")
-    ngay_thuc_hien = models.DateField(verbose_name="Ngày thực hiện")
+    ngay_thuc_hien = models.DateField(null=True, blank=True, verbose_name="Ngày thực hiện")
     gio_bat_dau = models.TimeField(null=True, blank=True, verbose_name="Giờ bắt đầu")
     gio_ket_thuc = models.TimeField(null=True, blank=True, verbose_name="Giờ kết thúc")
     dia_diem_ct = models.CharField(max_length=100, blank=True, null=True, verbose_name="Địa điểm can thiệp")
@@ -506,11 +552,18 @@ class NhatKyThucHien(TimeStampedModel):
         hop_dong = self.hop_dong_hieu_luc
         if hop_dong and self.phan_cong_id:
             phan_cong = self.phan_cong
-            if not self.du_lieu_lich_su and phan_cong.phan_bo_id != hop_dong.de_xuat.phan_bo_id:
-                errors["phan_cong"] = "Phân công không thuộc phân bổ của hợp đồng."
-            if not self.du_lieu_lich_su and hop_dong.tu_ngay and self.ngay_thuc_hien < hop_dong.tu_ngay:
+            if not self.du_lieu_lich_su:
+                if hop_dong.de_xuat_id and phan_cong.phan_bo_id != hop_dong.de_xuat.phan_bo_id:
+                    errors["phan_cong"] = "Phân công không thuộc phân bổ của hợp đồng."
+                elif hop_dong.don_vi_id:
+                    assignment_group_id = phan_cong.nhom_hd_id or (
+                        phan_cong.phan_bo.nhom_hd_id if phan_cong.phan_bo_id else None
+                    )
+                    if assignment_group_id != hop_dong.nhom_hd_id:
+                        errors["phan_cong"] = "Phân công không thuộc Nhóm HĐ của hợp đồng đơn vị."
+            if not self.du_lieu_lich_su and self.ngay_thuc_hien and hop_dong.tu_ngay and self.ngay_thuc_hien < hop_dong.tu_ngay:
                 errors["ngay_thuc_hien"] = "Ngày thực hiện trước thời hạn hợp đồng."
-            if not self.du_lieu_lich_su and hop_dong.den_ngay and self.ngay_thuc_hien > hop_dong.den_ngay:
+            if not self.du_lieu_lich_su and self.ngay_thuc_hien and hop_dong.den_ngay and self.ngay_thuc_hien > hop_dong.den_ngay:
                 errors["ngay_thuc_hien"] = "Ngày thực hiện sau thời hạn hợp đồng."
 
             used = (
@@ -523,7 +576,7 @@ class NhatKyThucHien(TimeStampedModel):
                 errors["so_buoi_thuc_hien"] = (
                     "Tổng số buổi thực hiện của phân công không được vượt số buổi dự kiến."
                 )
-            if self.gio_bat_dau and self.gio_ket_thuc:
+            if self.ngay_thuc_hien and self.gio_bat_dau and self.gio_ket_thuc:
                 if self.gio_ket_thuc <= self.gio_bat_dau:
                     errors["gio_ket_thuc"] = "Giờ kết thúc phải lớn hơn giờ bắt đầu."
                 current = SimpleNamespace(
@@ -541,7 +594,7 @@ class NhatKyThucHien(TimeStampedModel):
 
     def save(self, *args, **kwargs):
         self.full_clean()
-        if self.gio_bat_dau and self.gio_ket_thuc:
+        if self.ngay_thuc_hien and self.gio_bat_dau and self.gio_ket_thuc:
             current = SimpleNamespace(
                 child_id=self.phan_cong.tre_id, cb_id=self.can_bo_hieu_luc_id,
                 ace=self.phan_cong.tre.ace_ruot or "", service=self.phan_cong.loai_dich_vu,
@@ -570,7 +623,7 @@ class NhatKyThucHien(TimeStampedModel):
         if self.can_bo_nguon_id:
             return self.can_bo_nguon
         hop_dong = self.hop_dong_hieu_luc
-        if hop_dong:
+        if hop_dong and hop_dong.can_bo_id:
             return hop_dong.can_bo
         return self.phan_cong.phan_bo.can_bo if self.phan_cong.phan_bo_id else None
 

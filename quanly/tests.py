@@ -8,9 +8,9 @@ from django.test import RequestFactory, SimpleTestCase
 from django.urls import reverse
 
 from .financial import FinancialConfig, calculate_payment_breakdown, calculate_tncn, calculate_travel_flags, journal_conflict_types
-from .document_export import _allocation_context, _date_parts
+from .document_export import _allocation_context, _date_parts, _payment_statement_total
 from .models import PhanCongTre
-from .payment_export import _group_journal_payment_rows
+from .payment_export import _blank_zero, _group_journal_payment_rows, _payment_note, _selection_context
 from . import views
 
 
@@ -32,6 +32,24 @@ class FinancialRulesTests(SimpleTestCase):
         self.assertIs(views.take_import_occurrence(cache, occurrences, "same-key", loader)[0], second)
         self.assertIsNone(views.take_import_occurrence(cache, occurrences, "same-key", loader)[0])
 
+    def test_journal_occurrences_preserve_repeated_source_rows(self):
+        first = object()
+        second = object()
+        cache = {}
+        occurrences = {}
+        loader = lambda: [first, second]
+
+        self.assertIs(views.take_import_occurrence(cache, occurrences, "journal-key", loader)[0], first)
+        self.assertIs(views.take_import_occurrence(cache, occurrences, "journal-key", loader)[0], second)
+        self.assertIsNone(views.take_import_occurrence(cache, occurrences, "journal-key", loader)[0])
+
+    def test_journal_import_identity_separates_period_service_and_location(self):
+        args = (1, 2, "GDDB", 3, 13, date(2026, 7, 25), time(7, 30), time(8, 30), "Trường")
+        base = views.journal_import_identity_key(*args)
+        self.assertNotEqual(base, views.journal_import_identity_key(*args[:4], 14, *args[5:]))
+        self.assertNotEqual(base, views.journal_import_identity_key(1, 2, "NNTL", *args[3:]))
+        self.assertNotEqual(base, views.journal_import_identity_key(*args[:-1], "Nhà"))
+
     def test_reference_keys_accept_geo_names_without_ids(self):
         self.assertIn("dong nai", views.normalized_reference_keys("Tỉnh Đồng Nai", ("tỉnh",)))
         self.assertIn("ha noi", views.normalized_reference_keys("Hà Nội"))
@@ -40,6 +58,8 @@ class FinancialRulesTests(SimpleTestCase):
     def test_intervention_journal_routes_are_registered(self):
         self.assertEqual(reverse("import_nhat_ky_can_thiep"), "/nhat-ky-can-thiep/import/")
         self.assertEqual(reverse("them_nhat_ky_can_thiep"), "/nhat-ky-can-thiep/them/")
+        self.assertEqual(reverse("sua_nhat_ky_can_thiep", args=[7]), "/nhat-ky-can-thiep/7/sua/")
+        self.assertEqual(reverse("xoa_nhat_ky_can_thiep", args=[7]), "/nhat-ky-can-thiep/7/xoa/")
         self.assertEqual(reverse("xuat_dntt_excel_nhat_ky"), "/nhat-ky-can-thiep/xuat-dntt-excel/")
 
     def test_contract_date_parts_keep_day_month_year_separate(self):
@@ -48,6 +68,29 @@ class FinancialRulesTests(SimpleTestCase):
         self.assertEqual(parts["Thang"], "9")
         self.assertEqual(parts["Nam"], "2026")
         self.assertEqual(parts["Full"], "15/09/2026")
+
+    def test_contract_download_filename_is_windows_safe_and_keeps_vietnamese(self):
+        filename = (
+            f"HDDV - {views.safe_download_component('214-26/HĐDV-VH')} - "
+            f"{views.safe_download_component('ADN0116')}_"
+            f"{views.safe_download_component('Phan Thị Hằng')}.docx"
+        )
+        self.assertEqual(filename, "HDDV - 214-26_HĐDV-VH - ADN0116_Phan Thị Hằng.docx")
+        header = views.content_disposition_filename(filename)
+        self.assertIn('filename="HDDV - 214-26_HDDV-VH - ADN0116_Phan Thi Hang.docx"', header)
+        self.assertIn("filename*=UTF-8''HDDV%20-%20214-26_H%C4%90DV-VH%20-%20ADN0116_Phan%20Th%E1%BB%8B%20H%E1%BA%B1ng.docx", header)
+
+    def test_payment_statement_total_adds_current_request_without_double_counting(self):
+        payment_details = [
+            SimpleNamespace(nhat_ky_id=10, thanh_tien=Decimal("1000000")),
+            SimpleNamespace(nhat_ky_id=20, thanh_tien=Decimal("2000000")),
+        ]
+        total = _payment_statement_total(
+            payment_details,
+            current_journal_ids={20},
+            current_amount=Decimal("7500000"),
+        )
+        self.assertEqual(total, Decimal("8500000"))
 
     def test_contract_context_uses_full_dates_only_for_full_date_fields(self):
         allocation = SimpleNamespace(so_tre_phcn=1, so_buoi_phcn=20, dinh_muc_di_lai_phcn=50000, so_tre_cs=0, so_buoi_cs=10, dinh_muc_di_lai_cs=50000)
@@ -131,6 +174,31 @@ class FinancialRulesTests(SimpleTestCase):
         self.assertEqual(grouped[0]["actual_travel"], 1)
         self.assertEqual(grouped[0]["labor"], Decimal("400000"))
         self.assertEqual(grouped[0]["travel"], Decimal("50000"))
+
+    def test_payment_excel_hides_zero_and_import_technical_notes(self):
+        self.assertIsNone(_blank_zero(0))
+        self.assertIsNone(_blank_zero(Decimal("0")))
+        self.assertEqual(_blank_zero(200000), 200000)
+        self.assertEqual(
+            _payment_note("Ghi chú nghiệp vụ\nDữ liệu lịch sử: chưa có hợp đồng"),
+            "Ghi chú nghiệp vụ",
+        )
+
+    @patch("quanly.payment_export._location_for_group", return_value="Đồng Nai")
+    def test_payment_excel_uses_selected_dates_not_journal_dates(self, _location):
+        journal = SimpleNamespace(
+            ky_can_thiep=14,
+            ngay_thuc_hien=date(2026, 7, 25),
+            nhom_hd_hieu_luc=SimpleNamespace(ma_nhom_hd="24"),
+        )
+        context = _selection_context(
+            [journal],
+            ky="14",
+            tu_ngay="01/08/2026",
+            den_ngay="31/08/2026",
+        )
+        self.assertEqual(context["TuNgay"], "01/08/2026")
+        self.assertEqual(context["DenNgay"], "31/08/2026")
 
 
 class DashboardViewTests(SimpleTestCase):

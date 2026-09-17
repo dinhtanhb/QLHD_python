@@ -45,6 +45,19 @@ def _money(value):
     return f"{Decimal(value or 0):,.0f}".replace(",", ".")
 
 
+def _payment_statement_total(payment_details, current_journal_ids, current_amount):
+    """Cộng các khoản đã thanh toán trước đó và ĐNTT hiện tại, không tính trùng nhật ký."""
+    historical_total = sum(
+        (
+            Decimal(item.thanh_tien or 0)
+            for item in payment_details
+            if item.nhat_ky_id not in current_journal_ids
+        ),
+        Decimal("0"),
+    )
+    return historical_total + Decimal(current_amount or 0)
+
+
 def _number_to_words(value):
     """Đổi số nguyên tiền thành chữ ở mức đủ dùng cho mẫu hợp đồng."""
     units = ["", "nghìn", "triệu", "tỷ"]
@@ -190,7 +203,12 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_
     payment_round = int(lan_tt or getattr(first, "lan_thanh_toan", 1) or 1)
     contract_values = {item.pk: item.gia_tri_hop_dong for item in contracts}
     previous_payments = list(ChiTietThanhToan.objects.filter(dot_thanh_toan__hop_dong_id__in=contract_values).select_related("dot_thanh_toan").order_by("dot_thanh_toan__nam", "dot_thanh_toan__thang", "id"))
-    previous_total = sum((Decimal(item.thanh_tien or 0) for item in previous_payments), Decimal("0"))
+    current_journal_ids = {item.pk for item in journals if item.pk}
+    paid_total = _payment_statement_total(
+        previous_payments,
+        current_journal_ids,
+        breakdown["tong_truoc_thue"],
+    )
     contract_total = sum(contract_values.values(), Decimal("0"))
     context = {
         "HoTenGVMN": staff.ho_ten, "DiaChi": staff.dia_chi or "", "DonViCongTac": staff.don_vi.ten_don_vi if staff.don_vi_id else "",
@@ -205,7 +223,8 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_
         "STT_Lan1": "1", "NoiDung_Lan1": "Thanh toán tiền công và đi lại PHCN", "SoTien_Lan1": _money(phcn_labor + phcn_travel),
         "STT_Lan2": "2", "NoiDung_Lan2": "Thanh toán tiền công và đi lại CS", "SoTien_Lan2": _money(cs_labor + cs_travel),
         "STT_Lan3": "", "NoiDung_Lan3": "", "SoTien_Lan3": "",
-        "TongSoTienDaThanhToan": _money(previous_total), "SoTienConLai": _money(max(Decimal("0"), contract_total - previous_total)),
+        "TongSoTienDaThanhToan": _money(paid_total),
+        "SoTienConLai": _money(max(Decimal("0"), contract_total - paid_total)),
     }
     for index in range(4, 16):
         context.update({f"STT_Lan{index}": "", f"NoiDung_Lan{index}": "", f"SoTien_Lan{index}": ""})
@@ -216,6 +235,9 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_
     for paragraph in document.paragraphs:
         if "NTT -" in paragraph.text:
             paragraph.text = title
+            from docx.shared import RGBColor
+            for run in paragraph.runs:
+                run.font.color.rgb = RGBColor(255, 255, 255)
         elif "thanh toán phí dịch vụ lần 03" in paragraph.text:
             paragraph.text = sentence
     output = BytesIO()

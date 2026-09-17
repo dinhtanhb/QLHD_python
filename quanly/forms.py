@@ -1,4 +1,5 @@
 from django import forms
+from django.db.models import Q
 
 from .financial import FinancialConfig
 from .models import (
@@ -211,7 +212,7 @@ class HopDongForm(BootstrapModelForm):
     class Meta:
         model = HopDong
         fields = [
-            "de_xuat", "can_bo", "nhom_hd", "so_hop_dong", "ngay_ky", "tu_ngay", "den_ngay",
+            "so_hop_dong", "ngay_ky", "tu_ngay", "den_ngay",
             "don_gia_cong", "dinh_muc_di_lai_phcn", "dinh_muc_di_lai_cs", "gia_tri_hop_dong", "trang_thai", "ghi_chu",
         ]
         widgets = {
@@ -276,15 +277,24 @@ class NhatKyThucHienForm(BootstrapModelForm):
     def __init__(self, *args, hop_dong=None, **kwargs):
         super().__init__(*args, **kwargs)
         if hop_dong is not None:
-            self.fields["phan_cong"].queryset = PhanCongTre.objects.filter(
-                phan_bo_id=hop_dong.de_xuat.phan_bo_id
-            ).select_related("tre")
+            assignments = PhanCongTre.objects.none()
+            if hop_dong.de_xuat_id:
+                assignments = PhanCongTre.objects.filter(
+                    phan_bo_id=hop_dong.de_xuat.phan_bo_id
+                )
+            elif hop_dong.don_vi_id:
+                assignments = PhanCongTre.objects.filter(
+                    Q(nhom_hd_id=hop_dong.nhom_hd_id)
+                    | Q(phan_bo__nhom_hd_id=hop_dong.nhom_hd_id)
+                )
+            self.fields["phan_cong"].queryset = assignments.select_related("tre")
 
 
 class NhatKyCanThiepForm(BootstrapModelForm):
     hop_dong = forms.ModelChoiceField(
-        queryset=HopDong.objects.select_related("can_bo", "nhom_hd"),
+        queryset=HopDong.objects.select_related("can_bo", "don_vi", "nhom_hd"),
         label="Hợp đồng",
+        required=False,
         widget=forms.Select(attrs={"class": "form-select select2-search"}),
     )
 
@@ -302,13 +312,24 @@ class NhatKyCanThiepForm(BootstrapModelForm):
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),
         }
 
+    def __init__(self, *args, require_contract=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["hop_dong"].required = require_contract
+
     def clean(self):
         cleaned = super().clean()
         hop_dong = cleaned.get("hop_dong")
         phan_cong = cleaned.get("phan_cong")
         ngay = cleaned.get("ngay_thuc_hien")
-        if hop_dong and phan_cong and phan_cong.phan_bo_id != hop_dong.de_xuat.phan_bo_id:
-            self.add_error("phan_cong", "Phân công không thuộc phân bổ của hợp đồng đã chọn.")
+        if hop_dong and phan_cong:
+            if hop_dong.de_xuat_id and phan_cong.phan_bo_id != hop_dong.de_xuat.phan_bo_id:
+                self.add_error("phan_cong", "Phân công không thuộc phân bổ của hợp đồng đã chọn.")
+            elif hop_dong.don_vi_id:
+                assignment_group_id = phan_cong.nhom_hd_id or (
+                    phan_cong.phan_bo.nhom_hd_id if phan_cong.phan_bo_id else None
+                )
+                if assignment_group_id != hop_dong.nhom_hd_id:
+                    self.add_error("phan_cong", "Phân công không thuộc Nhóm HĐ của hợp đồng đơn vị.")
         if hop_dong and ngay and not (hop_dong.tu_ngay <= ngay <= hop_dong.den_ngay):
             self.add_error("ngay_thuc_hien", "Ngày thực hiện phải nằm trong thời hạn hợp đồng.")
         return cleaned

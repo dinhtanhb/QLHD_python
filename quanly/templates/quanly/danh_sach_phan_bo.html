@@ -20,9 +20,19 @@
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             {% endfor %}
-            <form method="get" class="row g-2 mb-3">
-                <div class="col-md-5"><input class="form-control" name="q" value="{{ query }}" placeholder="Mã CBCT, họ tên, nhóm hợp đồng..."></div>
-                <div class="col-auto"><button class="btn btn-primary">Tìm kiếm</button></div>
+            <div class="row row-cols-1 row-cols-md-2 row-cols-xl-5 g-3 mb-3">
+                <div class="col"><div class="card border-primary h-100"><div class="card-body py-3"><div class="text-muted small">Tổng phân bổ</div><div class="fs-3 fw-bold text-primary">{{ kpi.total_allocations|vn_number }}</div><small class="text-muted">{{ kpi.open_allocations|vn_number }} đang mở · {{ kpi.locked_allocations|vn_number }} đã khóa</small></div></div></div>
+                <div class="col"><div class="card border-secondary h-100"><div class="card-body py-3"><div class="text-muted small">CBCT trong phân bổ</div><div class="fs-3 fw-bold text-secondary">{{ kpi.assigned_staff|vn_number }}</div><small class="text-danger">{{ kpi.allocations_without_staff|vn_number }} phân bổ chưa có CBCT</small></div></div></div>
+                <div class="col"><div class="card border-success h-100"><div class="card-body py-3"><div class="text-muted small">Chỉ tiêu trẻ</div><div class="fs-3 fw-bold text-success">{{ kpi.target_children|vn_number }}</div><small class="text-muted">PHCN {{ kpi.phcn_children|vn_number }} · CS {{ kpi.cs_children|vn_number }}</small></div></div></div>
+                <div class="col"><div class="card border-info h-100"><div class="card-body py-3"><div class="text-muted small">Dự kiến số buổi</div><div class="fs-3 fw-bold text-info">{{ kpi.target_sessions|vn_number }}</div><small class="text-muted">PHCN {{ kpi.phcn_sessions|vn_number }} · CS {{ kpi.cs_sessions|vn_number }}</small></div></div></div>
+                <div class="col"><div class="card border-warning h-100"><div class="card-body py-3"><div class="d-flex justify-content-between"><div class="text-muted small">Tiến độ phân công</div><strong>{{ kpi.assignment_percent }}%</strong></div><div class="fs-3 fw-bold text-warning">{{ kpi.official_assignments|vn_number }} / {{ kpi.target_children|vn_number }}</div><div class="progress mt-1" style="height: 6px;"><div class="progress-bar bg-warning" style="width: {% if kpi.assignment_percent > 100 %}100{% else %}{{ kpi.assignment_percent }}{% endif %}%"></div></div><small class="text-danger">{{ kpi.allocations_without_assignments|vn_number }} phân bổ chưa có phân công</small></div></div></div>
+            </div>
+            <form method="get" class="row g-2 align-items-end mb-3">
+                <div class="col-lg-4"><label class="form-label">Tìm kiếm</label><input class="form-control" name="q" value="{{ query }}" placeholder="Mã CBCT, họ tên, nhóm hợp đồng..."></div>
+                <div class="col-lg-3"><label class="form-label">Nhóm HĐ</label><select class="form-select select2-search" name="nhom_hd"><option value="">Tất cả nhóm HĐ</option>{% for nhom in nhom_list %}<option value="{{ nhom.pk }}" {% if filters.nhom_hd == nhom.pk|stringformat:'s' %}selected{% endif %}>{{ nhom.ma_nhom_hd }} - {{ nhom.ten_nhom_hd }}</option>{% endfor %}</select></div>
+                <div class="col-lg-2"><label class="form-label">Trạng thái</label><select class="form-select" name="trang_thai"><option value="">Tất cả</option><option value="mo" {% if filters.trang_thai == 'mo' %}selected{% endif %}>Đang mở</option><option value="khoa" {% if filters.trang_thai == 'khoa' %}selected{% endif %}>Đã khóa</option></select></div>
+                <div class="col-lg-2"><label class="form-label">Tiến độ</label><select class="form-select" name="tien_do"><option value="">Tất cả</option><option value="chua_phan_cong" {% if filters.tien_do == 'chua_phan_cong' %}selected{% endif %}>Chưa phân công</option><option value="da_phan_cong" {% if filters.tien_do == 'da_phan_cong' %}selected{% endif %}>Đã phân công</option></select></div>
+                <div class="col-lg-1 d-flex gap-1"><button class="btn btn-primary">Lọc</button><a class="btn btn-outline-secondary" href="{% url 'danh_sach_phan_bo' %}" title="Xóa lọc">×</a></div>
             </form>
             <div class="alert alert-info py-2">
                 <strong>Quy tắc:</strong> Phân bổ chỉ tiêu chưa phải đề xuất hợp đồng. Chỉ khi đã có phân công trẻ mới được tạo đề xuất.

@@ -54,22 +54,6 @@
 
                 <div class="row g-3">
                     <div class="col-md-4">
-                        <label class="form-label">Đề xuất</label>
-                        {{ form.de_xuat }}
-                        {% for error in form.de_xuat.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">Cán bộ can thiệp</label>
-                        {{ form.can_bo }}
-                        {% for error in form.can_bo.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">Nhóm hợp đồng</label>
-                        {{ form.nhom_hd }}
-                        {% for error in form.nhom_hd.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
-                    </div>
-
-                    <div class="col-md-4">
                         <label class="form-label">Số hợp đồng <span class="text-danger">*</span></label>
                         {{ form.so_hop_dong }}
                         {% for error in form.so_hop_dong.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
