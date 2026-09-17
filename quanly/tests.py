@@ -15,6 +15,12 @@ from . import views
 
 
 class FinancialRulesTests(SimpleTestCase):
+    def test_service_codes_accept_vietnamese_and_ascii_variants(self):
+        self.assertEqual(views.normalize_service_code("GDĐB"), "GDDB")
+        self.assertEqual(views.normalize_service_code("GDDB"), "GDDB")
+        self.assertEqual(views.normalize_service_code("Giáo dục đặc biệt"), "GDDB")
+        self.assertEqual(views.normalize_service_code("Vật lý trị liệu"), "VLTL")
+
     def test_import_occurrences_do_not_collapse_repeated_assignments(self):
         first = object()
         second = object()

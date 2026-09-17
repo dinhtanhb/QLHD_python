@@ -187,6 +187,28 @@ def take_import_occurrence(identity_cache, occurrence_counts, key, loader):
     return identity, existing_items
 
 
+def normalize_service_code(value):
+    """Chuẩn hóa mã/tên dịch vụ, gồm cả biến thể GDĐB và GDDB."""
+    aliases = {
+        "vltl": "VLTL",
+        "vat ly tri lieu": "VLTL",
+        "hdtl": "HDTL",
+        "hoat dong tri lieu": "HDTL",
+        "nntl": "NNTL",
+        "ngon ngu tri lieu": "NNTL",
+        "gddb": "GDDB",
+        "giao duc dac biet": "GDDB",
+        "csxh": "CSXH",
+        "cham soc xa hoi": "CSXH",
+        "csyt": "CSYT",
+        "cham soc y te": "CSYT",
+    }
+    for key in normalized_reference_keys(value):
+        if key in aliases:
+            return aliases[key]
+    return None
+
+
 def service_is_cs(service):
     return PhanCongTre.service_group(service) == "CS"
 
@@ -679,7 +701,7 @@ def danh_sach_phan_cong(request):
     nhom_hd_id = request.GET.get("nhom_hd", "").strip()
     dot_phan_cong = request.GET.get("dot_phan_cong", "").strip()
     qs = PhanCongTre.objects.filter(tu_dong_tu_nhat_ky=False).select_related(
-        "tre", "phan_bo__can_bo", "phan_bo__nhom_hd", "nhom_hd"
+        "tre", "can_bo_nguon", "phan_bo__can_bo", "phan_bo__nhom_hd", "nhom_hd"
     )
 
     if phan_bo_id.isdigit():
@@ -697,6 +719,8 @@ def danh_sach_phan_cong(request):
             | Q(tre__ho_ten__icontains=query)
             | Q(phan_bo__can_bo__ma_can_bo__icontains=query)
             | Q(phan_bo__can_bo__ho_ten__icontains=query)
+            | Q(can_bo_nguon__ma_can_bo__icontains=query)
+            | Q(can_bo_nguon__ho_ten__icontains=query)
             | Q(cbda_quan_ly__icontains=query)
             | Q(phan_bo__cbda_quan_ly__icontains=query)
         )
@@ -871,10 +895,12 @@ def import_phan_cong(request):
                 if not phan_bo:
                     phan_bo = PhanBoChiTieu.objects.create(nhom_hd=nhom, cbda_quan_ly=cbda, ngay_lap=parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong"), timezone.localdate()))
 
-            service = clean_empty_excel_value(get_excel_value(row, "Loại dịch vụ", "LoaiDichVu", "Chỉ định CT")) or "CSXH"
-            service_upper = service.upper()
-            service_map = {"VLTL": "VLTL", "HDTL": "HDTL", "NNTL": "NNTL", "GDDB": "GDDB", "CSXH": "CSXH", "CSYT": "CSYT"}
-            service = service_map.get(service_upper, "CSXH" if "CS" in service_upper else "VLTL")
+            raw_service = clean_empty_excel_value(
+                get_excel_value(row, "Loại dịch vụ", "LoaiDichVu", "MaLoaiDichVu", "Chỉ định CT")
+            )
+            service = normalize_service_code(raw_service)
+            if not service:
+                raise ValueError(f"Dịch vụ '{raw_service or 'trống'}' không hợp lệ")
 
             so_buoi_du_kien = parse_int(get_excel_value(row, "Số buổi dự kiến", "SoBuoi"), 0)
             dot_value = parse_int(get_excel_value(row, "Đợt phân công", "DotPhanCong"), 1)
@@ -890,27 +916,51 @@ def import_phan_cong(request):
                 else (phan_bo.dinh_muc_di_lai_phcn if phan_bo else Decimal("0")),
             )
 
-            identity_qs = PhanCongTre.objects.filter(
+            identity_base_qs = PhanCongTre.objects.filter(
                 tu_dong_tu_nhat_ky=False,
                 tre=tre,
-                loai_dich_vu=service,
                 dot_phan_cong=dot_value,
                 ky_phan_cong=ky_value,
             )
-            identity_qs = identity_qs.filter(nhom_hd=nhom) if nhom else identity_qs.filter(nhom_hd__isnull=True)
+            identity_base_qs = identity_base_qs.filter(nhom_hd=nhom) if nhom else identity_base_qs.filter(nhom_hd__isnull=True)
+            identity_qs = identity_base_qs.filter(loai_dich_vu=service)
             identity_key = (tre.pk, service, nhom.pk if nhom else None, dot_value, ky_value)
+
+            def load_existing_assignments():
+                exact_items = list(identity_qs.order_by("id"))
+                if exact_items:
+                    return exact_items
+                raw_service_key = str(raw_service or "").strip().upper()
+                if service == "GDDB" and raw_service_key != "GDDB":
+                    return list(
+                        identity_base_qs.filter(
+                            loai_dich_vu="VLTL",
+                            can_bo_nguon__isnull=True,
+                            phan_bo__isnull=True,
+                            so_buoi_du_kien=so_buoi_du_kien,
+                            ngay_phan_cong=ngay_phan_cong,
+                            dia_diem_ct=dia_diem_ct,
+                            hinh_thuc_ct=hinh_thuc_ct,
+                            cbda_quan_ly=cbda,
+                        ).order_by("id")
+                    )
+                return []
+
             identity, existing_items = take_import_occurrence(
                 identity_cache,
                 identity_occurrences,
                 identity_key,
-                lambda: identity_qs.order_by("id"),
+                load_existing_assignments,
             )
             item = identity or PhanCongTre(
                 tre=tre,
                 loai_dich_vu=service,
             )
             item.phan_bo = phan_bo
+            item.can_bo_nguon = can_bo
             item.nhom_hd = nhom
+            item.tre = tre
+            item.loai_dich_vu = service
             item.so_buoi_du_kien = so_buoi_du_kien
             item.dinh_muc_di_lai = dinh_muc_di_lai
             item.dia_diem_ct = dia_diem_ct
@@ -1014,8 +1064,8 @@ def import_nhat_ky_can_thiep(request):
                 row_warnings.append("chưa có hợp đồng; nhật ký được lưu độc lập theo phân công")
 
             raw_service = (clean_empty_excel_value(get_excel_value(row, "MaLoaiDichVu", "Loại dịch vụ")) or "PHCN").upper()
-            exact_service = raw_service if raw_service in dict(PhanCongTre.LOAI_DV_CHOICES) else None
-            service_group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} else "PHCN"
+            exact_service = normalize_service_code(raw_service)
+            service_group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} or exact_service in PhanCongTre.CS_SERVICE_CODES else "PHCN"
             service_filter = Q(loai_dich_vu=exact_service) if exact_service else Q(loai_dich_vu__in=service_codes[service_group])
             sessions = parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0)
             if sessions <= 0:
@@ -1029,7 +1079,7 @@ def import_nhat_ky_can_thiep(request):
                 ).order_by("id").first()
             if not assignment and historical_mode:
                 fallback_assignments = PhanCongTre.objects.filter(Q(tre=tre), service_filter)
-                same_cb = fallback_assignments.filter(phan_bo__can_bo=can_bo)
+                same_cb = fallback_assignments.filter(Q(phan_bo__can_bo=can_bo) | Q(can_bo_nguon=can_bo))
                 if source_group:
                     assignment = same_cb.filter(Q(nhom_hd=source_group) | Q(phan_bo__nhom_hd=source_group)).order_by("id").first()
                 if not assignment:
@@ -1039,7 +1089,9 @@ def import_nhat_ky_can_thiep(request):
                 if assignment:
                     row_warnings.append("phân công không cùng phân bổ với HĐ liên kết")
             if not assignment and historical_mode and exact_service:
-                template_assignments = PhanCongTre.objects.filter(tre=tre, phan_bo__can_bo=can_bo)
+                template_assignments = PhanCongTre.objects.filter(
+                    Q(tre=tre), Q(phan_bo__can_bo=can_bo) | Q(can_bo_nguon=can_bo)
+                )
                 if source_group:
                     grouped_templates = template_assignments.filter(
                         Q(nhom_hd=source_group) | Q(phan_bo__nhom_hd=source_group)
@@ -1054,6 +1106,7 @@ def import_nhat_ky_can_thiep(request):
                 if template_assignment:
                     assignment = PhanCongTre.objects.create(
                         phan_bo=template_assignment.phan_bo,
+                        can_bo_nguon=can_bo,
                         cbda_quan_ly=template_assignment.cbda_quan_ly,
                         nhom_hd=source_group or template_assignment.nhom_hd,
                         tre=tre,

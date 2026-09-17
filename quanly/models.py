@@ -225,6 +225,14 @@ class PhanCongTre(TimeStampedModel):
         related_name="danh_sach_phan_cong",
         verbose_name="Phân bổ chỉ tiêu",
     )
+    can_bo_nguon = models.ForeignKey(
+        CanBo,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="phan_cong_theo_nguon",
+        verbose_name="CBCT theo dữ liệu nguồn",
+    )
     cbda_quan_ly = models.CharField(max_length=100, blank=True, null=True, verbose_name="CBDA quản lý")
     nhom_hd = models.ForeignKey(NhomHD, on_delete=models.PROTECT, null=True, blank=True, related_name="phan_cong_tre", verbose_name="Nhóm hợp đồng")
     tre = models.ForeignKey(Tre, on_delete=models.PROTECT, related_name="danh_sach_phan_cong", verbose_name="Trẻ")
@@ -264,6 +272,10 @@ class PhanCongTre(TimeStampedModel):
     @property
     def nhom_dich_vu(self):
         return self.service_group(self.loai_dich_vu)
+
+    @property
+    def can_bo_hieu_luc(self):
+        return self.can_bo_nguon or (self.phan_bo.can_bo if self.phan_bo_id else None)
 
     def __str__(self):
         return f"Phân công {self.tre.ho_ten} - {self.loai_dich_vu}"

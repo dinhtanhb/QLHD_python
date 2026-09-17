@@ -3754,3 +3754,24 @@ sóc, tách khỏi tiền công cán bộ:
   qua `None`; bổ sung tìm theo CBDA. Kiểm thử `q=cbp0002` trả HTTP 200.
 - Bảng danh sách giảm cỡ chữ, padding, chiều rộng tối thiểu và cỡ nút để mỗi ô Trẻ/CBCT
   hiển thị gọn khoảng hai dòng, vẫn cuộn ngang trên màn hình hẹp.
+
+117. CHUẨN HÓA GDĐB/GDDB VÀ GIỮ CBCT NGUỒN TRÊN PHÂN CÔNG
+
+- Nguyên nhân CBP0002 bị lưu thành VLTL: file Phân công dùng `GDĐB`, trong khi mã hệ
+  thống/Nhật ký dùng `GDDB`; nhánh mặc định cũ biến mọi mã PHCN chưa nhận diện thành
+  VLTL. Hàm chuẩn hóa mới bỏ khác biệt dấu/hoa thường và nhận cả mã lẫn tên đầy đủ.
+- Import nay chấp nhận `GDĐB`, `GDDB`, `Giáo dục đặc biệt`; tương tự cho tên/mã VLTL,
+  HĐTL, NNTL, CSXH và CSYT. Giá trị không nhận diện bị báo lỗi rõ ràng, không âm thầm
+  đổi thành VLTL.
+- ABP0088 có trong danh mục CBCT nhưng chưa có Phân bổ Nhóm 1. Bổ sung
+  `PhanCongTre.can_bo_nguon` (migration 0024) để giữ đúng CBCT từ Excel mà không tạo
+  giả một bản Phân bổ chỉ tiêu. Giao diện và tìm kiếm ưu tiên CBCT nguồn rồi mới dùng
+  CBCT của Phân bổ.
+- Import Nhật ký lịch sử tìm phân công theo cả CBCT nguồn và CBCT của Phân bổ. Phân
+  công kỹ thuật tự tạo cũng lưu CBCT nguồn.
+- Khi tái import dòng `GDĐB`, hệ thống nhận diện bản VLTL cũ bị ánh xạ sai bằng các
+  trường trẻ/nhóm/đợt/kỳ/số buổi/ngày/địa điểm/hình thức/CBDA, sửa bản cũ sang GDDB
+  thay vì để lại dòng sai và tạo trùng.
+- Kiểm thử rollback đúng hai dòng CBP0002/ABP0088: kết quả 2 phân công GDDB (20 buổi
+  tại Trường, 15 buổi tại Nhà), CBCT nguồn ABP0088, không cần `phan_bo`; thêm 1, cập
+  nhật 1, bỏ qua 0. Toàn bộ 15 test đạt.
