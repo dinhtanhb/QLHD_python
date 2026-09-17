@@ -1,5 +1,5 @@
 from decimal import Decimal
-from datetime import date
+from datetime import date, time
 from types import SimpleNamespace
 
 from unittest.mock import patch
@@ -64,6 +64,19 @@ class FinancialRulesTests(SimpleTestCase):
         self.assertEqual(journal_conflict_types(current, [other]), [])
         travel = calculate_travel_flags(current, [other])
         self.assertEqual(travel, {"so_luot_di_lai_cbct": 1, "so_luot_di_lai_ph": 1})
+
+    def test_school_session_keeps_excel_time_and_only_counts_parent_travel(self):
+        self.assertEqual(views.parse_time("07:30:00"), time(7, 30))
+        self.assertEqual(views.parse_time("08:30:00"), time(8, 30))
+        current = SimpleNamespace(
+            child_id="CBP2341", cb_id="ABP0609", ace="", service="GDDB",
+            date=date(2026, 7, 25), start=time(7, 30), end=time(8, 30),
+            location="Trường", record_id=None,
+        )
+        self.assertEqual(
+            calculate_travel_flags(current, []),
+            {"so_luot_di_lai_cbct": 0, "so_luot_di_lai_ph": 1},
+        )
 
     def test_intervention_period_choices_cover_requested_range(self):
         self.assertEqual(list(FinancialConfig.KY_CAN_THIEP_CHOICES), list(range(1, 31)))

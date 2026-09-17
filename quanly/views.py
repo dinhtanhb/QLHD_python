@@ -909,6 +909,10 @@ def import_nhat_ky_can_thiep(request):
             exact_service = raw_service if raw_service in dict(PhanCongTre.LOAI_DV_CHOICES) else None
             service_group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} else "PHCN"
             service_filter = Q(loai_dich_vu=exact_service) if exact_service else Q(loai_dich_vu__in=service_codes[service_group])
+            sessions = parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0)
+            if sessions <= 0:
+                raise ValueError("Số buổi thực tế phải lớn hơn 0")
+            source_location = clean_empty_excel_value(get_excel_value(row, "DiaDiem", "Địa điểm"))
 
             assignment = None
             if hop_dong:
@@ -926,6 +930,37 @@ def import_nhat_ky_can_thiep(request):
                     assignment = fallback_assignments.filter(phan_bo__isnull=True, nhom_hd=source_group).order_by("id").first()
                 if assignment:
                     row_warnings.append("phân công không cùng phân bổ với HĐ liên kết")
+            if not assignment and historical_mode and exact_service:
+                template_assignments = PhanCongTre.objects.filter(tre=tre, phan_bo__can_bo=can_bo)
+                if source_group:
+                    grouped_templates = template_assignments.filter(
+                        Q(nhom_hd=source_group) | Q(phan_bo__nhom_hd=source_group)
+                    )
+                    if grouped_templates.exists():
+                        template_assignments = grouped_templates
+                same_service_group = [
+                    item for item in template_assignments.select_related("phan_bo", "nhom_hd")
+                    if PhanCongTre.service_group(item.loai_dich_vu) == service_group
+                ]
+                template_assignment = same_service_group[0] if same_service_group else template_assignments.first()
+                if template_assignment:
+                    assignment = PhanCongTre.objects.create(
+                        phan_bo=template_assignment.phan_bo,
+                        cbda_quan_ly=template_assignment.cbda_quan_ly,
+                        nhom_hd=source_group or template_assignment.nhom_hd,
+                        tre=tre,
+                        loai_dich_vu=exact_service,
+                        so_buoi_du_kien=max(sessions, 1),
+                        dinh_muc_di_lai=Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)),
+                        dia_diem_ct=source_location or template_assignment.dia_diem_ct,
+                        hinh_thuc_ct=template_assignment.hinh_thuc_ct,
+                        dot_phan_cong=template_assignment.dot_phan_cong,
+                        ky_phan_cong=template_assignment.ky_phan_cong,
+                        ngay_phan_cong=template_assignment.ngay_phan_cong,
+                        trang_thai=template_assignment.trang_thai,
+                        ghi_chu="Tự tạo từ import nhật ký lịch sử do thiếu phân công đúng dịch vụ.",
+                    )
+                    row_warnings.append(f"đã tạo phân công lịch sử cho dịch vụ {exact_service}")
             if not assignment:
                 raise ValueError(f"Không tìm thấy phân công của trẻ {ma_tre} cho CBCT {ma_cb} và dịch vụ {raw_service}")
 
@@ -945,11 +980,7 @@ def import_nhat_ky_can_thiep(request):
             ky_can_thiep = parse_int(get_excel_value(row, "KyCanThiep", "Kỳ can thiệp"), 0)
             if not 1 <= ky_can_thiep <= 30:
                 raise ValueError("Kỳ can thiệp phải từ 1 đến 30")
-            sessions = parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0)
-            if sessions <= 0:
-                raise ValueError("Số buổi thực tế phải lớn hơn 0")
-
-            dia_diem_ct = clean_empty_excel_value(get_excel_value(row, "DiaDiem", "Địa điểm")) or assignment.dia_diem_ct
+            dia_diem_ct = source_location or assignment.dia_diem_ct
             cbct_travel_raw = get_excel_value(row, "SoLuotDiLaiCBCT", "Số lượt đi lại CBCT")
             cbct_travel = parse_int(cbct_travel_raw, -1)
             if cbct_travel < 0:
@@ -976,14 +1007,45 @@ def import_nhat_ky_can_thiep(request):
                 "don_gia_cong": hop_dong.don_gia_cong if hop_dong else Decimal(str(FinancialConfig.DON_GIA_CONG)),
                 "dinh_muc_di_lai": (
                     (hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn)
-                    if hop_dong else (assignment.dinh_muc_di_lai or Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)))
+                    if hop_dong else Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1))
                 ),
                 "ghi_chu": note,
             }
-            _, is_created = NhatKyThucHien.objects.update_or_create(
-                hop_dong=hop_dong, phan_cong=assignment, ngay_thuc_hien=ngay,
-                gio_bat_dau=gio_bat_dau, gio_ket_thuc=gio_ket_thuc, defaults=defaults,
-            )
+            identity = NhatKyThucHien.objects.filter(
+                can_bo_nguon=can_bo, phan_cong=assignment, ngay_thuc_hien=ngay,
+                gio_bat_dau=gio_bat_dau, gio_ket_thuc=gio_ket_thuc,
+            ).first()
+            if not identity and historical_mode:
+                legacy_candidates = NhatKyThucHien.objects.filter(
+                    can_bo_nguon=can_bo,
+                    phan_cong__tre=tre,
+                    ngay_thuc_hien=ngay,
+                    du_lieu_lich_su=True,
+                )
+                if source_group:
+                    legacy_candidates = legacy_candidates.filter(
+                        Q(nhom_hd_nguon=source_group) | Q(nhom_hd_nguon__isnull=True)
+                    )
+                if legacy_candidates.count() == 1:
+                    identity = legacy_candidates.first()
+                    row_warnings.append("đã sửa bản ghi import cũ duy nhất của cùng CBCT/trẻ/ngày")
+
+            if identity:
+                identity.hop_dong = hop_dong
+                identity.phan_cong = assignment
+                identity.ngay_thuc_hien = ngay
+                identity.gio_bat_dau = gio_bat_dau
+                identity.gio_ket_thuc = gio_ket_thuc
+                for field, value in defaults.items():
+                    setattr(identity, field, value)
+                identity.save()
+                is_created = False
+            else:
+                NhatKyThucHien.objects.create(
+                    hop_dong=hop_dong, phan_cong=assignment, ngay_thuc_hien=ngay,
+                    gio_bat_dau=gio_bat_dau, gio_ket_thuc=gio_ket_thuc, **defaults,
+                )
+                is_created = True
             created += int(is_created)
             updated += int(not is_created)
             if row_warnings:

@@ -3696,3 +3696,18 @@ sóc, tách khỏi tiền công cán bộ:
   tiền công và đi lại vẫn dùng số tiền đã lưu trên từng nhật ký.
 - Kiểm thử database thật: trang Nhật ký hiển thị 25 dòng/trang, Thanh quyết toán có
   dữ liệu tổng hợp; lọc Nhóm HĐ + Kỳ hoạt động; cả bốn endpoint xuất file trả HTTP 200.
+
+113. SỬA IMPORT NHẬT KÝ SAI DỊCH VỤ, GIỜ VÀ ĐI LẠI
+
+- Đối chiếu dòng ABP0609/CBP2341 ngày 25/07/2026: nguồn là GDDB, Nhóm 23, Kỳ 14,
+  Trường, 07:30-08:30, PH đi lại 1. Database cũ lại lưu VLTL, Kỳ 1, địa điểm `Nh�`,
+  không có giờ, CBCT đi lại 1 và định mức đi lại 1 đồng.
+- Hàm đọc giờ hiện tại đã được xác nhận đọc 07:30/08:30 đúng, không cộng múi giờ.
+  Nguyên nhân là logic import cũ chọn phân công PHCN đầu tiên khi thiếu phân công đúng
+  dịch vụ và dùng các giá trị lỗi từ phân công cũ.
+- Import lịch sử nay tự tạo phân công đúng mã dịch vụ từ file khi còn thiếu. Khi chỉ
+  có một nhật ký cũ của cùng CBCT/trẻ/ngày, tái import sẽ sửa chính dòng đó thay vì
+  tạo thêm dòng hoặc giữ dữ liệu sai.
+- Khi chưa có hợp đồng, định mức đi lại dùng cấu hình 50.000 đồng, không lấy giá trị
+  bất thường từ phân công cũ. Kiểm thử rollback với đúng dòng mẫu cho kết quả GDDB,
+  Kỳ 14, Trường, 07:30-08:30, đi lại CBCT 0, đi lại PH 1, thành tiền 200.000 đồng.
