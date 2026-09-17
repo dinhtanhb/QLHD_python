@@ -3650,3 +3650,15 @@ sóc, tách khỏi tiền công cán bộ:
 - Migration 0019 đã áp dụng cục bộ; `manage.py check`,
   `makemigrations --check` và 10 test đều đạt. Không đưa `_qa/`,
   `quanly/document_templates/` hoặc `qlhd-roadmap.canvas.tsx` vào commit.
+
+110. SỬA TRANG CHỦ TRẢ VỀ NONE SAU ĐĂNG NHẬP
+
+- Nguyên nhân: helper `next_payment_round()` bị đặt chen giữa hàm `trang_chu`,
+  làm khối tạo context và `return render(...)` nằm sau câu lệnh `return` của
+  helper; vì vậy request `/` sau đăng nhập nhận `None`.
+- Đã chuyển helper ra sau toàn bộ hàm trang chủ, khôi phục đầy đủ context và
+  phản hồi template.
+- Bổ sung regression test xác nhận hàm trang chủ luôn trả response; chạy thực
+  tế với database hiện tại trả HTTP 200 và render 20.566 byte nội dung.
+- `manage.py check` và 11 test đều đạt khi chạy với biến môi trường kiểm thử
+  `DEBUG=True`.

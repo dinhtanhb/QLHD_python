@@ -2,13 +2,16 @@ from decimal import Decimal
 from datetime import date
 from types import SimpleNamespace
 
-from django.test import SimpleTestCase
+from unittest.mock import patch
+
+from django.test import RequestFactory, SimpleTestCase
 from django.urls import reverse
 
 from .financial import FinancialConfig, calculate_payment_breakdown, calculate_tncn, calculate_travel_flags, journal_conflict_types
 from .document_export import _allocation_context, _date_parts
 from .models import PhanCongTre
 from .payment_export import _group_journal_payment_rows
+from . import views
 
 
 class FinancialRulesTests(SimpleTestCase):
@@ -93,3 +96,35 @@ class FinancialRulesTests(SimpleTestCase):
         self.assertEqual(grouped[0]["actual_travel"], 1)
         self.assertEqual(grouped[0]["labor"], Decimal("400000"))
         self.assertEqual(grouped[0]["travel"], Decimal("50000"))
+
+
+class DashboardViewTests(SimpleTestCase):
+    def test_homepage_returns_response_after_login(self):
+        class EmptyQuerySet:
+            def __iter__(self):
+                return iter(())
+
+            def count(self):
+                return 0
+
+            def aggregate(self, **kwargs):
+                return {key: 0 for key in kwargs}
+
+            def filter(self, **kwargs):
+                return self
+
+        empty = EmptyQuerySet()
+        expected = object()
+        with (
+            patch.object(views.PhanBoChiTieu.objects, "all", return_value=empty),
+            patch.object(views.PhanCongTre.objects, "all", return_value=empty),
+            patch.object(views.HopDong.objects, "all", return_value=empty),
+            patch.object(views.Tre.objects, "filter", return_value=empty),
+            patch.object(views.CanBo.objects, "filter", return_value=empty),
+            patch.object(views.DonVi.objects, "filter", return_value=empty),
+            patch.object(views.NhomHD.objects, "filter", return_value=empty),
+            patch.object(views.DeXuatHopDong.objects, "count", return_value=0),
+            patch.object(views, "render", return_value=expected),
+        ):
+            response = views.trang_chu.__wrapped__(RequestFactory().get("/"))
+        self.assertIs(response, expected)

@@ -171,14 +171,6 @@ def trang_chu(request):
         )
         for item in allocations
     )
-
-
-def next_payment_round(can_bo, ky_can_thiep=None):
-    """Tự tính lần TT theo số kỳ can thiệp trước đó có nhật ký của CBCT."""
-    qs = NhatKyThucHien.objects.filter(hop_dong__can_bo=can_bo)
-    if ky_can_thiep:
-        qs = qs.filter(ky_can_thiep__lt=ky_can_thiep)
-    return qs.values("ky_can_thiep").distinct().count() + 1
     context = {
         "tong_tre": Tre.objects.filter(is_active=True).count(),
         "tong_can_bo": CanBo.objects.filter(is_active=True).count(),
@@ -198,6 +190,14 @@ def next_payment_round(can_bo, ky_can_thiep=None):
         "gia_tri_hop_dong": contracts.aggregate(total=Sum("gia_tri_hop_dong"))["total"] or 0,
     }
     return render(request, "quanly/trang_chu.html", context)
+
+
+def next_payment_round(can_bo, ky_can_thiep=None):
+    """Tự tính lần TT theo số kỳ can thiệp trước đó có nhật ký của CBCT."""
+    qs = NhatKyThucHien.objects.filter(hop_dong__can_bo=can_bo)
+    if ky_can_thiep:
+        qs = qs.filter(ky_can_thiep__lt=ky_can_thiep)
+    return qs.values("ky_can_thiep").distinct().count() + 1
 
 
 @dashboard_required
