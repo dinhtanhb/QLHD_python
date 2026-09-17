@@ -15,6 +15,11 @@ from . import views
 
 
 class FinancialRulesTests(SimpleTestCase):
+    def test_reference_keys_accept_geo_names_without_ids(self):
+        self.assertIn("dong nai", views.normalized_reference_keys("Tỉnh Đồng Nai", ("tỉnh",)))
+        self.assertIn("ha noi", views.normalized_reference_keys("Hà Nội"))
+        self.assertIn("tran bien", views.normalized_reference_keys("Phường Trấn Biên", ("phường",)))
+
     def test_intervention_journal_routes_are_registered(self):
         self.assertEqual(reverse("import_nhat_ky_can_thiep"), "/nhat-ky-can-thiep/import/")
         self.assertEqual(reverse("them_nhat_ky_can_thiep"), "/nhat-ky-can-thiep/them/")

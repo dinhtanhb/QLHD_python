@@ -3711,3 +3711,14 @@ sóc, tách khỏi tiền công cán bộ:
 - Khi chưa có hợp đồng, định mức đi lại dùng cấu hình 50.000 đồng, không lấy giá trị
   bất thường từ phân công cũ. Kiểm thử rollback với đúng dòng mẫu cho kết quả GDDB,
   Kỳ 14, Trường, 07:30-08:30, đi lại CBCT 0, đi lại PH 1, thành tiền 200.000 đồng.
+
+114. SỬA IMPORT CBCT THEO TÊN TỈNH/XÃ
+
+- Import CBCT đọc trực tiếp các cột `Tinh`/`Tỉnh` và `Xa`/`Xã` của file mẫu, không
+  bắt buộc `tinh_id` hoặc `xa_id`. Vẫn hỗ trợ ID/mã danh mục để tương thích file cũ.
+- Tên địa bàn được chuẩn hóa không phân biệt hoa thường, dấu tiếng Việt, khoảng trắng
+  và tiền tố hành chính như `Tỉnh`, `Thành phố`, `Xã`, `Phường`, `Thị trấn`.
+- Xã/Phường được tra trong đúng Tỉnh/Thành phố để tránh chọn nhầm tên trùng. Nếu tên
+  không tồn tại, hệ thống báo rõ dòng và giá trị cần bổ sung vào danh mục.
+- Kiểm thử transaction rollback với dòng `Đồng Nai` / `Trấn Biên` / `VietHealth` đã
+  tạo đúng liên kết Tỉnh, Xã, Đơn vị và không bỏ qua bản ghi.

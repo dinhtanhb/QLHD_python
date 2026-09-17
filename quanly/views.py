@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 import re
+import unicodedata
 import zipfile
 
 import pandas as pd
@@ -138,6 +139,41 @@ def get_excel_value(row, *names):
         if col is not None:
             return row[col]
     return None
+
+
+def normalized_reference_keys(value, prefixes=()):
+    """Sinh các khóa tra cứu không phân biệt hoa/thường, dấu và tiền tố hành chính."""
+    value = clean_empty_excel_value(value)
+    if value is None:
+        return set()
+
+    text = unicodedata.normalize("NFKD", value.casefold().replace("đ", "d"))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    text = re.sub(r"[^a-z0-9]+", " ", text).strip()
+    keys = {text} if text else set()
+    for prefix in prefixes:
+        normalized_prefix = unicodedata.normalize("NFKD", prefix.casefold().replace("đ", "d"))
+        normalized_prefix = "".join(char for char in normalized_prefix if not unicodedata.combining(char))
+        normalized_prefix = re.sub(r"[^a-z0-9]+", " ", normalized_prefix).strip()
+        if text.startswith(normalized_prefix + " "):
+            keys.add(text[len(normalized_prefix):].strip())
+    return {key for key in keys if key}
+
+
+def add_unique_reference(lookup, key, obj):
+    """Chỉ giữ khóa duy nhất; khóa trùng được đánh dấu để không chọn nhầm danh mục."""
+    if key not in lookup:
+        lookup[key] = obj
+    elif lookup[key] is None or lookup[key].pk != obj.pk:
+        lookup[key] = None
+
+
+def resolve_reference(value, lookup, label, prefixes=()):
+    for key in normalized_reference_keys(value, prefixes):
+        obj = lookup.get(key)
+        if obj is not None:
+            return obj
+    raise ValueError(f"Không tìm thấy {label} '{clean_empty_excel_value(value)}' trong danh mục")
 
 
 def service_is_cs(service):
@@ -537,6 +573,19 @@ def import_can_bo(request):
         messages.error(request, f"Không đọc được file Excel: {exc}")
         return render(request, "quanly/import_can_bo.html")
 
+    tinh_lookup = {}
+    for tinh in Tinh.objects.filter(is_active=True):
+        for raw_value in (tinh.pk, tinh.ma_tinh, tinh.ten_tinh):
+            for key in normalized_reference_keys(raw_value, ("tỉnh", "thành phố", "tp")):
+                add_unique_reference(tinh_lookup, key, tinh)
+
+    xa_lookup_by_tinh = {}
+    for xa in Xa.objects.filter(is_active=True).select_related("tinh"):
+        xa_lookup = xa_lookup_by_tinh.setdefault(xa.tinh_id, {})
+        for raw_value in (xa.pk, xa.ma_xa, xa.ten_xa):
+            for key in normalized_reference_keys(raw_value, ("xã", "phường", "thị trấn")):
+                add_unique_reference(xa_lookup, key, xa)
+
     created = updated = skipped = 0
     errors = []
     for row_no, (_, row) in enumerate(df.iterrows(), start=2):
@@ -561,6 +610,27 @@ def import_can_bo(request):
                 "ngay_cap": parse_date(get_excel_value(row, "NgayCapCCCD", "Ngày cấp CCCD", "Ngày cấp")),
                 "noi_cap": clean_empty_excel_value(get_excel_value(row, "NoiCapCCCD", "Nơi cấp CCCD", "Nơi cấp")),
             }
+            tinh_value = clean_empty_excel_value(
+                get_excel_value(row, "Tinh", "Tỉnh", "TenTinh", "Tên tỉnh", "MaTinh", "Mã tỉnh", "TinhID", "tinh_id")
+            )
+            xa_value = clean_empty_excel_value(
+                get_excel_value(row, "Xa", "Xã", "TenXa", "Tên xã", "MaXa", "Mã xã", "XaID", "xa_id")
+            )
+            if tinh_value:
+                tinh = resolve_reference(tinh_value, tinh_lookup, "Tỉnh/Thành phố", ("tỉnh", "thành phố", "tp"))
+                defaults["tinh"] = tinh
+                if xa_value:
+                    defaults["xa"] = resolve_reference(
+                        xa_value,
+                        xa_lookup_by_tinh.get(tinh.pk, {}),
+                        f"Xã/Phường thuộc {tinh.ten_tinh}",
+                        ("xã", "phường", "thị trấn"),
+                    )
+                else:
+                    defaults["xa"] = None
+            elif xa_value:
+                raise ValueError(f"Có Xã/Phường '{xa_value}' nhưng thiếu cột Tỉnh")
+
             don_vi_name = clean_empty_excel_value(get_excel_value(row, "DonViCongTac", "Đơn vị công tác", "Đơn vị"))
             if don_vi_name:
                 don_vi = DonVi.objects.filter(Q(ma_don_vi=don_vi_name) | Q(ten_don_vi__iexact=don_vi_name)).first()
