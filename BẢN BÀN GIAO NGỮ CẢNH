@@ -3738,3 +3738,19 @@ sóc, tách khỏi tiền công cán bộ:
   theo lưới 2x2; bỏ cấu trúc `btn-group` chứa form gây vỡ viền, xuống chữ và lệch hàng.
 - Kiểm thử rollback: hai dòng cùng khóa nhưng số buổi 10/20 tạo đủ 2 bản ghi; import
   lần hai cập nhật 2, không tạo thêm. Trang danh sách render HTTP 200.
+
+116. TÁCH PHÂN CÔNG CHÍNH THỨC KHỎI LIÊN KẾT KỸ THUẬT CỦA NHẬT KÝ
+
+- Tổng tăng từ 3.566 lên 3.823 do import Nhật ký lịch sử tự tạo 257 phân công GDDB
+  còn thiếu để giữ đúng dịch vụ nguồn. Cả 257 dòng đều có ghi chú tự tạo và được sinh
+  trong thời gian chạy import Nhật ký; không phải import Phân công bị nhân bản.
+- Bổ sung cờ `tu_dong_tu_nhat_ky`. Migration 0023 đánh dấu 257 dòng hiện có; các lần
+  import Nhật ký sau cũng gắn cờ ngay khi tạo liên kết kỹ thuật.
+- Danh sách/KPI Phân công, dashboard, số phân công tại Phân bổ và khối lượng Đề xuất
+  chỉ tính phân công chính thức. Nhật ký vẫn giữ liên kết kỹ thuật để hiển thị đúng
+  GDDB và phục vụ thanh quyết toán. Sau migration: tổng vật lý 3.823, chính thức 3.566,
+  kỹ thuật 257.
+- Sửa tìm kiếm khi phân công không có `phan_bo`: template không còn truy cập thuộc tính
+  qua `None`; bổ sung tìm theo CBDA. Kiểm thử `q=cbp0002` trả HTTP 200.
+- Bảng danh sách giảm cỡ chữ, padding, chiều rộng tối thiểu và cỡ nút để mỗi ô Trẻ/CBCT
+  hiển thị gọn khoảng hai dòng, vẫn cuộn ngang trên màn hình hẹp.

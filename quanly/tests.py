@@ -146,7 +146,7 @@ class DashboardViewTests(SimpleTestCase):
         expected = object()
         with (
             patch.object(views.PhanBoChiTieu.objects, "all", return_value=empty),
-            patch.object(views.PhanCongTre.objects, "all", return_value=empty),
+            patch.object(views.PhanCongTre.objects, "filter", return_value=empty),
             patch.object(views.HopDong.objects, "all", return_value=empty),
             patch.object(views.Tre.objects, "filter", return_value=empty),
             patch.object(views.CanBo.objects, "filter", return_value=empty),

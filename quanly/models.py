@@ -238,6 +238,11 @@ class PhanCongTre(TimeStampedModel):
     ngay_phan_cong = models.DateField(blank=True, null=True, verbose_name="Ngày phân công")
     trang_thai = models.CharField(max_length=20, choices=TRANG_THAI_CHOICES, default="DANG_CAN_THIEP", verbose_name="Trạng thái")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+    tu_dong_tu_nhat_ky = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="Phân công kỹ thuật tự tạo từ nhật ký",
+    )
 
     class Meta:
         ordering = ["-ngay_phan_cong", "-id"]

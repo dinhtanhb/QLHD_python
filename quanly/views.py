@@ -10,7 +10,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -205,7 +205,7 @@ def calculate_expected_value(so_tre_phcn, so_buoi_phcn, dm_phcn, so_tre_cs, so_b
 @dashboard_required
 def trang_chu(request):
     allocations = PhanBoChiTieu.objects.all()
-    assignments = PhanCongTre.objects.all()
+    assignments = PhanCongTre.objects.filter(tu_dong_tu_nhat_ky=False)
     contracts = HopDong.objects.all()
     allocation_value = sum(
         calculate_expected_value(
@@ -678,7 +678,9 @@ def danh_sach_phan_cong(request):
     phan_bo_id = request.GET.get("phan_bo_id", "").strip()
     nhom_hd_id = request.GET.get("nhom_hd", "").strip()
     dot_phan_cong = request.GET.get("dot_phan_cong", "").strip()
-    qs = PhanCongTre.objects.select_related("tre", "phan_bo__can_bo", "phan_bo__nhom_hd", "nhom_hd")
+    qs = PhanCongTre.objects.filter(tu_dong_tu_nhat_ky=False).select_related(
+        "tre", "phan_bo__can_bo", "phan_bo__nhom_hd", "nhom_hd"
+    )
 
     if phan_bo_id.isdigit():
         qs = qs.filter(phan_bo_id=int(phan_bo_id))
@@ -695,6 +697,8 @@ def danh_sach_phan_cong(request):
             | Q(tre__ho_ten__icontains=query)
             | Q(phan_bo__can_bo__ma_can_bo__icontains=query)
             | Q(phan_bo__can_bo__ho_ten__icontains=query)
+            | Q(cbda_quan_ly__icontains=query)
+            | Q(phan_bo__cbda_quan_ly__icontains=query)
         )
 
     page_obj = Paginator(qs.order_by("-ngay_phan_cong", "-id"), 20).get_page(request.GET.get("page"))
@@ -718,7 +722,7 @@ def danh_sach_phan_cong(request):
             "phcn_count": phcn_count,
             "cs_count": cs_count,
             "nhom_list": NhomHD.objects.filter(is_active=True).order_by("ma_nhom_hd"),
-            "dot_choices": PhanCongTre.objects.order_by("dot_phan_cong").values_list("dot_phan_cong", flat=True).distinct(),
+            "dot_choices": PhanCongTre.objects.filter(tu_dong_tu_nhat_ky=False).order_by("dot_phan_cong").values_list("dot_phan_cong", flat=True).distinct(),
             "filters": {"nhom_hd": nhom_hd_id, "dot_phan_cong": dot_phan_cong},
         },
     )
@@ -887,6 +891,7 @@ def import_phan_cong(request):
             )
 
             identity_qs = PhanCongTre.objects.filter(
+                tu_dong_tu_nhat_ky=False,
                 tre=tre,
                 loai_dich_vu=service,
                 dot_phan_cong=dot_value,
@@ -1062,6 +1067,7 @@ def import_nhat_ky_can_thiep(request):
                         ngay_phan_cong=template_assignment.ngay_phan_cong,
                         trang_thai=template_assignment.trang_thai,
                         ghi_chu="Tự tạo từ import nhật ký lịch sử do thiếu phân công đúng dịch vụ.",
+                        tu_dong_tu_nhat_ky=True,
                     )
                     row_warnings.append(f"đã tạo phân công lịch sử cho dịch vụ {exact_service}")
             if not assignment:
@@ -1186,7 +1192,16 @@ def phan_bo_chi_tieu(request):
 @hopdong_required
 def danh_sach_phan_bo(request):
     query = request.GET.get("q", "").strip()
-    qs = PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd").prefetch_related("danh_sach_phan_cong")
+    qs = (
+        PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd")
+        .annotate(
+            official_assignment_count=Count(
+                "danh_sach_phan_cong",
+                filter=Q(danh_sach_phan_cong__tu_dong_tu_nhat_ky=False),
+                distinct=True,
+            )
+        )
+    )
     if query:
         qs = qs.filter(Q(can_bo__ho_ten__icontains=query) | Q(can_bo__ma_can_bo__icontains=query) | Q(nhom_hd__ten_nhom_hd__icontains=query))
     page_obj = Paginator(qs.order_by("-ngay_lap", "-id"), 15).get_page(request.GET.get("page"))
@@ -1332,7 +1347,7 @@ def confirm_import_phan_bo(request):
 def build_proposal_from_allocation(phan_bo):
     if not phan_bo.can_bo_id:
         raise ValueError("Phân bổ chưa có CBCT; chưa thể tạo đề xuất hợp đồng.")
-    assignments = phan_bo.danh_sach_phan_cong.select_related("tre")
+    assignments = phan_bo.danh_sach_phan_cong.filter(tu_dong_tu_nhat_ky=False).select_related("tre")
     if not assignments.exists():
         raise ValueError("Phân bổ chưa có phân công trẻ; không đủ điều kiện tạo đề xuất hợp đồng.")
 
@@ -1417,7 +1432,7 @@ def danh_sach_de_xuat(request):
 def duyet_de_xuat(request, pk):
     proposal = get_object_or_404(DeXuatHopDong, pk=pk)
     if request.method == "POST":
-        if not proposal.phan_bo.danh_sach_phan_cong.exists():
+        if not proposal.phan_bo.danh_sach_phan_cong.filter(tu_dong_tu_nhat_ky=False).exists():
             messages.error(request, "Đề xuất chưa có phân công trẻ nên chưa thể duyệt.")
             return redirect("danh_sach_de_xuat")
         proposal.trang_thai = "DA_DUYET"
@@ -1550,7 +1565,7 @@ def chi_tiet_hop_dong(request, pk):
     khoi_luong = hop_dong.chi_tiet_khoi_luong.all().order_by("loai_dich_vu")
     phu_luc = hop_dong.phu_luc.all().prefetch_related("chi_tiet_phan_cong").order_by("-ngay_lap", "-id")
     ky_choices = (
-        PhanCongTre.objects.filter(phan_bo=hop_dong.de_xuat.phan_bo, ky_phan_cong__gte=2)
+        PhanCongTre.objects.filter(phan_bo=hop_dong.de_xuat.phan_bo, ky_phan_cong__gte=2, tu_dong_tu_nhat_ky=False)
         .values_list("ky_phan_cong", flat=True)
         .distinct()
         .order_by("ky_phan_cong")
