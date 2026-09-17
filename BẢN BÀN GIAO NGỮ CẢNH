@@ -3722,3 +3722,19 @@ sóc, tách khỏi tiền công cán bộ:
   không tồn tại, hệ thống báo rõ dòng và giá trị cần bổ sung vào danh mục.
 - Kiểm thử transaction rollback với dòng `Đồng Nai` / `Trấn Biên` / `VietHealth` đã
   tạo đúng liên kết Tỉnh, Xã, Đơn vị và không bỏ qua bản ghi.
+
+115. SỬA IMPORT PHÂN CÔNG BỊ GỘP DÒNG VÀ GIAO DIỆN BẢNG
+
+- Nguyên nhân tổng 3.566 dòng nguồn chỉ còn 3.550 bản ghi: khóa import cũ chỉ dùng
+  Trẻ + Dịch vụ + Nhóm HĐ + Đợt + Kỳ, nên 16 dòng lặp khóa bị tính là cập nhật vào
+  dòng trước thay vì một lượt phân công riêng.
+- Import mới ghép theo thứ tự xuất hiện: dòng thứ N của cùng khóa nghiệp vụ cập nhật
+  bản ghi thứ N; nếu chưa có thì tạo mới. Cách này giữ đủ các lượt trùng khóa và vẫn
+  không nhân bản khi import lại cùng file.
+- Đặt lại `phan_bo = None` ở đầu mỗi dòng, tránh dòng thiếu CBCT/Nhóm HĐ kế thừa nhầm
+  phân bổ của dòng Excel ngay trước đó. Khi cập nhật, toàn bộ số buổi, ngày, địa điểm,
+  hình thức, định mức, ghi chú và CBDA đều được đồng bộ lại.
+- Bảng Phân công có độ rộng cột ổn định, cuộn ngang khi màn hình hẹp và nhóm Thao tác
+  theo lưới 2x2; bỏ cấu trúc `btn-group` chứa form gây vỡ viền, xuống chữ và lệch hàng.
+- Kiểm thử rollback: hai dòng cùng khóa nhưng số buổi 10/20 tạo đủ 2 bản ghi; import
+  lần hai cập nhật 2, không tạo thêm. Trang danh sách render HTTP 200.

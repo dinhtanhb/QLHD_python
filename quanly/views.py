@@ -176,6 +176,17 @@ def resolve_reference(value, lookup, label, prefixes=()):
     raise ValueError(f"Không tìm thấy {label} '{clean_empty_excel_value(value)}' trong danh mục")
 
 
+def take_import_occurrence(identity_cache, occurrence_counts, key, loader):
+    """Ghép dòng Excel thứ N với bản ghi thứ N của cùng khóa nghiệp vụ."""
+    if key not in identity_cache:
+        identity_cache[key] = list(loader())
+    occurrence = occurrence_counts.get(key, 0)
+    occurrence_counts[key] = occurrence + 1
+    existing_items = identity_cache[key]
+    identity = existing_items[occurrence] if occurrence < len(existing_items) else None
+    return identity, existing_items
+
+
 def service_is_cs(service):
     return PhanCongTre.service_group(service) == "CS"
 
@@ -816,9 +827,12 @@ def import_phan_cong(request):
         return render(request, "quanly/import_phan_cong.html")
 
     created = updated = skipped = 0
+    identity_cache = {}
+    identity_occurrences = {}
     errors = []
     for row_no, (_, row) in enumerate(df.iterrows(), start=2):
         try:
+            phan_bo = None
             ma_tre = clean_empty_excel_value(get_excel_value(row, "IDChild", "MaTre", "Mã trẻ"))
             ma_cb = clean_empty_excel_value(get_excel_value(row, "Mã CB", "MaCB", "MaCBCT", "Mã CBCT"))
             cbda = clean_empty_excel_value(get_excel_value(row, "CBDA", "Mã CBDA", "CanBoDuAn"))
@@ -858,31 +872,49 @@ def import_phan_cong(request):
             service_map = {"VLTL": "VLTL", "HDTL": "HDTL", "NNTL": "NNTL", "GDDB": "GDDB", "CSXH": "CSXH", "CSYT": "CSYT"}
             service = service_map.get(service_upper, "CSXH" if "CS" in service_upper else "VLTL")
 
-            identity_qs = PhanCongTre.objects.filter(tre=tre, loai_dich_vu=service, dot_phan_cong=parse_int(get_excel_value(row, "Đợt phân công", "DotPhanCong"), 1), ky_phan_cong=parse_int(get_excel_value(row, "Kỳ phân công", "KyPhanCong"), 1))
-            identity_qs = identity_qs.filter(nhom_hd=nhom) if nhom else identity_qs.filter(nhom_hd__isnull=True, phan_bo__isnull=True)
-            identity = identity_qs.order_by("-id").first()
-            item = identity or PhanCongTre(
-                phan_bo=phan_bo,
-                nhom_hd=nhom,
+            so_buoi_du_kien = parse_int(get_excel_value(row, "Số buổi dự kiến", "SoBuoi"), 0)
+            dot_value = parse_int(get_excel_value(row, "Đợt phân công", "DotPhanCong"), 1)
+            ky_value = parse_int(get_excel_value(row, "Kỳ phân công", "KyPhanCong"), 1)
+            ngay_phan_cong = parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong"))
+            dia_diem_ct = clean_empty_excel_value(get_excel_value(row, "Địa điểm CT", "DiaDiemCT"))
+            hinh_thuc_ct = clean_empty_excel_value(get_excel_value(row, "Hình thức CT", "HinhThucCT"))
+            ghi_chu = clean_empty_excel_value(get_excel_value(row, "Ghi chú", "GhiChu"))
+            dinh_muc_di_lai = parse_decimal(
+                get_excel_value(row, "Định mức đi lại", "DMDL"),
+                (phan_bo.dinh_muc_di_lai_cs if phan_bo else Decimal("0"))
+                if PhanCongTre.service_group(service) == "CS"
+                else (phan_bo.dinh_muc_di_lai_phcn if phan_bo else Decimal("0")),
+            )
+
+            identity_qs = PhanCongTre.objects.filter(
                 tre=tre,
                 loai_dich_vu=service,
-                so_buoi_du_kien=parse_int(get_excel_value(row, "Số buổi dự kiến", "SoBuoi"), 0),
-                dinh_muc_di_lai=parse_decimal(
-                    get_excel_value(row, "Định mức đi lại", "DMDL"),
-                    (phan_bo.dinh_muc_di_lai_cs if phan_bo else Decimal("0"))
-                    if PhanCongTre.service_group(service) == "CS"
-                    else (phan_bo.dinh_muc_di_lai_phcn if phan_bo else Decimal("0")),
-                ),
-                dia_diem_ct=clean_empty_excel_value(get_excel_value(row, "Địa điểm CT", "DiaDiemCT")),
-                hinh_thuc_ct=clean_empty_excel_value(get_excel_value(row, "Hình thức CT", "HinhThucCT")),
-                dot_phan_cong=parse_int(get_excel_value(row, "Đợt phân công", "DotPhanCong"), 1),
-                ky_phan_cong=parse_int(get_excel_value(row, "Kỳ phân công", "KyPhanCong"), 1),
-                ngay_phan_cong=parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong")),
-                ghi_chu=clean_empty_excel_value(get_excel_value(row, "Ghi chú", "GhiChu")),
-                cbda_quan_ly=cbda,
+                dot_phan_cong=dot_value,
+                ky_phan_cong=ky_value,
+            )
+            identity_qs = identity_qs.filter(nhom_hd=nhom) if nhom else identity_qs.filter(nhom_hd__isnull=True)
+            identity_key = (tre.pk, service, nhom.pk if nhom else None, dot_value, ky_value)
+            identity, existing_items = take_import_occurrence(
+                identity_cache,
+                identity_occurrences,
+                identity_key,
+                lambda: identity_qs.order_by("id"),
+            )
+            item = identity or PhanCongTre(
+                tre=tre,
+                loai_dich_vu=service,
             )
             item.phan_bo = phan_bo
             item.nhom_hd = nhom
+            item.so_buoi_du_kien = so_buoi_du_kien
+            item.dinh_muc_di_lai = dinh_muc_di_lai
+            item.dia_diem_ct = dia_diem_ct
+            item.hinh_thuc_ct = hinh_thuc_ct
+            item.dot_phan_cong = dot_value
+            item.ky_phan_cong = ky_value
+            item.ngay_phan_cong = ngay_phan_cong
+            item.ghi_chu = ghi_chu
+            item.cbda_quan_ly = cbda
             item.save()
             if item.so_buoi_du_kien <= 0:
                 item.delete()
@@ -891,6 +923,7 @@ def import_phan_cong(request):
                 updated += 1
             else:
                 created += 1
+                existing_items.append(item)
         except Exception as exc:
             skipped += 1
             errors.append(f"Dòng {row_no}: {exc}")

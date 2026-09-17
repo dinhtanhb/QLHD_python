@@ -2,6 +2,27 @@
 {% load number_format %}
 {% block title %}Danh sách Phân công trẻ{% endblock %}
 {% block content %}
+<style>
+  .phan-cong-table { min-width: 1180px; table-layout: fixed; }
+  .phan-cong-table th, .phan-cong-table td { vertical-align: middle; }
+  .phan-cong-table th:nth-child(1) { width: 17%; }
+  .phan-cong-table th:nth-child(2) { width: 15%; }
+  .phan-cong-table th:nth-child(3) { width: 13%; }
+  .phan-cong-table th:nth-child(4) { width: 10%; }
+  .phan-cong-table th:nth-child(5) { width: 5%; }
+  .phan-cong-table th:nth-child(6) { width: 7%; }
+  .phan-cong-table th:nth-child(7) { width: 10%; }
+  .phan-cong-table th:nth-child(8) { width: 9%; }
+  .phan-cong-table th:nth-child(9) { width: 14%; }
+  .phan-cong-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .35rem;
+    min-width: 170px;
+  }
+  .phan-cong-actions .btn { width: 100%; white-space: nowrap; }
+  .phan-cong-actions form { margin: 0; }
+</style>
 <div class="container-fluid mt-4"><div class="card shadow">
   <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"><h5 class="mb-0">Phân công trẻ</h5><div><a href="{% url 'import_phan_cong' %}" class="btn btn-light btn-sm">Import Excel</a> <a href="{% url 'them_phan_cong' %}" class="btn btn-light btn-sm">+ Thêm</a></div></div>
   <div class="card-body">
@@ -16,8 +37,8 @@
       <div class="col-lg-2"><label class="form-label">Đợt phân công</label><select name="dot_phan_cong" class="form-select"><option value="">Tất cả đợt</option>{% for dot in dot_choices %}<option value="{{ dot }}" {% if filters.dot_phan_cong == dot|stringformat:'s' %}selected{% endif %}>Đợt {{ dot }}</option>{% endfor %}</select></div>
       <div class="col-auto align-self-end"><button class="btn btn-primary">Lọc</button></div><div class="col-auto align-self-end"><a href="{% url 'danh_sach_phan_cong' %}" class="btn btn-outline-secondary">Xóa lọc</a></div>
     </form>
-    <div class="table-responsive"><table class="table table-bordered table-hover align-middle"><thead class="table-dark"><tr><th>Trẻ</th><th>CBCT / CBDA</th><th>Nhóm HĐ</th><th>Dịch vụ</th><th>Buổi</th><th>Đợt/Kỳ</th><th>Ngày phân công</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-    {% for item in danh_sach %}<tr><td>{{ item.tre.ma_tre }}<br>{{ item.tre.ho_ten }}</td><td>{% if item.phan_bo and item.phan_bo.can_bo %}{{ item.phan_bo.can_bo.ma_can_bo }}<br>{{ item.phan_bo.can_bo.ho_ten }}{% else %}<span class="badge bg-warning text-dark">Chưa phân CBCT</span><br><small>CBDA: {{ item.cbda_quan_ly|default:item.phan_bo.cbda_quan_ly }}</small>{% endif %}</td><td>{% if item.nhom_hd %}{{ item.nhom_hd.ma_nhom_hd }} - {{ item.nhom_hd.ten_nhom_hd }}{% elif item.phan_bo %}{{ item.phan_bo.nhom_hd.ma_nhom_hd }} - {{ item.phan_bo.nhom_hd.ten_nhom_hd }}{% else %}<span class="text-muted">Chưa phân nhóm</span>{% endif %}</td><td>{{ item.get_loai_dich_vu_display }}<br><span class="badge bg-light text-dark">{{ item.nhom_dich_vu }}</span></td><td>{{ item.so_buoi_du_kien|intcomma }}</td><td>{{ item.dot_phan_cong|intcomma }} / {{ item.ky_phan_cong|intcomma }}</td><td>{{ item.ngay_phan_cong|date:"d/m/Y" }}</td><td>{{ item.get_trang_thai_display }}</td><td><div class="btn-group btn-group-sm"><a href="{% url 'sua_phan_cong' item.pk %}" class="btn btn-warning">Sửa</a>{% if item.phan_bo %}<a href="{% url 'dieu_chuyen_phan_cong' item.pk %}" class="btn btn-info">Điều chuyển</a>{% endif %}<a href="{% url 'lich_su_phan_cong' item.pk %}" class="btn btn-secondary">Lịch sử</a><form method="post" action="{% url 'xoa_phan_cong' item.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa phân công này?');">{% csrf_token %}<button type="submit" class="btn btn-danger">Xóa</button></form></div></td></tr>{% empty %}<tr><td colspan="9" class="text-center text-muted">Chưa có phân công phù hợp.</td></tr>{% endfor %}
+    <div class="table-responsive"><table class="table table-bordered table-hover align-middle phan-cong-table"><thead class="table-dark"><tr><th>Trẻ</th><th>CBCT / CBDA</th><th>Nhóm HĐ</th><th>Dịch vụ</th><th>Buổi</th><th>Đợt/Kỳ</th><th>Ngày phân công</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+    {% for item in danh_sach %}<tr><td>{{ item.tre.ma_tre }}<br>{{ item.tre.ho_ten }}</td><td>{% if item.phan_bo and item.phan_bo.can_bo %}{{ item.phan_bo.can_bo.ma_can_bo }}<br>{{ item.phan_bo.can_bo.ho_ten }}{% else %}<span class="badge bg-warning text-dark">Chưa phân CBCT</span><br><small>CBDA: {{ item.cbda_quan_ly|default:item.phan_bo.cbda_quan_ly }}</small>{% endif %}</td><td>{% if item.nhom_hd %}{{ item.nhom_hd.ma_nhom_hd }} - {{ item.nhom_hd.ten_nhom_hd }}{% elif item.phan_bo %}{{ item.phan_bo.nhom_hd.ma_nhom_hd }} - {{ item.phan_bo.nhom_hd.ten_nhom_hd }}{% else %}<span class="text-muted">Chưa phân nhóm</span>{% endif %}</td><td>{{ item.get_loai_dich_vu_display }}<br><span class="badge bg-light text-dark">{{ item.nhom_dich_vu }}</span></td><td>{{ item.so_buoi_du_kien|intcomma }}</td><td>{{ item.dot_phan_cong|intcomma }} / {{ item.ky_phan_cong|intcomma }}</td><td>{{ item.ngay_phan_cong|date:"d/m/Y" }}</td><td>{{ item.get_trang_thai_display }}</td><td><div class="phan-cong-actions"><a href="{% url 'sua_phan_cong' item.pk %}" class="btn btn-sm btn-warning">Sửa</a>{% if item.phan_bo %}<a href="{% url 'dieu_chuyen_phan_cong' item.pk %}" class="btn btn-sm btn-info">Điều chuyển</a>{% else %}<span></span>{% endif %}<a href="{% url 'lich_su_phan_cong' item.pk %}" class="btn btn-sm btn-secondary">Lịch sử</a><form method="post" action="{% url 'xoa_phan_cong' item.pk %}" onsubmit="return confirm('Xác nhận xóa phân công này?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger">Xóa</button></form></div></td></tr>{% empty %}<tr><td colspan="9" class="text-center text-muted">Chưa có phân công phù hợp.</td></tr>{% endfor %}
     </tbody></table></div>
     {% if page_obj.has_other_pages %}<nav class="mt-3"><ul class="pagination justify-content-center"><li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">{% if page_obj.has_previous %}<a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ query|urlencode }}&nhom_hd={{ filters.nhom_hd }}&dot_phan_cong={{ filters.dot_phan_cong }}">Trước</a>{% else %}<span class="page-link">Trước</span>{% endif %}</li><li class="page-item active"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li><li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">{% if page_obj.has_next %}<a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ query|urlencode }}&nhom_hd={{ filters.nhom_hd }}&dot_phan_cong={{ filters.dot_phan_cong }}">Sau</a>{% else %}<span class="page-link">Sau</span>{% endif %}</li></ul></nav>{% endif %}
   </div>

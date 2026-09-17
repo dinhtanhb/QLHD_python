@@ -15,6 +15,17 @@ from . import views
 
 
 class FinancialRulesTests(SimpleTestCase):
+    def test_import_occurrences_do_not_collapse_repeated_assignments(self):
+        first = object()
+        second = object()
+        cache = {}
+        occurrences = {}
+        loader = lambda: [first, second]
+
+        self.assertIs(views.take_import_occurrence(cache, occurrences, "same-key", loader)[0], first)
+        self.assertIs(views.take_import_occurrence(cache, occurrences, "same-key", loader)[0], second)
+        self.assertIsNone(views.take_import_occurrence(cache, occurrences, "same-key", loader)[0])
+
     def test_reference_keys_accept_geo_names_without_ids(self):
         self.assertIn("dong nai", views.normalized_reference_keys("Tỉnh Đồng Nai", ("tỉnh",)))
         self.assertIn("ha noi", views.normalized_reference_keys("Hà Nội"))
