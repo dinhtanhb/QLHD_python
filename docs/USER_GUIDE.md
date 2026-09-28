@@ -24,9 +24,9 @@ Mo `http://127.0.0.1:8000/` va dang nhap bang tai khoan duoc cap.
 6. Xuat DNTT/DSTK/DNCK va doi chieu so lieu trong file voi phieu.
 7. Lap Nghiem thu, sau do Thanh ly khi ket qua nghiem thu dat.
 
-## 3. Bao cao tong hop
+## 3. Bao cao hoat dong
 
-Mo menu `Bao cao tong hop`, chon Nhom HD/Ky/khoang ngay neu can. Bao cao gom KPI, bang theo Nhom-Ky, bang theo Tre-Dich vu va canh bao. Nut Excel tao file ba sheet de gui doi chieu.
+Mo menu `Bao cao hoat dong`, chon Nhom HD/Ky/khoang ngay neu can. Bao cao gom KPI, bang theo Nhom-Ky, bang theo Tre-Dich vu va canh bao. Nut Excel tao file ba sheet de gui doi chieu.
 
 ## 4. Ho so thanh toan
 

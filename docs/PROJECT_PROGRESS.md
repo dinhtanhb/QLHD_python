@@ -293,3 +293,10 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - Tao database UAT rieng `qlhd_codex_uat_20260929_c`, chay thanh cong toan bo migration den 0033; `manage.py check`, `makemigrations --check --dry-run` va 62/62 test deu dat tren MySQL. SQLite cung dat 62/62.
 - Ba management command bao cao/chuyen so duoc chuan hoa output ASCII an toan voi console Windows cp1252; da chay thanh cong tren UAT rong: 0 nhat ky thieu hop dong, 0 so cu, 0 so moi, 0 dong dry-run.
 - Sau dot nay can commit/push migration va command fix; database UAT la moi truong kiem thu, khong phai database van hanh.
+
+## Sua tao phieu theo Nhom HD/Ky va Bao cao hoat dong - 29/09/2026
+
+- Khi tao phieu theo Nhom HD + Ky, hop dong khong co nhat ky moi du dieu kien (chua phat sinh chi phi hoac da thanh toan) duoc bo qua co thong bao; chi loi nghiep vu thuc su moi rollback ca batch.
+- Them route alias `/bao-cao-hoat-dong/` cho trang bao cao, doi ten hien thi thanh `Bao cao hoat dong` va giu route `/bao-cao/` de tuong thich nguoc.
+- Chuan hoa thong bao batch thanh tieng Viet co dau; cac thong bao co noi dung du lieu van giu nguyen ma hop dong va ly do.
+- Kiem thu: SQLite 63/63, MySQL UAT 63/63; check va kiem tra migration dat; hai route bao cao tren server tra redirect dang nhap 302 thay vi 404.

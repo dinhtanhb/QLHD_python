@@ -15,6 +15,10 @@ from ..models import CauHinhThue, ChiTietPhieuThanhToan, HopDong, NhatKyThucHien
 logger = logging.getLogger(__name__)
 
 
+class NoEligiblePaymentJournals(ValidationError):
+    """A contract has no new journal for the selected intervention period."""
+
+
 class PaymentJournalSnapshot:
     """Giao diện tương thích với exporter, dùng số liệu đã chốt trong phiếu."""
 
@@ -148,7 +152,9 @@ def tao_phieu_thanh_toan(can_bo, hop_dong, ky_can_thiep, user=None):
                 raise ValidationError("Hợp đồng chưa ở trạng thái được thanh toán.")
             journals = _eligible_journals(can_bo, locked_contract, ky_can_thiep)
             if not journals:
-                raise ValidationError("Không có nhật ký đủ điều kiện để tạo phiếu thanh toán.")
+                raise NoEligiblePaymentJournals(
+                    "Không có nhật ký mới đủ điều kiện để tạo phiếu thanh toán."
+                )
 
             latest_round = PhieuThanhToan.objects.filter(can_bo=can_bo, hop_dong=locked_contract, hoat_dong=True).aggregate(
                 value=Max("lan_thanh_toan")

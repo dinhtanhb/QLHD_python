@@ -99,6 +99,7 @@ from .models import (
 )
 from .services.payment_ledger import (
     huy_phieu as huy_phieu_thanh_toan,
+    NoEligiblePaymentJournals,
     snapshot_journals,
     tao_phieu_thanh_toan as tao_phieu_thanh_toan_service,
     xac_nhan_chi,
@@ -3598,6 +3599,7 @@ def tao_phieu_thanh_toan(request):
                 trang_thai__in={"DU_THAO", "HUY", "THANH_LY"}
             ).select_related("can_bo")
             errors = []
+            skipped = []
             created = 0
             try:
                 with transaction.atomic():
@@ -3605,16 +3607,23 @@ def tao_phieu_thanh_toan(request):
                         try:
                             tao_phieu_thanh_toan_service(contract.can_bo, contract, int(ky), request.user)
                             created += 1
+                        except NoEligiblePaymentJournals as exc:
+                            skipped.append(f"{contract.so_hop_dong}: {exc.messages[0] if exc.messages else exc}")
                         except ValidationError as exc:
                             errors.append(f"{contract.so_hop_dong}: {exc.messages[0] if exc.messages else exc}")
                     if errors:
                         raise ValidationError("Batch payment creation must be all-or-nothing.")
             except ValidationError:
-                messages.error(request, "Khong tao phieu nao vi batch co dong khong du dieu kien.")
+                messages.error(request, "Không tạo phiếu nào vì nhóm có dòng không đủ điều kiện.")
                 for error in errors:
                     messages.warning(request, error)
             else:
-                messages.success(request, f"Da tao {created} phieu thanh toan trong mot giao dich.")
+                if created:
+                    messages.success(request, f"Đã tạo {created} phiếu thanh toán trong một giao dịch.")
+                else:
+                    messages.info(request, "Không có hợp đồng nào phát sinh nhật ký mới đủ điều kiện để tạo phiếu.")
+                for item in skipped:
+                    messages.info(request, item)
             return redirect("danh_sach_phieu_thanh_toan")
     return render(request, "quanly/tao_phieu_thanh_toan.html", {
         "nhom_list": NhomHD.objects.filter(is_active=True),

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 from django.contrib.auth.models import Group, User
+from django.contrib.messages import get_messages
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from unittest.mock import patch
@@ -717,6 +718,56 @@ class DatabaseRegressionTests(TestCase):
         workbook = load_workbook(BytesIO(workbook_response.content), read_only=True)
         self.assertEqual(workbook.sheetnames, ["TongHop", "TheoNhomKy", "TheoTreDichVu"])
         workbook.close()
+        self.assertEqual(self.client.get(reverse("bao_cao_hoat_dong")).status_code, 200)
+
+    def test_batch_payment_skips_contracts_without_new_journals(self):
+        assignment = PhanCongTre.objects.create(
+            phan_bo=self.allocation,
+            can_bo_nguon=self.cb1,
+            nhom_hd=self.group,
+            tre=self.child,
+            loai_dich_vu="VLTL",
+            so_buoi_du_kien=20,
+            dinh_muc_di_lai=Decimal("50000"),
+        )
+        active_contract = HopDong.objects.create(
+            can_bo=self.cb1,
+            nhom_hd=self.group,
+            so_hop_dong="HD-BATCH-VALID",
+            ngay_ky=date(2026, 9, 1),
+            tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30),
+            gia_tri_hop_dong=Decimal("10000000"),
+            trang_thai="DA_KY",
+        )
+        no_cost_contract = HopDong.objects.create(
+            can_bo=self.cb2,
+            nhom_hd=self.group,
+            so_hop_dong="HD-BATCH-EMPTY",
+            ngay_ky=date(2026, 9, 1),
+            tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30),
+            gia_tri_hop_dong=Decimal("10000000"),
+            trang_thai="DA_KY",
+        )
+        NhatKyThucHien.objects.create(
+            hop_dong=active_contract,
+            phan_cong=assignment,
+            ngay_thuc_hien=date(2026, 9, 10),
+            ky_can_thiep=13,
+            so_buoi_thuc_hien=1,
+            don_gia_cong=Decimal("200000"),
+            dinh_muc_di_lai=Decimal("50000"),
+        )
+
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("tao_phieu_thanh_toan"), {"nhom_hd": self.group.pk, "ky": 13})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(PhieuThanhToan.objects.filter(hop_dong=active_contract).count(), 1)
+        self.assertEqual(PhieuThanhToan.objects.filter(hop_dong=no_cost_contract).count(), 0)
+        message_text = " ".join(str(message) for message in get_messages(response.wsgi_request))
+        self.assertIn("Đã tạo 1 phiếu thanh toán", message_text)
+        self.assertIn("Không có nhật ký mới đủ điều kiện", message_text)
 
     def test_readonly_workflows_are_hidden_from_unapproved_users(self):
         self.client.force_login(self.viewer)
