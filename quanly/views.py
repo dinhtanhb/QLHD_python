@@ -455,7 +455,7 @@ def danh_sach_don_vi(request):
     qs = DonVi.objects.all()
     if query:
         qs = qs.filter(Q(ma_don_vi__icontains=query) | Q(ten_don_vi__icontains=query) | Q(mstdv__icontains=query))
-    page_obj = Paginator(qs.order_by("ten_don_vi"), 15).get_page(request.GET.get("page"))
+    page_obj = Paginator(qs.order_by("-ma_don_vi", "-id"), 15).get_page(request.GET.get("page"))
     contract_unit_ids = HopDong.objects.filter(don_vi__isnull=False).values("don_vi_id").distinct()
     kpi = {
         "total": DonVi.objects.count(),

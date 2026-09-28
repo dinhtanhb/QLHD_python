@@ -672,6 +672,14 @@ class DatabaseRegressionTests(TestCase):
         don_vi_kpi = self.client.get(reverse("danh_sach_don_vi")).context["kpi"]
         self.assertEqual(don_vi_kpi, {"total": 1, "active": 1, "with_staff": 1, "with_contract": 0, "without_contract": 1})
 
+    def test_don_vi_list_is_sorted_by_code_descending(self):
+        DonVi.objects.create(ma_don_vi="ZZZ-001", ten_don_vi="Đơn vị Z")
+        DonVi.objects.create(ma_don_vi="AAA-999", ten_don_vi="Đơn vị A")
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("danh_sach_don_vi"))
+        codes = [item.ma_don_vi for item in response.context["page_obj"].object_list]
+        self.assertEqual(codes, sorted(codes, reverse=True))
+
     def test_khoa_phan_bo_requires_post_and_admin(self):
         self.client.force_login(self.admin)
         get_response = self.client.get(reverse("khoa_phan_bo", args=[self.allocation.pk]))

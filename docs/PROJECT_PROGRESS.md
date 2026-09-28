@@ -255,3 +255,9 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - Địa bàn ưu tiên quy ước mã ổn định đang có trong dữ liệu: trẻ `CBP/CDN`, CBCT `ABP/ADN`; các mã khác dùng trường Tỉnh làm fallback. Kiểm tra dữ liệu thật cho thấy 2.165 trẻ hiện chưa gắn bản ghi Tỉnh, nên nếu chỉ đếm theo khóa ngoại Tỉnh sẽ cho KPI địa bàn sai.
 - Đã bổ sung test hồi quy kiểm tra context KPI và số đếm địa bàn theo fixture; kiểm thử hiện đạt `55/55`.
 - Rủi ro còn lại: khi thêm quy ước mã địa bàn mới cần cập nhật logic fallback hoặc nhập đầy đủ trường Tỉnh để KPI tiếp tục chính xác.
+
+## Sắp xếp Danh mục Đơn vị theo mã — 28/09/2026
+
+- Trang `danh_sach_don_vi` hiện sắp xếp mã đơn vị giảm dần (`-ma_don_vi`), dùng `-id` làm tiêu chí phụ khi mã trùng.
+- Bổ sung test hồi quy xác nhận thứ tự danh sách sau phân trang.
+- Kiểm thử sau thay đổi: `manage.py check`, `makemigrations --check --dry-run`, `manage.py test quanly.tests` đạt `56/56`.
