@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from .financial import FinancialConfig, calculate_payment_breakdown
 from .models import (
+    ChiTietGiaHanKhoiLuong,
     ChiTietKhoiLuongHopDong,
     ChiTietPhuLucPhanCong,
     ChiTietThanhToan,
@@ -27,6 +28,8 @@ CONTRACT_TEMPLATE = TEMPLATE_ROOT / "hop_dong" / "Mau_HopDong.docx"
 ANNEX_TEMPLATE = TEMPLATE_ROOT / "phu_luc" / "Mau_PhuLucPhanCong.docx"
 ACCEPTANCE_TEMPLATE = TEMPLATE_ROOT / "nghiem_thu_thanh_ly" / "Mau_BBNT.docx"
 LIQUIDATION_TEMPLATE = TEMPLATE_ROOT / "nghiem_thu_thanh_ly" / "Mau_TLHD.docx"
+EXTENSION_TIME_TEMPLATE = TEMPLATE_ROOT / "phu_luc_gia_han" / "Mau_GHHD_ThoiGian.docx"
+EXTENSION_VOLUME_TEMPLATE = TEMPLATE_ROOT / "phu_luc_gia_han" / "Mau_GHHD_KhoiLuong.docx"
 PAYMENT_REQUEST_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DNTT.docx"
 COMMITMENT_TEMPLATE = TEMPLATE_ROOT / "thanh_toan_cong_can_thiep" / "Mau_DNCK.xlsx"
 PLACEHOLDER_PATTERN = re.compile(r"\{\{[^{}]+\}\}")
@@ -36,9 +39,24 @@ def _document(path):
     """Nạp python-docx khi thực sự xuất file, không chặn Django khởi động."""
     try:
         from docx import Document
+        from docx.enum.section import WD_ORIENT
+        from docx.shared import Mm
     except ImportError as exc:
         raise ValidationError("Thiếu thư viện python-docx. Hãy cài dependencies trong requirements.txt.") from exc
-    return Document(str(path))
+    document = Document(str(path))
+    # Chuẩn hóa ở runtime để file xuất không phụ thuộc hoàn toàn vào thiết lập
+    # cũ của template. Giữ hướng ngang nếu sau này bổ sung một mẫu ngang.
+    for section in document.sections:
+        is_landscape = section.orientation == WD_ORIENT.LANDSCAPE
+        section.page_width = Mm(297 if is_landscape else 210)
+        section.page_height = Mm(210 if is_landscape else 297)
+        section.top_margin = Mm(20)
+        section.bottom_margin = Mm(20)
+        section.left_margin = Mm(20)
+        section.right_margin = Mm(20)
+        section.header_distance = Mm(10)
+        section.footer_distance = Mm(10)
+    return document
 
 
 def _money(value):
@@ -176,7 +194,7 @@ def export_liquidation_record(hop_dong, record):
     return _export_simple_contract_record(hop_dong, record, LIQUIDATION_TEMPLATE, _record_context(hop_dong, record))
 
 
-def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_tt=None):
+def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_tt=None, nguoi_de_nghi=None):
     """Xuất ĐNTT Word trực tiếp từ tập nhật ký đã lọc."""
     journals = list(journals)
     if not journals:
@@ -230,6 +248,13 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_
         context.update({f"STT_Lan{index}": "", f"NoiDung_Lan{index}": "", f"SoTien_Lan{index}": ""})
     document = _document(PAYMENT_REQUEST_TEMPLATE)
     _replace_document(document, context)
+    requester_name = getattr(nguoi_de_nghi, "ho_ten", nguoi_de_nghi) or staff.ho_ten
+    if len(document.tables) > 1 and document.tables[1].rows:
+        requester_cell = document.tables[1].rows[0].cells[-1]
+        for paragraph in requester_cell.paragraphs:
+            if staff.ho_ten in paragraph.text:
+                for run in paragraph.runs:
+                    run.text = run.text.replace(staff.ho_ten, requester_name)
     title = f"L{payment_round}_DNTT - {staff.ma_can_bo} {staff.ho_ten}"
     sentence = f"Tôi đề nghị Quý đơn vị thanh toán phí dịch vụ lần {payment_round:02d}, chi tiết như sau:"
     for paragraph in document.paragraphs:
@@ -408,6 +433,78 @@ def _build_annex_document(hop_dong, rows):
     _fill_assignment_table(document, hop_dong, rows)
     _replace_document(document, _annex_context(hop_dong, rows))
     return document
+
+
+def _extension_context(extension):
+    """Tạo dữ liệu thay thế cho mẫu phụ lục gia hạn thời gian/khối lượng."""
+    hop_dong = extension.hop_dong
+    staff = hop_dong.can_bo
+    if not staff:
+        raise ValidationError("Phụ lục gia hạn theo mẫu này chỉ áp dụng cho hợp đồng CBCT.")
+    contract_date = _date_parts(hop_dong.ngay_ky)
+    extension_date = _date_parts(extension.ngay_lap)
+    values = {
+        "MaSoGVMN": staff.ma_can_bo,
+        "HoTenGVMN": staff.ho_ten,
+        "SoHopDong": hop_dong.so_hop_dong,
+        "NgayKy_Ngay": contract_date["Ngay"],
+        "NgayKy_Thang": contract_date["Thang"],
+        "NgayKy_Nam": contract_date["Nam"],
+        "NgayGiaHan_Ngay": extension_date["Ngay"],
+        "NgayGiaHan_Thang": extension_date["Thang"],
+        "NgayGiaHan_Nam": extension_date["Nam"],
+        "NgayHieuLuc_Ngay": extension_date["Ngay"],
+        "NgayHieuLuc_Thang": extension_date["Thang"],
+        "NgayHieuLuc_Nam": extension_date["Nam"],
+        "TuNgay": hop_dong.tu_ngay.strftime("%d/%m/%Y") if hop_dong.tu_ngay else "",
+        "DenNgayMoi": extension.den_ngay_moi.strftime("%d/%m/%Y") if extension.den_ngay_moi else "",
+        "DiaChi": staff.dia_chi or "",
+        "CCCD": staff.cccd or "",
+        "NgayCapCCCD": staff.ngay_cap.strftime("%d/%m/%Y") if staff.ngay_cap else "",
+        "NoiCapCCCD": staff.noi_cap or "",
+        "DienThoai": staff.dien_thoai or "",
+        "Email": staff.email or "",
+        "TongTienTangThem": _money(extension.tong_tien_tang_them),
+        "TongTien": _money(extension.tong_tien_moi),
+        "TongTienBangChu": _number_to_words(extension.tong_tien_moi),
+    }
+    for item in extension.chi_tiet_gia_han_khoi_luong.all():
+        is_cs = PhanCongTre.service_group(item.loai_dich_vu) == "CS"
+        suffix = "CSXH" if is_cs else "PHCN"
+        values.update({
+            f"TongTre{suffix}": item.so_tre_cu,
+            f"TongTre{suffix}Moi": item.so_tre_moi,
+            f"TongBuoi{suffix}Moi": item.so_buoi_moi,
+            f"ThanhTien{suffix}Moi": _money(item.so_tre_moi * item.so_buoi_moi * item.don_gia_cong),
+            f"HoTroDiLai{suffix}Moi": _money(item.so_tre_moi * item.so_buoi_moi * item.dinh_muc_di_lai),
+        })
+    for key in (
+        "TongTrePHCN", "TongTrePHCNMoi", "TongBuoiPHCNMoi", "ThanhTienPHCNMoi", "HoTroDiLaiPHCNMoi",
+        "TongTreCSXH", "TongTreCSXHMoi", "TongBuoiCSXHMoi", "ThanhTienCSXHMoi", "HoTroDiLaiCSXHMoi",
+    ):
+        values.setdefault(key, 0 if key.startswith(("TongTre", "TongBuoi")) else "0")
+    return values
+
+
+def export_extension_annex(extension):
+    """Xuất phụ lục gia hạn theo đúng mẫu thời gian hoặc khối lượng."""
+    template = (
+        EXTENSION_TIME_TEMPLATE
+        if extension.loai_phu_luc == "GIA_HAN_THOI_GIAN"
+        else EXTENSION_VOLUME_TEMPLATE
+    )
+    if not template.exists():
+        raise ValidationError(f"Chưa có template {template.name}.")
+    document = _document(template)
+    _replace_document(document, _extension_context(extension))
+    title = f"GHHD - {extension.hop_dong.can_bo.ma_can_bo} {extension.hop_dong.can_bo.ho_ten}"
+    for paragraph in document.paragraphs:
+        if paragraph.text.strip().startswith("GHHD -"):
+            paragraph.text = title
+    output = BytesIO()
+    document.save(output)
+    output.seek(0)
+    return output
 
 
 def _append_document(target, source):

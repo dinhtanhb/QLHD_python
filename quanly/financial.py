@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 from datetime import time
+import unicodedata
 
 class FinancialConfig:
     # Thuế TNCN
@@ -51,6 +52,26 @@ def times_overlap(start_a, end_a, start_b, end_b):
     return start_a < end_b and start_b < end_a
 
 
+def normalize_travel_location(value):
+    """Chuẩn hóa địa điểm về nhóm dùng để tính lượt đi lại."""
+    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode().lower()
+    text = " ".join(text.replace("_", " ").split())
+    if "truong" in text:
+        return "truong"
+    if "nha" in text:
+        return "nha"
+    if "khac" in text:
+        return "khac"
+    return ""
+
+
+def sessions_join(start_a, end_a, start_b, end_b):
+    """True nếu hai ca chạm nhau hoặc chồng lên nhau trong cùng ngày."""
+    if not all((start_a, end_a, start_b, end_b)):
+        return False
+    return start_a <= end_b and start_b <= end_a
+
+
 def journal_conflict_types(current, previous_records):
     """Trả về các cảnh báo trùng lịch của một nhật ký với các nhật ký trước đó.
 
@@ -63,48 +84,59 @@ def journal_conflict_types(current, previous_records):
             continue
         if not times_overlap(getattr(current, "start", None), getattr(current, "end", None), getattr(other, "start", None), getattr(other, "end", None)):
             continue
-        if getattr(other, "child_id", None) == getattr(current, "child_id", None) and getattr(other, "service", None) != getattr(current, "service", None):
+        current_child = getattr(current, "child_id", None)
+        other_child = getattr(other, "child_id", None)
+        if current_child is not None and other_child is not None and other_child == current_child and getattr(other, "service", None) != getattr(current, "service", None):
             result.append("Trùng lịch CT")
-        if getattr(other, "cb_id", None) == getattr(current, "cb_id", None) and getattr(other, "child_id", None) != getattr(current, "child_id", None):
+        current_cb = getattr(current, "cb_id", None)
+        other_cb = getattr(other, "cb_id", None)
+        if current_cb is not None and other_cb is not None and other_cb == current_cb and other_child != current_child:
             result.append("Trùng CBCT")
     return sorted(set(result))
 
 
 def calculate_travel_flags(current, previous_records):
-    """Tính lượt đi lại CBCT và PH theo cùng quy tắc với file Excel nghiệp vụ."""
+    """Tính lượt đi lại theo cụm ca liên tiếp trong cùng ngày.
+
+    PH đi cùng một trẻ nên được gom theo trẻ. CBCT tại ``Khác`` chỉ di chuyển
+    tới một địa điểm trong ngày nên được gom theo CBCT, kể cả khi phục vụ
+    nhiều trẻ. Hai ca nối tiếp (ví dụ 8-9 và 9-10) chỉ tính một lượt.
+    """
     child = getattr(current, "child_id", None)
     cb = getattr(current, "cb_id", None)
     ace = (getattr(current, "ace", None) or "").strip()
     date_value = getattr(current, "date", None)
     start = getattr(current, "start", None)
     end = getattr(current, "end", None)
-    location = (getattr(current, "location", None) or "").strip().lower()
-    service = getattr(current, "service", None) or ""
+    location = normalize_travel_location(getattr(current, "location", None))
     current_id = getattr(current, "record_id", None)
     ordered = [x for x in previous_records if getattr(x, "date", None) == date_value]
 
+    current_order = (start, end, current_id or 0)
     cbct_repeat = False
     parent_repeat = False
     for other in ordered:
         other_start, other_end = getattr(other, "start", None), getattr(other, "end", None)
-        if not all((child, date_value, start, end)):
+        if not all((date_value, start, end, other_start, other_end)):
             continue
-        same_location = (getattr(other, "location", None) or "").strip().lower() == location
-        prior = current_id is None or getattr(other, "record_id", None) is None or getattr(other, "record_id", 0) < current_id
-        same_child = getattr(other, "child_id", None) == child
-        same_cb = getattr(other, "cb_id", None) == cb
+        if current_id is not None and getattr(other, "record_id", None) == current_id:
+            continue
+        if normalize_travel_location(getattr(other, "location", None)) != location:
+            continue
+        other_child = getattr(other, "child_id", None)
+        other_cb = getattr(other, "cb_id", None)
+        same_child = child is not None and other_child is not None and other_child == child
+        same_cb = cb is not None and other_cb is not None and other_cb == cb
         other_ace = (getattr(other, "ace", None) or "").strip()
-        if same_location and same_cb and same_child and getattr(other, "start", None) and getattr(other, "start") < start and getattr(other, "end", None) >= start:
+        same_parent = same_child or (ace and ace == other_ace)
+        cbct_scope = same_cb and (location == "khac" or same_child or (ace and ace == other_ace))
+        other_order = (other_start, other_end, getattr(other, "record_id", None) or 0)
+        is_previous_session = other_order < current_order
+        if cbct_scope and is_previous_session and sessions_join(start, end, other_start, other_end):
             cbct_repeat = True
-        if same_location and same_cb and same_child and getattr(other, "start", None) == start and (getattr(other, "service", None) or "") < service:
-            cbct_repeat = True
-        if ace and ace == other_ace and same_location and same_cb and getattr(other, "start", None) and getattr(other, "start") < start and getattr(other, "end", None) >= start:
-            cbct_repeat = True
-        if ace and ace == other_ace and same_location and same_cb and getattr(other, "start", None) == start and getattr(other, "child_id", None) is not None and getattr(other, "child_id") < child:
-            cbct_repeat = True
-        if prior and same_location and (same_child or (ace and ace == other_ace)) and times_overlap(start, end, other_start, other_end):
+        if same_parent and is_previous_session and sessions_join(start, end, other_start, other_end):
             parent_repeat = True
 
-    cbct_trip = 1 if location in {"nhà", "tại nhà", "khác"} and not cbct_repeat else 0
-    parent_trip = 1 if location in {"trường", "tại trường", "khác"} and not parent_repeat else 0
+    cbct_trip = 1 if location in {"nha", "khac"} and not cbct_repeat else 0
+    parent_trip = 1 if location in {"truong", "khac"} and not parent_repeat else 0
     return {"so_luot_di_lai_cbct": cbct_trip, "so_luot_di_lai_ph": parent_trip}

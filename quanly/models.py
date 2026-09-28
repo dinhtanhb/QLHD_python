@@ -454,6 +454,8 @@ class PhuLucHopDong(TimeStampedModel):
         ("KY_1", "Phụ lục phân công Kỳ 1"),
         ("BO_SUNG", "Phụ lục bổ sung"),
         ("DIEU_CHINH", "Phụ lục điều chỉnh"),
+        ("GIA_HAN_THOI_GIAN", "Gia hạn thời gian"),
+        ("GIA_HAN_KHOI_LUONG", "Gia hạn khối lượng"),
         ("KHAC", "Phụ lục khác"),
     ]
 
@@ -462,6 +464,10 @@ class PhuLucHopDong(TimeStampedModel):
     so_phu_luc = models.CharField(max_length=50, blank=True, null=True, verbose_name="Số phụ lục")
     ngay_lap = models.DateField(default=timezone.now, verbose_name="Ngày lập")
     is_signed = models.BooleanField(default=False, verbose_name="Đã ký")
+    den_ngay_cu = models.DateField(null=True, blank=True, verbose_name="Ngày kết thúc cũ")
+    den_ngay_moi = models.DateField(null=True, blank=True, verbose_name="Ngày kết thúc mới")
+    tong_tien_tang_them = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Giá trị tăng thêm")
+    tong_tien_moi = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Giá trị sau điều chỉnh")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
 
     class Meta:
@@ -470,6 +476,36 @@ class PhuLucHopDong(TimeStampedModel):
 
     def __str__(self):
         return f"{self.hop_dong.so_hop_dong} - {self.get_loai_phu_luc_display()}"
+
+
+class ChiTietGiaHanKhoiLuong(TimeStampedModel):
+    """Khối lượng cũ/mới được chốt trong phụ lục gia hạn khối lượng."""
+
+    phu_luc = models.ForeignKey(
+        PhuLucHopDong,
+        on_delete=models.CASCADE,
+        related_name="chi_tiet_gia_han_khoi_luong",
+        verbose_name="Phụ lục",
+    )
+    loai_dich_vu = models.CharField(max_length=10, choices=PhanCongTre.LOAI_DV_CHOICES, verbose_name="Loại dịch vụ")
+    so_tre_cu = models.PositiveIntegerField(default=0, verbose_name="Số trẻ cũ")
+    so_tre_moi = models.PositiveIntegerField(default=0, verbose_name="Số trẻ sau điều chỉnh")
+    so_buoi_cu = models.PositiveIntegerField(default=0, verbose_name="Số buổi cũ")
+    so_buoi_moi = models.PositiveIntegerField(default=0, verbose_name="Số buổi sau điều chỉnh")
+    don_gia_cong = models.DecimalField(max_digits=12, decimal_places=0, default=Decimal("0"), verbose_name="Đơn giá công")
+    dinh_muc_di_lai = models.DecimalField(max_digits=12, decimal_places=0, default=Decimal("0"), verbose_name="Định mức đi lại")
+    thanh_tien = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Thành tiền")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["phu_luc", "loai_dich_vu"], name="uq_gia_han_khoi_luong_dv"),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.thanh_tien = Decimal(self.so_tre_moi) * Decimal(self.so_buoi_moi) * (
+            Decimal(self.don_gia_cong) + Decimal(self.dinh_muc_di_lai)
+        )
+        super().save(*args, **kwargs)
 
 
 class ChiTietPhuLucPhanCong(TimeStampedModel):
@@ -534,6 +570,8 @@ class NhatKyThucHien(TimeStampedModel):
     dinh_muc_di_lai = models.DecimalField(max_digits=12, decimal_places=0, verbose_name="Định mức đi lại")
     thanh_tien = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Thành tiền")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+    canh_bao_trung = models.BooleanField(default=False, db_index=True, verbose_name="Có cảnh báo trùng")
+    chi_tiet_trung = models.TextField(blank=True, default="", verbose_name="Chi tiết cảnh báo trùng")
 
     class Meta:
         ordering = ["-ngay_thuc_hien", "-id"]
@@ -579,20 +617,63 @@ class NhatKyThucHien(TimeStampedModel):
             if self.ngay_thuc_hien and self.gio_bat_dau and self.gio_ket_thuc:
                 if self.gio_ket_thuc <= self.gio_bat_dau:
                     errors["gio_ket_thuc"] = "Giờ kết thúc phải lớn hơn giờ bắt đầu."
-                current = SimpleNamespace(
-                    child_id=phan_cong.tre_id, cb_id=self.can_bo_hieu_luc_id,
-                    service=phan_cong.loai_dich_vu, date=self.ngay_thuc_hien,
-                    start=self.gio_bat_dau, end=self.gio_ket_thuc,
-                )
-                other_qs = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related("can_bo_nguon", "phan_cong__phan_bo__can_bo")
-                previous = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.can_bo_hieu_luc_id, service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc) for x in other_qs]
-                conflicts = journal_conflict_types(current, previous)
-                if conflicts and not self.du_lieu_lich_su:
-                    errors["gio_bat_dau"] = "Cảnh báo: " + ", ".join(conflicts) + ". Vui lòng kiểm tra lại lịch."
         if errors:
             raise ValidationError(errors)
 
+    def _travel_snapshot(self):
+        return SimpleNamespace(
+            child_id=self.phan_cong.tre_id,
+            cb_id=self.can_bo_hieu_luc_id,
+            ace=self.phan_cong.tre.ace_ruot or "",
+            service=self.phan_cong.loai_dich_vu,
+            date=self.ngay_thuc_hien,
+            start=self.gio_bat_dau,
+            end=self.gio_ket_thuc,
+            location=self.dia_diem_ct or self.phan_cong.dia_diem_ct or "",
+            record_id=self.pk,
+        )
+
+    @classmethod
+    def recalculate_day(cls, date_value):
+        """Tính lại đi lại và cờ trùng cho toàn bộ nhật ký của một ngày."""
+        if not date_value:
+            return
+        rows = list(
+            cls.objects.filter(ngay_thuc_hien=date_value).select_related(
+                "can_bo_nguon",
+                "hop_dong__can_bo",
+                "hop_dong__nhom_hd",
+                "nhom_hd_nguon",
+                "phan_cong__tre",
+                "phan_cong__phan_bo__can_bo",
+                "phan_cong__nhom_hd",
+                "phan_cong__phan_bo__nhom_hd",
+            )
+        )
+        snapshots = {row.pk: row._travel_snapshot() for row in rows}
+        for row in rows:
+            current = snapshots[row.pk]
+            others = [item for pk, item in snapshots.items() if pk != row.pk]
+            conflicts = journal_conflict_types(current, others) if current.start and current.end else []
+            updates = {
+                "canh_bao_trung": bool(conflicts),
+                "chi_tiet_trung": "; ".join(conflicts),
+            }
+            if current.start and current.end:
+                travel = calculate_travel_flags(current, others)
+                updates.update(
+                    so_luot_di_lai_cbct=travel["so_luot_di_lai_cbct"],
+                    so_luot_di_lai=travel["so_luot_di_lai_ph"],
+                    thanh_tien=Decimal(row.so_buoi_thuc_hien) * Decimal(row.don_gia_cong)
+                    + Decimal(travel["so_luot_di_lai_cbct"]) * Decimal(row.dinh_muc_di_lai),
+                )
+            cls.objects.filter(pk=row.pk).update(**updates)
+
     def save(self, *args, **kwargs):
+        recalculate_travel = kwargs.pop("recalculate_travel", True)
+        old_date = None
+        if self.pk:
+            old_date = type(self).objects.filter(pk=self.pk).values_list("ngay_thuc_hien", flat=True).first()
         self.full_clean()
         if self.ngay_thuc_hien and self.gio_bat_dau and self.gio_ket_thuc:
             current = SimpleNamespace(
@@ -601,13 +682,42 @@ class NhatKyThucHien(TimeStampedModel):
                 date=self.ngay_thuc_hien, start=self.gio_bat_dau, end=self.gio_ket_thuc,
                 location=self.dia_diem_ct or self.phan_cong.dia_diem_ct or "", record_id=self.pk,
             )
-            existing = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related("can_bo_nguon", "phan_cong__tre", "phan_cong__phan_bo__can_bo")
+            existing = type(self).objects.filter(ngay_thuc_hien=self.ngay_thuc_hien).exclude(pk=self.pk).select_related(
+                "can_bo_nguon", "hop_dong__can_bo", "hop_dong__nhom_hd", "nhom_hd_nguon",
+                "phan_cong__tre", "phan_cong__nhom_hd", "phan_cong__phan_bo__can_bo", "phan_cong__phan_bo__nhom_hd",
+            )
             records = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.can_bo_hieu_luc_id, ace=x.phan_cong.tre.ace_ruot or "", service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc, location=x.dia_diem_ct or x.phan_cong.dia_diem_ct or "", record_id=x.pk) for x in existing]
             travel = calculate_travel_flags(current, records)
             self.so_luot_di_lai_cbct = travel["so_luot_di_lai_cbct"]
             self.so_luot_di_lai = travel["so_luot_di_lai_ph"]
+            conflicts = journal_conflict_types(current, records)
+            self.canh_bao_trung = bool(conflicts)
+            self.chi_tiet_trung = "; ".join(conflicts)
+        elif recalculate_travel and not self.du_lieu_lich_su:
+            # Manual edits that remove the schedule must not retain stale
+            # auto-calculated travel or conflict values. Import preserves
+            # source values by passing recalculate_travel=False.
+            self.so_luot_di_lai_cbct = 0
+            self.so_luot_di_lai = 0
+            self.canh_bao_trung = False
+            self.chi_tiet_trung = ""
+        elif recalculate_travel:
+            # Historical imports without times keep their source travel
+            # values; there is no schedule to recalculate for conflicts.
+            self.canh_bao_trung = False
+            self.chi_tiet_trung = ""
         self.thanh_tien = Decimal(self.so_buoi_thuc_hien) * Decimal(self.don_gia_cong) + Decimal(self.so_luot_di_lai_cbct) * Decimal(self.dinh_muc_di_lai)
         super().save(*args, **kwargs)
+        if recalculate_travel:
+            type(self).recalculate_day(old_date)
+            if self.ngay_thuc_hien != old_date:
+                type(self).recalculate_day(self.ngay_thuc_hien)
+
+    def delete(self, *args, **kwargs):
+        date_value = self.ngay_thuc_hien
+        result = super().delete(*args, **kwargs)
+        type(self).recalculate_day(date_value)
+        return result
 
     @property
     def hop_dong_hieu_luc(self):
@@ -710,17 +820,62 @@ class ChiTietThanhToan(TimeStampedModel):
 
 class DotThanhToanDiLaiPhuHuynh(TimeStampedModel):
     """Đợt thanh toán riêng cho khoản đi lại của phụ huynh."""
-    hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, related_name="dot_thanh_toan_phu_huynh", verbose_name="Hợp đồng")
+    hop_dong = models.ForeignKey(
+        HopDong,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="dot_thanh_toan_phu_huynh",
+        verbose_name="Hợp đồng",
+    )
+    nhom_hd = models.ForeignKey(
+        NhomHD,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="dot_thanh_toan_di_lai_phu_huynh",
+        verbose_name="Nhóm hợp đồng",
+    )
+    ky_can_thiep = models.PositiveIntegerField(null=True, blank=True, verbose_name="Kỳ can thiệp")
     nam = models.PositiveIntegerField(verbose_name="Năm")
     thang = models.PositiveSmallIntegerField(verbose_name="Tháng")
+    tu_ngay = models.DateField(null=True, blank=True, verbose_name="Từ ngày hồ sơ")
+    den_ngay = models.DateField(null=True, blank=True, verbose_name="Đến ngày hồ sơ")
     ngay_de_nghi = models.DateField(default=timezone.now, verbose_name="Ngày đề nghị")
     trang_thai = models.CharField(max_length=30, default="CHO_THANH_TOAN", verbose_name="Trạng thái")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    def clean(self):
+        errors = {}
+        if self.hop_dong_id:
+            if self.nhom_hd_id or self.ky_can_thiep is not None:
+                errors["hop_dong"] = "Đợt theo hợp đồng không được đồng thời có Nhóm HĐ/Kỳ can thiệp."
+        elif not self.nhom_hd_id or self.ky_can_thiep is None:
+            errors["hop_dong"] = "Đợt mới phải chọn Hợp đồng hoặc chọn Nhóm HĐ và Kỳ can thiệp."
+        if self.ky_can_thiep is not None and not 1 <= self.ky_can_thiep <= 30:
+            errors["ky_can_thiep"] = "Kỳ can thiệp phải từ 1 đến 30."
+        if bool(self.tu_ngay) != bool(self.den_ngay):
+            errors["tu_ngay"] = "Cần nhập đủ Từ ngày và Đến ngày."
+        elif self.tu_ngay and self.den_ngay and self.tu_ngay > self.den_ngay:
+            errors["den_ngay"] = "Đến ngày không được trước Từ ngày."
+        if errors:
+            raise ValidationError(errors)
 
     class Meta:
         ordering = ["-nam", "-thang", "-id"]
         constraints = [
             models.UniqueConstraint(fields=["hop_dong", "nam", "thang"], name="uq_dottt_phuhuynh_hd_nam_thang"),
+            models.UniqueConstraint(
+                fields=["nhom_hd", "ky_can_thiep", "nam", "thang"],
+                name="uq_dottt_phuhuynh_nhom_ky_nam_thang",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(hop_dong__isnull=False, nhom_hd__isnull=True, ky_can_thiep__isnull=True)
+                    | models.Q(hop_dong__isnull=True, nhom_hd__isnull=False, ky_can_thiep__isnull=False)
+                ),
+                name="ck_dottt_phuhuynh_scope",
+            ),
             models.CheckConstraint(condition=models.Q(thang__gte=1, thang__lte=12), name="ck_dottt_phuhuynh_thang"),
         ]
 
@@ -742,10 +897,28 @@ class ChiTietThanhToanDiLaiPhuHuynh(TimeStampedModel):
     def clean(self):
         errors = {}
         if self.dot_thanh_toan_id and self.nhat_ky_id:
-            if self.dot_thanh_toan.hop_dong_id != self.nhat_ky.hop_dong_id:
+            dot = self.dot_thanh_toan
+            journal_group = self.nhat_ky.nhom_hd_hieu_luc
+            if dot.hop_dong_id and dot.hop_dong_id != self.nhat_ky.hop_dong_id:
                 errors["nhat_ky"] = "Nhật ký không thuộc hợp đồng của đợt thanh toán phụ huynh."
+            if dot.nhom_hd_id and (not journal_group or journal_group.pk != dot.nhom_hd_id):
+                errors["nhat_ky"] = "Nhật ký không thuộc Nhóm HĐ của đợt thanh toán phụ huynh."
+            if dot.ky_can_thiep is not None and self.nhat_ky.ky_can_thiep != dot.ky_can_thiep:
+                errors["nhat_ky"] = "Nhật ký không thuộc Kỳ can thiệp của đợt thanh toán phụ huynh."
+            if dot.hop_dong_id and self.nhat_ky.ngay_thuc_hien and (
+                self.nhat_ky.ngay_thuc_hien.year != self.dot_thanh_toan.nam
+                or self.nhat_ky.ngay_thuc_hien.month != self.dot_thanh_toan.thang
+            ):
+                errors["nhat_ky"] = "Đợt theo hợp đồng yêu cầu nhật ký cùng tháng/năm thanh toán."
             if (self.so_luot_di_lai or 0) > self.nhat_ky.so_luot_di_lai:
                 errors["so_luot_di_lai"] = "Số lượt thanh toán không được vượt số lượt thực tế."
+            already_paid = self.__class__.objects.filter(nhat_ky_id=self.nhat_ky_id).exclude(pk=self.pk).aggregate(
+                total=models.Sum("so_luot_di_lai")
+            )["total"] or 0
+            if already_paid + (self.so_luot_di_lai or 0) > self.nhat_ky.so_luot_di_lai:
+                errors["so_luot_di_lai"] = (
+                    "Tổng số lượt đi lại đã thanh toán và đang yêu cầu không được vượt số lượt thực tế."
+                )
         if self.so_luot_di_lai <= 0:
             errors["so_luot_di_lai"] = "Số lượt đi lại phải lớn hơn 0."
         if errors:

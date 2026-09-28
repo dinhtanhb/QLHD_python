@@ -84,6 +84,10 @@ python manage.py runserver
 ```
 Truy cập hệ thống tại: `http://127.0.0.1:8000/`
 
+## Quy trình phát triển và kiểm thử
+
+Mọi thay đổi mã nguồn, import/export hoặc thêm app phải tuân thủ [AGENTS.md](AGENTS.md), đọc [quy trình phát triển](docs/DEVELOPMENT_WORKFLOW.md) và cập nhật [tiến độ dự án](docs/PROJECT_PROGRESS.md). Các agent rà soát chuyên trách nằm trong `.cursor/agents/`; skill kiểm thử lặp lại nằm trong `.cursor/skills/qlhd-change-validation/`.
+
 ---
 
 ## 📁 V. Cấu Trúc Mã Nguồn

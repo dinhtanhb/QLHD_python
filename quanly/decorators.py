@@ -1,5 +1,7 @@
 from django.contrib.auth.decorators import user_passes_test
 
+from .permissions import is_admin_user
+
 
 def role_required(*roles):
     def check_role(user):
@@ -7,7 +9,7 @@ def role_required(*roles):
         if not user.is_authenticated:
             return False
 
-        if user.is_superuser:
+        if is_admin_user(user):
             return True
 
         return user.groups.filter(

@@ -4,6 +4,8 @@ from decimal import Decimal
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
+import re
+import unicodedata
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -23,7 +25,61 @@ def _workbook(path):
         from openpyxl import load_workbook
     except ImportError as exc:
         raise ValidationError("Thiếu thư viện openpyxl để xuất Excel.") from exc
-    return load_workbook(path)
+    # Khong giu external links cua mau Excel. Mau DNCK cu tro toi workbook
+    # SharePoint va add-in VND(), lam Excel hien Repair va mat cong thuc.
+    workbook = load_workbook(path, keep_links=False)
+    for name in list(workbook.defined_names):
+        defined_name = workbook.defined_names[name]
+        if "[" in (defined_name.attr_text or ""):
+            del workbook.defined_names[name]
+    # Mẫu DNTT có các bảng kiểu queryTable ở sheet tra cứu ẩn. openpyxl
+    # không ghi lại được queryTable/connection tương ứng nhưng vẫn giữ metadata
+    # của bảng, khiến Excel phải Repair khi mở file xuất. Các bảng này chỉ phục
+    # vụ tra cứu nội bộ nên bỏ metadata, giữ nguyên dữ liệu và sheet.
+    for worksheet in workbook.worksheets:
+        if worksheet.tables:
+            worksheet.tables.clear()
+    _normalize_workbook_print_layout(workbook)
+    return workbook
+
+
+def _normalize_workbook_print_layout(workbook):
+    """Đặt page setup A4 và lề thống nhất cho workbook xuất ra."""
+    from openpyxl.worksheet.page import PageMargins
+
+    for worksheet in workbook.worksheets:
+        name = worksheet.title.casefold()
+        if name in {"dntt", "dntt_ncs"}:
+            orientation = "landscape"
+        elif name == "dstk":
+            orientation = "landscape"
+        elif name.startswith("dnck") or name.startswith("dstk"):
+            orientation = "portrait"
+        else:
+            orientation = "landscape" if worksheet.max_column >= 10 else "portrait"
+        worksheet.page_setup.paperSize = worksheet.PAPERSIZE_A4
+        worksheet.page_setup.orientation = orientation
+        worksheet.page_setup.fitToWidth = 1
+        worksheet.page_setup.fitToHeight = 0
+        worksheet.page_setup.scale = None
+        worksheet.sheet_properties.pageSetUpPr.fitToPage = True
+        worksheet.page_margins = PageMargins(
+            left=0.5,
+            right=0.5,
+            top=0.5,
+            bottom=0.5,
+            header=0.2,
+            footer=0.2,
+        )
+
+
+def _set_print_area(worksheet, end_row=None, end_column=None):
+    """Giới hạn vùng in đến hết nội dung và phần ký của mẫu."""
+    from openpyxl.utils import get_column_letter
+
+    end_row = end_row or worksheet.max_row
+    end_column = end_column or worksheet.max_column
+    worksheet.print_area = f"A1:{get_column_letter(end_column)}{end_row}"
 
 
 def _location_bucket(value):
@@ -63,6 +119,29 @@ def _fill_placeholders(workbook, context):
                         cell.value = cell.value.replace("{{" + key + "}}", str(value or ""))
 
 
+def _set_requester_name(workbook, requester_name):
+    """Ghi ten CBDA vao dong ky 'Nguoi de nghi' neu mau co san vi tri nay."""
+    if not requester_name:
+        return
+    for worksheet in workbook.worksheets:
+        # Hai mau can thiep hien hanh khong cung co nhan "Nguoi de nghi":
+        # DSTK dung cot J cho Can bo du an, con DNCK de trong cot D khu vuc ky.
+        if worksheet.title == "DSTK":
+            worksheet["J27"] = requester_name
+        elif worksheet.title == "DNCK":
+            worksheet["D22"] = "Người đề nghị"
+            worksheet["D28"] = requester_name
+        for row in worksheet.iter_rows():
+            for cell in row:
+                if str(cell.value or "").strip().casefold() != "Người đề nghị".casefold():
+                    continue
+                for offset in range(1, 10):
+                    target = worksheet.cell(cell.row + offset, cell.column)
+                    if target.value not in (None, ""):
+                        target.value = requester_name
+                        break
+
+
 def _blank_zero(value):
     """Giữ kiểu số trong Excel nhưng không hiển thị các giá trị bằng 0."""
     if isinstance(value, (int, float, Decimal)) and value == 0:
@@ -94,7 +173,7 @@ def _location_for_group(group_code):
     return "Theo nhật ký thực hiện"
 
 
-def export_intervention_payment_request(dot):
+def export_intervention_payment_request(dot, nguoi_de_nghi=None):
     """Xuất đề nghị thanh toán công cán bộ theo một đợt thanh toán."""
     if not INTERVENTION_PAYMENT_TEMPLATE.exists():
         raise ValidationError("Chưa có template đề nghị thanh toán công cán bộ.")
@@ -153,13 +232,15 @@ def export_intervention_payment_request(dot):
     for column in ("K", "P", "Q", "R", "S", "T"):
         ws[f"{column}{TOTAL_ROW}"] = f"=SUM({column}{FIRST_DETAIL_ROW}:{column}{end_row})"
     _fill_placeholders(workbook, context)
+    _set_requester_name(workbook, getattr(nguoi_de_nghi, "ho_ten", nguoi_de_nghi))
+    _set_print_area(ws, max(ws.max_row, TOTAL_ROW), 21)
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
     return output
 
 
-def export_intervention_account_list(dot):
+def export_intervention_account_list(dot, nguoi_de_nghi=None):
     """Xuất danh sách tài khoản và số tiền thực lĩnh của một đợt thanh toán."""
     if not INTERVENTION_ACCOUNT_TEMPLATE.exists():
         raise ValidationError("Chưa có template danh sách tài khoản thanh toán.")
@@ -195,6 +276,8 @@ def export_intervention_account_list(dot):
     for coordinate, value in values.items():
         ws[coordinate] = value
     _fill_placeholders(workbook, {"DiaDiemThucHien": "Theo hồ sơ thanh toán"})
+    _set_requester_name(workbook, getattr(nguoi_de_nghi, "ho_ten", nguoi_de_nghi))
+    _set_print_area(ws, 27, 12)
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
@@ -214,7 +297,40 @@ def _parent_template(category, prefix):
     return path
 
 
-def export_parent_travel_payment_request(dot, category="NCS"):
+def _plain_text(value):
+    """Chuẩn hóa chuỗi nghiệp vụ để nhận diện không phụ thuộc dấu tiếng Việt."""
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return " ".join(text.casefold().replace("_", " ").split())
+
+
+def normalize_parent_travel_category(value):
+    """Chuẩn hóa mã nhóm hồ sơ chi phí đi lại của phụ huynh."""
+    category = str(value or "NCS").strip().upper()
+    if category not in PARENT_TRAVEL_CATEGORIES:
+        raise ValidationError("Nhóm hồ sơ phải là CG, NCS hoặc CBDA.")
+    return category
+
+
+def parent_travel_category(journal_or_assignment):
+    """Xác định bộ hồ sơ theo dữ liệu gốc, không nhân bản vào nhật ký.
+
+    CBDA được ưu tiên khi ghi chú của trẻ có mã CBDA. Các phân công có hình thức
+    ``Chuyên gia`` (hoặc mã CG) dùng bộ CG; phần còn lại dùng bộ NCS.
+    """
+    assignment = getattr(journal_or_assignment, "phan_cong", journal_or_assignment)
+    child = getattr(assignment, "tre", None)
+    note = _plain_text(getattr(child, "ghi_chu", ""))
+    if re.search(r"(?<!\w)cbda(?!\w)", note) and not re.search(r"\bkhong(?: phai)?\s+cbda\b", note):
+        return "CBDA"
+    method = _plain_text(getattr(assignment, "hinh_thuc_ct", ""))
+    if method in {"cg", "chuyen gia"}:
+        return "CG"
+    return "NCS"
+
+
+def _parent_travel_rows(dot, category):
+    category = normalize_parent_travel_category(category)
     rows = list(dot.chi_tiet.select_related(
         "nhat_ky__can_bo_nguon",
         "nhat_ky__hop_dong__can_bo",
@@ -222,57 +338,256 @@ def export_parent_travel_payment_request(dot, category="NCS"):
         "nhat_ky__phan_cong__tre",
         "nhat_ky__phan_cong__phan_bo__can_bo",
     ).order_by("id"))
+    rows = [item for item in rows if parent_travel_category(item.nhat_ky) == category]
     if not rows:
-        raise ValidationError("Đợt thanh toán chưa có chi tiết để xuất.")
-    workbook = _workbook(_parent_template(category, "DNTT"))
-    ws = workbook["DNTT_NCS"]
-    first_row, last_row = 11, ws.max_row - 8
-    for row in range(first_row, last_row + 1):
-        for cell in ws[row]:
-            cell.value = None
-    for index, item in enumerate(rows, start=1):
-        row = first_row + index - 1
-        if row > last_row:
-            raise ValidationError("Số dòng thanh toán vượt giới hạn template.")
+        raise ValidationError(f"Đợt thanh toán không có dữ liệu thuộc nhóm hồ sơ {category}.")
+    return category, rows
+
+
+def _parent_travel_date_range(dot, rows):
+    """Lấy thời hạn người dùng chọn, rồi mới fallback về thời hạn hợp đồng."""
+    if getattr(dot, "tu_ngay", None) and getattr(dot, "den_ngay", None):
+        return dot.tu_ngay, dot.den_ngay
+    contract = getattr(dot, "hop_dong", None)
+    if getattr(dot, "hop_dong_id", None) or contract:
+        return contract.tu_ngay, contract.den_ngay
+    contracts = []
+    for item in rows:
+        contract = getattr(item.nhat_ky, "hop_dong_hieu_luc", None) or getattr(item.nhat_ky, "hop_dong", None)
+        if contract:
+            contracts.append(contract)
+    if not contracts:
+        return None, None
+    return min(contract.tu_ngay for contract in contracts), max(contract.den_ngay for contract in contracts)
+
+
+def _parent_travel_location(rows):
+    """Lấy danh sách xã/phường của các trẻ thực sự phát sinh lượt đi lại."""
+    locations = OrderedDict()
+    for item in rows:
+        child = item.nhat_ky.phan_cong.tre
+        xa = getattr(child, "xa", None)
+        name = str(getattr(xa, "ten_xa", "") or "").strip()
+        if name:
+            locations[name] = None
+    if not locations:
+        return "Chưa cập nhật xã/phường của trẻ có phát sinh đi lại"
+    return "Xã/phường " + ", ".join(locations)
+
+
+def _find_template_sheet(workbook, prefix):
+    """Lấy sheet nghiệp vụ theo tiền tố, vì các mẫu hiện tại dùng tên sheet cũ."""
+    prefix = prefix.casefold()
+    for worksheet in workbook.worksheets:
+        if worksheet.title.casefold().startswith(prefix):
+            return worksheet
+    raise ValidationError(f"Template không có sheet {prefix.upper()}.")
+
+
+def _clear_template_row(worksheet, row):
+    for cell in worksheet[row]:
+        if cell.__class__.__name__ == "MergedCell":
+            continue
+        cell.value = None
+
+
+def _group_parent_travel_rows(rows):
+    grouped = OrderedDict()
+    for item in rows:
+        child = item.nhat_ky.phan_cong.tre
+        key = (
+            child.ten_phu_huynh or "",
+            child.ten_tai_khoan or "",
+            child.tai_khoan or "",
+            child.ngan_hang or "",
+            child.chi_nhanh or "",
+        )
+        grouped[key] = grouped.get(key, Decimal("0")) + item.thanh_tien
+    return grouped
+
+
+def _validate_parent_account_rows(rows, category):
+    if category == "CBDA":
+        raise ValidationError("Nhóm CBDA ký nhận thủ công, không xuất danh sách tài khoản.")
+    missing = []
+    seen = set()
+    for item in rows:
+        child = item.nhat_ky.phan_cong.tre
+        key = child.pk
+        if key in seen:
+            continue
+        seen.add(key)
+        if not (child.tai_khoan and child.ngan_hang):
+            missing.append(f"{child.ma_tre} - {child.ho_ten}")
+    if missing:
+        names = ", ".join(missing[:5])
+        suffix = "..." if len(missing) > 5 else ""
+        raise ValidationError(
+            f"Nhóm {category} yêu cầu phụ huynh có số tài khoản và ngân hàng. "
+            f"Chưa đủ thông tin: {names}{suffix}."
+        )
+
+
+def _parent_travel_payment_groups(rows):
+    """Gom nhật ký thành dòng tổng theo CBCT/hợp đồng và dòng chi tiết theo trẻ/dịch vụ."""
+    grouped = OrderedDict()
+    for item in rows:
         journal = item.nhat_ky
         assignment = journal.phan_cong
         child = assignment.tre
-        provider = journal.can_bo_hieu_luc or journal.hop_dong.doi_tac
-        provider_name = getattr(provider, "ho_ten", None) or getattr(provider, "ten_don_vi", "")
-        ws.cell(row, 1).value = index
-        ws.cell(row, 2).value = f"{provider_name} - {child.ho_ten}"
-        ws.cell(row, 3).value = child.ten_phu_huynh or ""
-        ws.cell(row, 4).value = journal.hop_dong.so_hop_dong
-        ws.cell(row, 5).value = assignment.nhom_dich_vu
-        ws.cell(row, 6).value = assignment.so_buoi_du_kien
-        ws.cell(row, 7).value = item.dinh_muc_di_lai
-        ws.cell(row, 8).value = f"=F{row}*G{row}"
-        ws.cell(row, 9).value = item.so_luot_di_lai
-        ws.cell(row, 10).value = item.so_luot_di_lai
-        ws.cell(row, 11).value = f"=J{row}*G{row}"
-        ws.cell(row, 12).value = item.ghi_chu or ""
-    _fill_placeholders(workbook, {"KyThanhToan": f"{dot.thang}/{dot.nam}", "TuNgay": dot.hop_dong.tu_ngay.strftime("%d/%m/%Y"), "DenNgay": dot.hop_dong.den_ngay.strftime("%d/%m/%Y")})
+        contract = getattr(journal, "hop_dong_hieu_luc", None) or getattr(journal, "hop_dong", None)
+        provider = journal.can_bo_hieu_luc or getattr(contract, "doi_tac", None) or getattr(contract, "can_bo", None)
+        provider_name = (
+            getattr(provider, "ho_ten", None)
+            or getattr(provider, "ten_don_vi", None)
+            or getattr(contract, "so_hop_dong", None)
+            or "Chưa xác định CBCT/đơn vị"
+        )
+        group_key = (getattr(contract, "pk", None), provider_name, getattr(contract, "so_hop_dong", ""))
+        group = grouped.setdefault(group_key, {
+            "provider_name": provider_name,
+            "contract_name": getattr(contract, "so_hop_dong", "") or "",
+            "details": OrderedDict(),
+            "planned": 0,
+            "actual_sessions": 0,
+            "travel": 0,
+            "amount": Decimal("0"),
+            "rates": OrderedDict(),
+        })
+        service = getattr(assignment, "nhom_dich_vu", None) or getattr(assignment, "loai_dich_vu", None) or ""
+        child_key = getattr(child, "pk", None) or getattr(child, "ma_tre", None) or id(child)
+        detail_key = (
+            child_key,
+            service,
+            assignment.so_buoi_du_kien or 0,
+            item.dinh_muc_di_lai or Decimal("0"),
+        )
+        detail = group["details"].setdefault(detail_key, {
+            "child_name": child.ho_ten,
+            "parent_name": child.ten_phu_huynh or "",
+            "service": service,
+            "planned": assignment.so_buoi_du_kien or 0,
+            "rate": item.dinh_muc_di_lai or Decimal("0"),
+            "actual_sessions": 0,
+            "travel": 0,
+            "amount": Decimal("0"),
+            "notes": [],
+        })
+        detail["actual_sessions"] += journal.so_buoi_thuc_hien or 0
+        detail["travel"] += item.so_luot_di_lai or 0
+        detail["amount"] += item.thanh_tien or Decimal("0")
+        note = _payment_note(item.ghi_chu)
+        if note and note not in detail["notes"]:
+            detail["notes"].append(note)
+        group["actual_sessions"] += journal.so_buoi_thuc_hien or 0
+        group["travel"] += item.so_luot_di_lai or 0
+        group["amount"] += item.thanh_tien or Decimal("0")
+        group["rates"][str(item.dinh_muc_di_lai or 0)] = item.dinh_muc_di_lai or Decimal("0")
+    return list(grouped.values())
+
+
+def _parent_travel_total_row(ws):
+    for row in range(1, ws.max_row + 1):
+        if str(ws.cell(row, 2).value or "").strip().casefold() == "tổng cộng":
+            return row
+    raise ValidationError("Template ĐNTT đi lại không có dòng Tổng cộng.")
+
+
+def export_parent_travel_payment_request(dot, category="NCS", nguoi_de_nghi=None):
+    category, rows = _parent_travel_rows(dot, category)
+    workbook = _workbook(_parent_template(category, "DNTT"))
+    ws = _find_template_sheet(workbook, "DNTT")
+    first_row = 11
+    total_row = _parent_travel_total_row(ws)
+    rendered_groups = _parent_travel_payment_groups(rows)
+    rendered_rows = sum(1 + len(group["details"]) for group in rendered_groups)
+    capacity = total_row - first_row
+    if rendered_rows > capacity:
+        extra = rendered_rows - capacity
+        for offset in range(extra):
+            insert_at = total_row + offset
+            ws.insert_rows(insert_at, 1)
+            _copy_row_style(ws, total_row - 1, insert_at)
+        total_row += extra
+    for row in range(first_row, total_row):
+        _clear_template_row(ws, row)
+    output_row = first_row
+    summary_rows = []
+    for index, group in enumerate(rendered_groups, start=1):
+        group_rate = next(iter(group["rates"].values())) if len(group["rates"]) == 1 else None
+        group_planned = sum(detail["planned"] for detail in group["details"].values())
+        group_budget = sum(detail["planned"] * detail["rate"] for detail in group["details"].values())
+        single_parent = ""
+        if len(group["details"]) == 1:
+            single_parent = next(iter(group["details"].values()))["parent_name"]
+        summary = {
+            1: index,
+            2: group["provider_name"],
+            3: single_parent,
+            4: group["contract_name"],
+            5: "",
+            6: _blank_zero(group_planned),
+            7: _blank_zero(group_rate),
+            8: _blank_zero(group_budget),
+            9: _blank_zero(group["actual_sessions"]),
+            10: _blank_zero(group["travel"]),
+            11: _blank_zero(group["amount"]),
+            12: "",
+        }
+        for column, value in summary.items():
+            ws.cell(output_row, column).value = value
+        summary_rows.append(output_row)
+        output_row += 1
+        for detail in group["details"].values():
+            values = {
+                1: "",
+                2: detail["child_name"],
+                3: detail["parent_name"],
+                4: "",
+                5: detail["service"],
+                6: _blank_zero(detail["planned"]),
+                7: _blank_zero(detail["rate"]),
+                8: _blank_zero(detail["planned"] * detail["rate"]),
+                9: _blank_zero(detail["actual_sessions"]),
+                10: _blank_zero(detail["travel"]),
+                11: _blank_zero(detail["amount"]),
+                12: "\n".join(detail["notes"]),
+            }
+            for column, value in values.items():
+                ws.cell(output_row, column).value = value
+            output_row += 1
+    if len(summary_rows) == 1:
+        summary_refs_h = f"H{summary_rows[0]}:H{summary_rows[0]}"
+        summary_refs_k = f"K{summary_rows[0]}:K{summary_rows[0]}"
+    else:
+        summary_refs_h = ",".join(f"H{row}" for row in summary_rows)
+        summary_refs_k = ",".join(f"K{row}" for row in summary_rows)
+    ws.cell(total_row, 8).value = f"=SUM({summary_refs_h})"
+    ws.cell(total_row, 11).value = f"=SUM({summary_refs_k})"
+    tu_ngay, den_ngay = _parent_travel_date_range(dot, rows)
+    ws["K5"] = _parent_travel_location(rows)
+    _fill_placeholders(workbook, {
+        "KyThanhToan": f"{dot.thang}/{dot.nam}",
+        "TuNgay": tu_ngay.strftime("%d/%m/%Y") if tu_ngay else "",
+        "DenNgay": den_ngay.strftime("%d/%m/%Y") if den_ngay else "",
+    })
+    _set_requester_name(workbook, getattr(nguoi_de_nghi, "ho_ten", nguoi_de_nghi))
+    _set_print_area(ws, max(ws.max_row, total_row), 12)
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
     return output
 
 
-def export_parent_travel_account_list(dot, category="NCS"):
-    rows = list(dot.chi_tiet.select_related("nhat_ky__phan_cong__tre").order_by("id"))
-    if not rows:
-        raise ValidationError("Đợt thanh toán chưa có chi tiết để xuất danh sách tài khoản.")
+def export_parent_travel_account_list(dot, category="NCS", nguoi_de_nghi=None):
+    category, rows = _parent_travel_rows(dot, category)
+    _validate_parent_account_rows(rows, category)
     workbook = _workbook(_parent_template(category, "DSTK"))
-    ws = workbook["DSTK_NCS"]
-    first_row, last_row = 5, ws.max_row - 5
+    ws = _find_template_sheet(workbook, "DSTK")
+    first_row, last_row = 5, 120
     for row in range(first_row, last_row + 1):
-        for cell in ws[row]:
-            cell.value = None
-    grouped = {}
-    for item in rows:
-        child = item.nhat_ky.phan_cong.tre
-        key = (child.ten_phu_huynh or "", child.ten_tai_khoan or "", child.tai_khoan or "", child.ngan_hang or "", child.chi_nhanh or "")
-        grouped[key] = grouped.get(key, 0) + item.thanh_tien
+        _clear_template_row(ws, row)
+    grouped = _group_parent_travel_rows(rows)
     for index, (key, amount) in enumerate(grouped.items(), start=1):
         row = first_row + index - 1
         if row > last_row:
@@ -280,7 +595,41 @@ def export_parent_travel_account_list(dot, category="NCS"):
         parent, account_name, account, bank, branch = key
         for column, value in enumerate((index, parent, account, bank, branch, amount), start=1):
             ws.cell(row, column).value = value
-    _fill_placeholders(workbook, {"DiaDiemThucHien": "Theo hồ sơ thanh toán"})
+    ws["A2"] = _parent_travel_location(rows)
+    _fill_placeholders(workbook, {"DiaDiemThucHien": _parent_travel_location(rows)})
+    _set_requester_name(workbook, getattr(nguoi_de_nghi, "ho_ten", nguoi_de_nghi))
+    _set_print_area(ws, 128, 6)
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
+def export_parent_travel_commitment(dot, category="NCS", nguoi_de_nghi=None):
+    """Xuất DNCK theo từng phụ huynh, dùng cho nhóm NCS hoặc CG."""
+    category, rows = _parent_travel_rows(dot, category)
+    _validate_parent_account_rows(rows, category)
+    workbook = _workbook(_parent_template(category, "DNCK"))
+    ws = _find_template_sheet(workbook, "DNCK")
+    first_row, last_row = 4, 119
+    for row in range(first_row, last_row + 1):
+        _clear_template_row(ws, row)
+    grouped = _group_parent_travel_rows(rows)
+    for index, (key, amount) in enumerate(grouped.items(), start=1):
+        row = first_row + index - 1
+        if row > last_row:
+            raise ValidationError("Số người nhận vượt giới hạn template DNCK.")
+        parent, _account_name, account, bank, branch = key
+        for column, value in enumerate((index, parent, account, bank, branch, amount), start=1):
+            ws.cell(row, column).value = value
+    tu_ngay, den_ngay = _parent_travel_date_range(dot, rows)
+    _fill_placeholders(workbook, {
+        "KyThanhToan": f"{dot.thang}/{dot.nam}",
+        "TuNgay": tu_ngay.strftime("%d/%m/%Y") if tu_ngay else "",
+        "DenNgay": den_ngay.strftime("%d/%m/%Y") if den_ngay else "",
+    })
+    _set_requester_name(workbook, getattr(nguoi_de_nghi, "ho_ten", nguoi_de_nghi))
+    _set_print_area(ws, 128, 6)
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
@@ -379,7 +728,7 @@ def _selection_context(journals, ky="", thang="", nam="", tu_ngay="", den_ngay="
     }
 
 
-def export_journal_account_list(journals):
+def export_journal_account_list(journals, nguoi_de_nghi=None):
     journals = list(journals)
     if not journals:
         raise ValidationError("Không có nhật ký phù hợp để xuất DSTK.")
@@ -406,8 +755,10 @@ def export_journal_account_list(journals):
             ws.cell(row, column).value = value
     ws["J20"] = total_net
     _fill_placeholders(workbook, _selection_context(journals))
+    _set_requester_name(workbook, getattr(nguoi_de_nghi, "ho_ten", nguoi_de_nghi))
     if "DataStaff" in workbook.sheetnames:
         workbook["DataStaff"].sheet_state = "hidden"
+    _set_print_area(ws, 27, 12)
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
@@ -415,7 +766,7 @@ def export_journal_account_list(journals):
 
 
 def export_journal_payment_request_excel(
-    journals, ky="", thang="", nam="", tu_ngay="", den_ngay=""
+    journals, ky="", thang="", nam="", tu_ngay="", den_ngay="", nguoi_de_nghi=None
 ):
     journals = list(journals)
     if not journals:
@@ -506,18 +857,20 @@ def export_journal_payment_request_excel(
         den_ngay=den_ngay,
     )
     _fill_placeholders(workbook, context)
+    _set_requester_name(workbook, getattr(nguoi_de_nghi, "ho_ten", nguoi_de_nghi))
     ws.print_title_rows = "8:11"
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
+    _set_print_area(ws, max(ws.max_row, total_row), 21)
     for helper_name in ("Dia diem thuc hien", "DataStaff"):
         if helper_name in workbook.sheetnames:
             workbook[helper_name].sheet_state = "hidden"
     output = BytesIO(); workbook.save(output); output.seek(0); return output
 
 
-def export_journal_commitment(journals, tu_ngay="", den_ngay=""):
+def export_journal_commitment(journals, tu_ngay="", den_ngay="", nguoi_de_nghi=None):
     journals = list(journals)
     if not journals:
         raise ValidationError("Không có nhật ký phù hợp để xuất ĐNCK.")
@@ -548,6 +901,12 @@ def export_journal_commitment(journals, tu_ngay="", den_ngay=""):
             ws.cell(row, column).value = value
     ws["G19"] = total_net
     _fill_placeholders(workbook, {"TuNgay": tu_ngay, "DenNgay": den_ngay})
+    # A20 cua mau cu dung add-in VND() tu file ngoai. Ghi truc tiep de file
+    # tu chu, mo duoc tren may khong cai add-in va khong bi Excel Repair.
+    from .document_export import _number_to_words
+    ws["A20"] = f"Tổng cộng số tiền bằng chữ: {_number_to_words(total_net)}"
+    _set_requester_name(workbook, getattr(nguoi_de_nghi, "ho_ten", nguoi_de_nghi))
+    _set_print_area(ws, 30, 7)
     output = BytesIO()
     workbook.save(output)
     output.seek(0)

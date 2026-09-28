@@ -1,3 +1,6 @@
+from .permissions import is_admin_user
+
+
 def user_roles(request):
     user = request.user
 
@@ -10,10 +13,7 @@ def user_roles(request):
         }
 
     return {
-        "is_admin": (
-            user.is_superuser
-            or user.groups.filter(name="Admin").exists()
-        ),
+        "is_admin": is_admin_user(user),
         "is_dieuphoi": user.groups.filter(
             name="DieuPhoiVien"
         ).exists(),

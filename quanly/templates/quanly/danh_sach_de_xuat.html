@@ -75,6 +75,10 @@
                                     {% else %}
                                         <span class="text-muted">—</span>
                                     {% endif %}
+                                    {% if is_admin and not hd %}
+                                        <a href="{% url 'sua_de_xuat' item.pk %}" class="btn btn-sm btn-warning">Sửa</a>
+                                        <form method="post" action="{% url 'xoa_de_xuat' item.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa đề xuất #{{ item.pk }}?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger">Xóa</button></form>
+                                    {% endif %}
                                 {% endwith %}
                             </td>
                         </tr>

@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import Group
+from django.contrib.auth import get_user_model
 
 
 class Command(BaseCommand):
@@ -22,18 +23,34 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"Đã tạo group: {group_name}"
+                        f"Created group: {group_name}"
                     )
                 )
+
+        admin_user = get_user_model().objects.filter(username__iexact="admin").first()
+        if admin_user:
+            changed = []
+            if not admin_user.is_active:
+                admin_user.is_active = True
+                changed.append("active")
+            if not admin_user.is_staff:
+                admin_user.is_staff = True
+                changed.append("staff")
+            if not admin_user.is_superuser:
+                admin_user.is_superuser = True
+                changed.append("superuser")
+            if changed:
+                admin_user.save(update_fields=changed)
+                self.stdout.write(self.style.SUCCESS("Admin account synchronized with full administrator permissions."))
             else:
                 self.stdout.write(
                     self.style.WARNING(
-                        f"Đã tồn tại group: {group_name}"
+                        "Admin account already has full administrator permissions."
                     )
                 )
 
         self.stdout.write(
             self.style.SUCCESS(
-                "Hoàn tất khởi tạo nhóm quyền."
+                "Role setup completed."
             )
         )

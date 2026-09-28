@@ -1,0 +1,52 @@
+{% extends 'quanly/base.html' %}
+{% load number_format %}
+{% block title %}Gia hạn hợp đồng{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card shadow">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+      <h4 class="mb-0">Danh sách gia hạn hợp đồng</h4>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'them_gia_han_thoi_gian' %}" class="btn btn-light btn-sm">+ Gia hạn thời gian</a>
+        <a href="{% url 'them_gia_han_khoi_luong' %}" class="btn btn-warning btn-sm">+ Gia hạn khối lượng</a>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-3 mb-3">
+        <div class="col"><div class="card border-primary h-100"><div class="card-body py-3"><div class="text-muted small">Tổng phụ lục gia hạn</div><div class="fs-3 fw-bold text-primary">{{ kpi.total|vn_number }}</div></div></div></div>
+        <div class="col"><div class="card border-info h-100"><div class="card-body py-3"><div class="text-muted small">Gia hạn thời gian</div><div class="fs-3 fw-bold text-info">{{ kpi.time|vn_number }}</div></div></div></div>
+        <div class="col"><div class="card border-warning h-100"><div class="card-body py-3"><div class="text-muted small">Gia hạn khối lượng</div><div class="fs-3 fw-bold text-warning">{{ kpi.volume|vn_number }}</div></div></div></div>
+        <div class="col"><div class="card border-danger h-100"><div class="card-body py-3"><div class="text-muted small">Chưa ký</div><div class="fs-3 fw-bold text-danger">{{ kpi.unsigned|vn_number }}</div></div></div></div>
+      </div>
+
+      <form method="get" class="row g-2 align-items-end mb-3">
+        <div class="col-lg-5"><label class="form-label">Tìm kiếm</label><input class="form-control" name="q" value="{{ query }}" placeholder="Số phụ lục, số HĐ, mã CBCT, họ tên..."></div>
+        <div class="col-lg-3"><label class="form-label">Loại gia hạn</label><select class="form-select" name="loai"><option value="">Tất cả</option>{% for value, label in loai_choices %}<option value="{{ value }}" {% if loai == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+        <div class="col-lg-2"><button class="btn btn-primary">Lọc</button> <a class="btn btn-outline-secondary" href="{% url 'danh_sach_gia_han_hop_dong' %}">Xóa lọc</a></div>
+      </form>
+
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover align-middle">
+          <thead class="table-light text-center"><tr><th>#</th><th>Phụ lục</th><th>Hợp đồng</th><th>Loại</th><th>Nội dung điều chỉnh</th><th>Ngày lập</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+          <tbody>
+          {% for item in extensions %}
+            <tr>
+              <td class="text-center">{{ forloop.counter }}</td>
+              <td class="fw-semibold">{{ item.so_phu_luc|default:'Chưa đặt số' }}</td>
+              <td>{% if item.hop_dong.can_bo_id %}<strong>{{ item.hop_dong.can_bo.ma_can_bo }}</strong><br>{{ item.hop_dong.can_bo.ho_ten }}{% else %}{{ item.hop_dong.don_vi }}{% endif %}<br><small class="text-muted">{{ item.hop_dong.so_hop_dong }}</small></td>
+              <td>{% if item.loai_phu_luc == 'GIA_HAN_THOI_GIAN' %}<span class="badge bg-info text-dark">Gia hạn thời gian</span>{% else %}<span class="badge bg-warning text-dark">Gia hạn khối lượng</span>{% endif %}</td>
+              <td>{% if item.loai_phu_luc == 'GIA_HAN_THOI_GIAN' %}{{ item.den_ngay_cu|date:'d/m/Y' }} → <strong>{{ item.den_ngay_moi|date:'d/m/Y' }}</strong>{% else %}Tăng thêm <strong>{{ item.tong_tien_tang_them|vn_number }} đ</strong><br><small>Giá trị mới: {{ item.tong_tien_moi|vn_number }} đ</small>{% endif %}</td>
+              <td>{{ item.ngay_lap|date:'d/m/Y' }}</td>
+              <td>{% if item.is_signed %}<span class="badge bg-success">Đã ký</span>{% else %}<span class="badge bg-secondary">Chưa ký</span>{% endif %}</td>
+              <td><div class="d-flex flex-wrap gap-1"><a href="{% url 'xuat_gia_han_hop_dong' item.pk %}" class="btn btn-sm btn-outline-primary">Xuất Word</a> <a href="{% url 'chi_tiet_hop_dong' item.hop_dong.pk %}" class="btn btn-sm btn-outline-secondary">Xem HĐ</a>{% if is_admin %}<a href="{% url 'sua_gia_han_hop_dong' item.pk %}" class="btn btn-sm btn-warning">Sửa</a>{% endif %}</div></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="8" class="text-center text-muted py-4">Chưa có phụ lục gia hạn.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
