@@ -213,6 +213,13 @@ class DeXuatHopDongForm(BootstrapModelForm):
 
 
 class HopDongForm(BootstrapModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        hidden_states = {"HET_HAN", "NGHIEM_THU", "THANH_LY"}
+        self.fields["trang_thai"].choices = [
+            choice for choice in self.fields["trang_thai"].choices if choice[0] not in hidden_states
+        ]
+
     class Meta:
         model = HopDong
         fields = [

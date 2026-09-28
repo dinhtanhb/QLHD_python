@@ -1,6 +1,6 @@
 # quanly/financial.py
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import time
 import unicodedata
 
@@ -23,19 +23,21 @@ class FinancialConfig:
     NAM_CAN_THIEP_CHOICES = range(2024, 2031)
 
 
-def calculate_tncn(tien_cong):
+def calculate_tncn(tien_cong, cau_hinh=None):
     """Tính thuế TNCN trên tiền công, không tính tiền đi lại."""
     tien_cong = Decimal(str(tien_cong or 0))
-    if tien_cong < Decimal(str(FinancialConfig.THUE_TNCN_NGUONG)):
+    threshold = Decimal(str(getattr(cau_hinh, "nguong_thue", FinancialConfig.THUE_TNCN_NGUONG)))
+    rate = Decimal(str(getattr(cau_hinh, "ty_le", FinancialConfig.THUE_TNCN_TY_LE)))
+    if tien_cong < threshold:
         return Decimal("0")
-    return tien_cong * Decimal(str(FinancialConfig.THUE_TNCN_TY_LE))
+    return (tien_cong * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
 
-def calculate_payment_breakdown(tien_cong, tien_di_lai):
+def calculate_payment_breakdown(tien_cong, tien_di_lai, cau_hinh=None):
     """Tách tiền công, đi lại, thuế và thực lĩnh theo quy tắc thanh toán."""
     tien_cong = Decimal(str(tien_cong or 0))
     tien_di_lai = Decimal(str(tien_di_lai or 0))
-    thue = calculate_tncn(tien_cong)
+    thue = calculate_tncn(tien_cong, cau_hinh)
     return {
         "tien_cong": tien_cong,
         "tien_di_lai": tien_di_lai,

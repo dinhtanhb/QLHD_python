@@ -17,6 +17,7 @@ from .models import (
     ChiTietKhoiLuongHopDong,
     ChiTietPhuLucPhanCong,
     ChiTietThanhToan,
+    PhieuThanhToan,
     DeXuatHopDong,
     HopDong,
     NhatKyThucHien,
@@ -269,6 +270,23 @@ def _journal_workload_rows(hop_dong):
 
 
 def _payment_history(hop_dong):
+    vouchers = list(
+        PhieuThanhToan.objects.filter(hop_dong=hop_dong, hoat_dong=True)
+        .order_by("lan_thanh_toan", "ngay_chi", "id")
+    )
+    if vouchers:
+        return [
+            {
+                "label": f"Lần {voucher.lan_thanh_toan} - {(voucher.ngay_chi or voucher.ngay_lap).month:02d}/{(voucher.ngay_chi or voucher.ngay_lap).year}",
+                "labor": voucher.tong_tien_cong,
+                "tax": voucher.thue_tncn,
+                "net_labor": voucher.tong_tien_cong - voucher.thue_tncn,
+                "travel": voucher.tong_tien_di_lai,
+                "received": voucher.thuc_nhan,
+            }
+            for voucher in vouchers
+        ]
+
     """Gom các đợt thanh toán CBCT theo tháng để đưa vào phụ lục thanh lý."""
     details = list(
         ChiTietThanhToan.objects.filter(dot_thanh_toan__hop_dong=hop_dong)
@@ -498,13 +516,28 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_
     breakdown = calculate_payment_breakdown(labor_total, travel_total)
     payment_round = int(lan_tt or getattr(first, "lan_thanh_toan", 1) or 1)
     contract_values = {item.pk: item.gia_tri_hop_dong for item in contracts}
-    previous_payments = list(ChiTietThanhToan.objects.filter(dot_thanh_toan__hop_dong_id__in=contract_values).select_related("dot_thanh_toan").order_by("dot_thanh_toan__nam", "dot_thanh_toan__thang", "id"))
     current_journal_ids = {item.pk for item in journals if item.pk}
-    paid_total = _payment_statement_total(
-        previous_payments,
-        current_journal_ids,
-        breakdown["tong_truoc_thue"],
+    current_voucher_ids = {
+        item.phieu.pk
+        for item in journals
+        if getattr(item, "phieu", None) is not None
+    }
+    active_vouchers = list(
+        PhieuThanhToan.objects.filter(hop_dong_id__in=contract_values, hoat_dong=True)
+        .exclude(pk__in=current_voucher_ids)
     )
+    if active_vouchers or current_voucher_ids:
+        paid_total = sum(
+            (Decimal(item.tong_tien_cong or 0) + Decimal(item.tong_tien_di_lai or 0) for item in active_vouchers),
+            breakdown["tong_truoc_thue"],
+        )
+    else:
+        previous_payments = list(ChiTietThanhToan.objects.filter(dot_thanh_toan__hop_dong_id__in=contract_values).select_related("dot_thanh_toan").order_by("dot_thanh_toan__nam", "dot_thanh_toan__thang", "id"))
+        paid_total = _payment_statement_total(
+            previous_payments,
+            current_journal_ids,
+            breakdown["tong_truoc_thue"],
+        )
     contract_total = sum(contract_values.values(), Decimal("0"))
     context = {
         "HoTenGVMN": staff.ho_ten, "DiaChi": staff.dia_chi or "", "DonViCongTac": staff.don_vi.ten_don_vi if staff.don_vi_id else "",

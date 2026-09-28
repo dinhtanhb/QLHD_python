@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from .models import CanBo, NhomHD, PhanBoChiTieu, PhanCongTre, Tre
+from .parsing import parse_money_vnd
 
 logger = logging.getLogger(__name__)
 MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -135,6 +136,8 @@ def import_assignment_workbook(uploaded_file, *, validate_only=False):
 
             cbda = clean_empty_excel_value(get_excel_value(row, "CBDA", "Mã CBDA", "CanBoDuAn"))
             allocation = allocation_by_key.get((can_bo.pk if can_bo else None, nhom.pk))
+            if can_bo and not allocation:
+                raise ValueError(f"Chưa có Phân bổ cho CBCT {ma_cb} – Nhóm {nhom.ma_nhom_hd}; hãy tạo phân bổ trước")
             if not allocation and not can_bo:
                 allocation_key = (None, nhom.pk, cbda or "")
                 allocation = new_allocation_specs.setdefault(
@@ -167,21 +170,9 @@ def import_assignment_workbook(uploaded_file, *, validate_only=False):
             if raw_dinh_muc is None:
                 dinh_muc = default_dm
             else:
-                normalized_dm = str(raw_dinh_muc).replace("\xa0", "").replace(" ", "")
-                if "," in normalized_dm and "." in normalized_dm:
-                    if normalized_dm.rfind(",") > normalized_dm.rfind("."):
-                        normalized_dm = normalized_dm.replace(".", "").replace(",", ".")
-                    else:
-                        normalized_dm = normalized_dm.replace(",", "")
-                elif "," in normalized_dm:
-                    left, right = normalized_dm.rsplit(",", 1)
-                    normalized_dm = left + right if len(right) == 3 else left + "." + right
-                elif "." in normalized_dm:
-                    left, right = normalized_dm.rsplit(".", 1)
-                    normalized_dm = left + right if len(right) == 3 else normalized_dm
                 try:
-                    dinh_muc = Decimal(normalized_dm)
-                except (InvalidOperation, ValueError):
+                    dinh_muc = parse_money_vnd(raw_dinh_muc)
+                except (InvalidOperation, ValueError, TypeError):
                     raise ValueError("Định mức đi lại không phải số hợp lệ")
 
             tre_id = tre.pk if hasattr(tre, "pk") else None

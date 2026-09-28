@@ -107,3 +107,23 @@
 1. **Đánh giá tiến độ:** Dự án đã hoàn thành **~60% tổng khối lượng công việc**, trong đó toàn bộ phần lõi về cấu hình tài chính, import dữ liệu phức tạp từ Excel và cơ chế đề xuất/điều chỉnh hợp đồng đã vận hành ổn định, chính xác.
 2. **Kế hoạch giai đoạn tới:** Sau khi kết thúc giai đoạn tạm dừng, hệ thống sẽ tập trung triển khai Mô-đun Quản lý Hợp đồng Chính thức và Nghiệm thu - Thanh toán.
 3. **Mục tiêu hoàn thành:** Đảm bảo toàn bộ hệ thống đi vào vận hành chính thức, sẵn sàng cho công tác quyết toán và báo cáo của VietHealth.
+## Cap nhat tien do thuc te - 29/09/2026
+
+Phan trang thai o tren la ke hoach ban dau va khong con phan anh day du ma nguon hien tai. Doi chieu voi repo va ket qua test cho thay:
+
+- Moc 1-3: Hoan thanh.
+- Moc 4: Hoan thanh phan cung co an toan, import, trang thai, admin override va tai lieu ky thuat.
+- Moc 5: Hoan thanh luong hop dong chinh thuc, gia han thoi gian/khoi luong, xuat Word/XLSX, nghiem thu va thanh ly.
+- Moc 6: Hoan thanh luong nhat ky, thanh quyet toan, so thanh toan thong nhat, DNTT/DSTK/DNCK va thanh toan di lai phu huynh; con can UAT tren clone MySQL.
+- Moc 7: Hoan thanh KPI danh muc, RBAC nen tang va bao cao tong hop nhat ky; con can UAT, kiem tra file bang ung dung desktop va xac nhan ban giao.
+
+### Giai doan tiep theo da trien khai
+
+- Bao cao tong hop loc theo Nhom HD, Ky, tu ngay/den ngay; xuat Excel gom `TongHop`, `TheoNhomKy`, `TheoTreDichVu`.
+- Snapshot du lieu thanh toan khi xuat ho so, tranh sai lech khi nhat ky bi sua sau khi da lap phieu.
+- Khoa trang Thanh quyet toan doi voi tai khoan khong du quyen va bo sung test phan quyen.
+- Cap nhat huong dan nguoi dung va quan tri tai `docs/USER_GUIDE.md`, `docs/ADMIN_MANUAL.md`.
+
+### Dieu kien dong du an
+
+`check`, `makemigrations --check --dry-run` va 61 test SQLite da dat. Can tao clone MySQL sach, ap dung migration 0033, chay UAT theo ma tran quyen va doi chieu so lieu truoc khi ap dung len database van hanh. Khong tu dong thay doi database that trong giai doan nay.

@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from quanly.models import HopDong
-from quanly.services.contract_status import desired_trang_thai, sync_trang_thai_hop_dong
+from quanly.services.contract_status import desired_trang_thai, sync_trang_thai_hop_dong, validate_status_transition
 
 
 class Command(BaseCommand):
@@ -23,8 +23,10 @@ class Command(BaseCommand):
                     with transaction.atomic():
                         sync_trang_thai_hop_dong(contract)
                 else:
-                    # The service is deliberately not called in dry-run because it saves.
                     target = desired_trang_thai(contract)
+                    if target == "THANH_LY" and contract.trang_thai not in {"NGHIEM_THU", "THANH_LY"}:
+                        validate_status_transition(contract, "NGHIEM_THU")
+                    validate_status_transition(contract, target)
                     after = (target, target == "THANH_LY" or contract.is_locked)
                     if after != before:
                         changes.append((contract.so_hop_dong, before, after))

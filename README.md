@@ -1,6 +1,6 @@
 # 📋 Hệ Thống Quản Lý Phân Bổ Chỉ Tiêu & Hợp Đồng (QLHD)
 
-**Tên dự án:** Hệ thống Quản lý Phân bổ Chỉ tiêu & Hợp đồng Cán bộ Chuyên trách (CBCT)  
+**Tên dự án:** Hệ thống Quản lý Phân bổ Chỉ tiêu & Hợp đồng Cán bộ can thiệp (CBCT)
 **Đơn vị chủ quản:** Trung tâm Phát triển Sức khỏe Bền vững (VietHealth)  
 **Đầu mối kỹ thuật/Phát triển:** Vũ Đình Tân  
 **Trạng thái:** Tạm dừng tính năng mới - Đóng băng & Tối ưu mã nguồn (Mốc 3)  
@@ -53,7 +53,14 @@ Dự án đang được phát triển theo các vòng được ghi nhận tại 
 ```bash
 git clone <URL_REPOSITORY_CUA_BAN>
 cd QLHD
-```
+
+
+## Vận hành trạng thái hợp đồng và sổ thanh toán
+
+- Khi chạy nội bộ bằng HTTP với `DEBUG=False`, đặt `SESSION_COOKIE_SECURE=False` và `CSRF_COOKIE_SECURE=False` trong `.env`; môi trường HTTPS nên để mặc định `True`.
+- Chạy `python manage.py sync_trang_thai_hop_dong --dry-run` hằng ngày để rà trạng thái hết hạn; chỉ dùng `--apply` sau khi kiểm tra danh sách thay đổi.
+- Trên Windows, `RotatingFileHandler` không nên được nhiều tiến trình cùng xoay file. Chạy một tiến trình worker/server hoặc cấu hình handler ghi log tập trung khi triển khai nhiều tiến trình.
+- Sổ thanh toán mới cần migration `0033`; hãy chạy trên bản sao MySQL trước khi áp dụng DB thật. Các lệnh báo cáo/chuyển sổ cũ mặc định chỉ dry-run.
 
 **Bước 2: Tạo và kích hoạt môi trường ảo (Virtual Environment)**
 * *Trên Windows (PowerShell/CMD):*

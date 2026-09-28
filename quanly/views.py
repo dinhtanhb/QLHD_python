@@ -12,13 +12,13 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
-from django.db.models import Count, F, IntegerField, Max, Min, Q, Sum
+from django.db.models import Count, Exists, F, IntegerField, Max, Min, OuterRef, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 
-from .decorators import admin_required, dashboard_required, hopdong_required, readonly_required
+from .decorators import accountant_required, admin_required, dashboard_required, hopdong_required, readonly_required
 from .permissions import is_admin_user
 from .document_export import (
     create_contract_from_proposal,
@@ -42,7 +42,9 @@ from .payment_export import (
     parent_travel_category,
 )
 from .financial import FinancialConfig, calculate_payment_breakdown, normalize_travel_location
-from .services.contract_status import sync_trang_thai_hop_dong, validate_status_transition
+from .parsing import parse_decimal as parse_decimal_legacy
+from .reporting import build_intervention_report, export_intervention_report_xlsx, intervention_report_queryset
+from .services.contract_status import is_het_han, sync_trang_thai_hop_dong, validate_status_transition
 from .forms import (
     CanBoForm,
     DieuChuyenPhanCongForm,
@@ -92,6 +94,14 @@ from .models import (
     ThanhLyHopDong,
     DotThanhToanDiLaiPhuHuynh,
     ChiTietThanhToanDiLaiPhuHuynh,
+    ChiTietPhieuThanhToan,
+    PhieuThanhToan,
+)
+from .services.payment_ledger import (
+    huy_phieu as huy_phieu_thanh_toan,
+    snapshot_journals,
+    tao_phieu_thanh_toan as tao_phieu_thanh_toan_service,
+    xac_nhan_chi,
 )
 
 
@@ -144,25 +154,7 @@ def parse_int(value, default=0):
 
 
 def parse_decimal(value, default=Decimal("0")):
-    value = clean_empty_excel_value(value)
-    if value is None:
-        return default
-    try:
-        normalized = str(value).replace("\xa0", "").replace(" ", "")
-        if "," in normalized and "." in normalized:
-            if normalized.rfind(",") > normalized.rfind("."):
-                normalized = normalized.replace(".", "").replace(",", ".")
-            else:
-                normalized = normalized.replace(",", "")
-        elif "," in normalized:
-            left, right = normalized.rsplit(",", 1)
-            normalized = left + right if len(right) == 3 else left + "." + right
-        elif "." in normalized:
-            left, right = normalized.rsplit(".", 1)
-            normalized = left + right if len(right) == 3 else normalized
-        return Decimal(normalized)
-    except (InvalidOperation, ValueError, TypeError):
-        return default
+    return parse_decimal_legacy(value, default)
 
 
 def parse_date(value, default=None):
@@ -336,6 +328,50 @@ def calculate_expected_value(so_tre_phcn, so_buoi_phcn, dm_phcn, so_tre_cs, so_b
 # =========================================================
 # DASHBOARD / AJAX
 # =========================================================
+@readonly_required
+def bao_cao_tong_hop(request):
+    nhom_id = request.GET.get("nhom_hd", "").strip()
+    ky_value = request.GET.get("ky", "").strip()
+    tu_ngay_value = request.GET.get("tu_ngay", "").strip()
+    den_ngay_value = request.GET.get("den_ngay", "").strip()
+    tu_ngay = parse_date(tu_ngay_value)
+    den_ngay = parse_date(den_ngay_value)
+    date_error = ""
+    if tu_ngay_value and not tu_ngay or den_ngay_value and not den_ngay:
+        date_error = "Khoảng ngày không hợp lệ."
+    elif tu_ngay and den_ngay and tu_ngay > den_ngay:
+        date_error = "Từ ngày không được sau Đến ngày."
+    queryset = intervention_report_queryset(
+        nhom_hd_id=int(nhom_id) if nhom_id.isdigit() else None,
+        ky=int(ky_value) if ky_value.isdigit() else None,
+        tu_ngay=tu_ngay if not date_error else None,
+        den_ngay=den_ngay if not date_error else None,
+    )
+    report = build_intervention_report(queryset)
+    if request.GET.get("format") == "xlsx":
+        workbook = export_intervention_report_xlsx(report)
+        output = BytesIO()
+        workbook.save(output)
+        response = HttpResponse(
+            output.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = content_disposition_filename("Bao_cao_tong_hop_can_thiep.xlsx")
+        return response
+    return render(request, "quanly/bao_cao_tong_hop.html", {
+        "report": report,
+        "nhom_list": NhomHD.objects.filter(is_active=True).order_by("ma_nhom_hd"),
+        "ky_choices": range(1, 31),
+        "filters": {
+            "nhom_hd": nhom_id,
+            "ky": ky_value,
+            "tu_ngay": tu_ngay_value,
+            "den_ngay": den_ngay_value,
+        },
+        "date_error": date_error,
+    })
+
+
 @dashboard_required
 def trang_chu(request):
     allocations = PhanBoChiTieu.objects.all()
@@ -1025,158 +1061,6 @@ def lich_su_phan_cong(request, pk):
     item = get_object_or_404(PhanCongTre.objects.select_related("tre", "phan_bo__can_bo"), pk=pk)
     history = item.lich_su_dieu_chuyen.select_related("phan_bo_cu__can_bo", "phan_bo_moi__can_bo")
     return render(request, "quanly/lich_su_phan_cong.html", {"item": item, "history": history})
-
-
-@admin_required
-def _legacy_import_phan_cong(request):
-    if request.method != "POST" or not request.FILES.get("file_excel"):
-        return render(request, "quanly/import_phan_cong.html")
-
-    try:
-        df = normalized_columns(pd.read_excel(request.FILES["file_excel"]))
-    except Exception as exc:
-        messages.error(request, f"Không đọc được file Excel: {exc}")
-        return render(request, "quanly/import_phan_cong.html")
-
-    created = updated = skipped = 0
-    identity_cache = {}
-    identity_occurrences = {}
-    errors = []
-    for row_no, (_, row) in enumerate(df.iterrows(), start=2):
-        try:
-            phan_bo = None
-            ma_tre = clean_empty_excel_value(get_excel_value(row, "IDChild", "MaTre", "Mã trẻ"))
-            ma_cb = clean_empty_excel_value(get_excel_value(row, "Mã CB", "MaCB", "MaCBCT", "Mã CBCT"))
-            cbda = clean_empty_excel_value(get_excel_value(row, "CBDA", "Mã CBDA", "CanBoDuAn"))
-            if not ma_tre:
-                raise ValueError("Thiếu mã trẻ")
-
-            tre, _ = Tre.objects.get_or_create(
-                ma_tre=ma_tre,
-                defaults={
-                    "ho_ten": clean_empty_excel_value(get_excel_value(row, "Tên trẻ", "HoTen")) or "Chưa cập nhật",
-                    "ngay_sinh": date(2000, 1, 1),
-                    "gioi_tinh": "Khác",
-                },
-            )
-            can_bo = CanBo.objects.filter(ma_can_bo=ma_cb).first() if ma_cb else None
-            if ma_cb and not can_bo:
-                raise ValueError(f"Không tìm thấy cán bộ '{ma_cb}'")
-
-            nhom_value = clean_empty_excel_value(get_excel_value(row, "Nhóm HĐ", "NhomHD", "Mã nhóm HĐ"))
-            nhom = None
-            if nhom_value:
-                nhom = NhomHD.objects.filter(Q(ma_nhom_hd=nhom_value) | Q(ten_nhom_hd__iexact=nhom_value)).first()
-            if not nhom and can_bo:
-                nhom = PhanBoChiTieu.objects.filter(can_bo=can_bo).order_by("-ngay_lap", "-id").values_list("nhom_hd", flat=True).first()
-                nhom = NhomHD.objects.filter(pk=nhom).first() if nhom else None
-            # Nhóm HĐ có thể để trống: đây là phân công chờ xếp nhóm/CBCT.
-
-            if can_bo and nhom:
-                phan_bo = PhanBoChiTieu.objects.filter(can_bo=can_bo, nhom_hd=nhom).order_by("-ngay_lap", "-id").first()
-            elif nhom:
-                phan_bo = PhanBoChiTieu.objects.filter(can_bo__isnull=True, nhom_hd=nhom, cbda_quan_ly=cbda).order_by("-ngay_lap", "-id").first()
-                if not phan_bo:
-                    phan_bo = PhanBoChiTieu.objects.create(nhom_hd=nhom, cbda_quan_ly=cbda, ngay_lap=parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong"), timezone.localdate()))
-
-            raw_service = clean_empty_excel_value(
-                get_excel_value(row, "Loại dịch vụ", "LoaiDichVu", "MaLoaiDichVu", "Chỉ định CT")
-            )
-            service = normalize_service_code(raw_service)
-            if not service:
-                raise ValueError(f"Dịch vụ '{raw_service or 'trống'}' không hợp lệ")
-
-            so_buoi_du_kien = parse_int(get_excel_value(row, "Số buổi dự kiến", "SoBuoi"), 0)
-            dot_value = parse_int(get_excel_value(row, "Đợt phân công", "DotPhanCong"), 1)
-            ky_value = parse_int(get_excel_value(row, "Kỳ phân công", "KyPhanCong"), 1)
-            ngay_phan_cong = parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong"))
-            dia_diem_ct = clean_empty_excel_value(get_excel_value(row, "Địa điểm CT", "DiaDiemCT"))
-            hinh_thuc_ct = clean_empty_excel_value(get_excel_value(row, "Hình thức CT", "HinhThucCT"))
-            ghi_chu = clean_empty_excel_value(get_excel_value(row, "Ghi chú", "GhiChu"))
-            dinh_muc_di_lai = parse_decimal(
-                get_excel_value(row, "Định mức đi lại", "DMDL"),
-                (phan_bo.dinh_muc_di_lai_cs if phan_bo else Decimal("0"))
-                if PhanCongTre.service_group(service) == "CS"
-                else (phan_bo.dinh_muc_di_lai_phcn if phan_bo else Decimal("0")),
-            )
-
-            identity_base_qs = PhanCongTre.objects.filter(
-                tu_dong_tu_nhat_ky=False,
-                tre=tre,
-                dot_phan_cong=dot_value,
-                ky_phan_cong=ky_value,
-            )
-            identity_base_qs = identity_base_qs.filter(nhom_hd=nhom) if nhom else identity_base_qs.filter(nhom_hd__isnull=True)
-            identity_qs = identity_base_qs.filter(loai_dich_vu=service)
-            identity_key = (tre.pk, service, nhom.pk if nhom else None, dot_value, ky_value)
-
-            def load_existing_assignments():
-                exact_items = list(identity_qs.order_by("id"))
-                if exact_items:
-                    return exact_items
-                raw_service_key = str(raw_service or "").strip().upper()
-                if service == "GDDB" and raw_service_key != "GDDB":
-                    return list(
-                        identity_base_qs.filter(
-                            loai_dich_vu="VLTL",
-                            can_bo_nguon__isnull=True,
-                            phan_bo__isnull=True,
-                            so_buoi_du_kien=so_buoi_du_kien,
-                            ngay_phan_cong=ngay_phan_cong,
-                            dia_diem_ct=dia_diem_ct,
-                            hinh_thuc_ct=hinh_thuc_ct,
-                            cbda_quan_ly=cbda,
-                        ).order_by("id")
-                    )
-                return []
-
-            identity, existing_items = take_import_occurrence(
-                identity_cache,
-                identity_occurrences,
-                identity_key,
-                load_existing_assignments,
-            )
-            item = identity or PhanCongTre(
-                tre=tre,
-                loai_dich_vu=service,
-            )
-            item.phan_bo = phan_bo
-            item.can_bo_nguon = can_bo
-            item.nhom_hd = nhom
-            item.tre = tre
-            item.loai_dich_vu = service
-            item.so_buoi_du_kien = so_buoi_du_kien
-            item.dinh_muc_di_lai = dinh_muc_di_lai
-            item.dia_diem_ct = dia_diem_ct
-            item.hinh_thuc_ct = hinh_thuc_ct
-            item.dot_phan_cong = dot_value
-            item.ky_phan_cong = ky_value
-            item.ngay_phan_cong = ngay_phan_cong
-            item.ghi_chu = ghi_chu
-            item.cbda_quan_ly = cbda
-            item.save()
-            if item.so_buoi_du_kien <= 0:
-                item.delete()
-                raise ValueError("Số buổi dự kiến phải lớn hơn 0")
-            if identity:
-                updated += 1
-            else:
-                created += 1
-                existing_items.append(item)
-        except Exception as exc:
-            skipped += 1
-            errors.append(f"Dòng {row_no}: {exc}")
-
-    msg = f"Import phân công hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}."
-    if errors:
-        messages.warning(request, msg)
-        for error in errors:
-            messages.warning(request, error)
-    elif created or updated:
-        messages.success(request, msg + " Dữ liệu đã được lưu vào cơ sở dữ liệu.")
-    else:
-        messages.warning(request, msg + " Không có dữ liệu nào được lưu.")
-    return redirect("danh_sach_phan_cong")
 
 
 @admin_required
@@ -1998,6 +1882,8 @@ def danh_sach_hop_dong(request):
     ).count()
     kpi["expired"] = qs.filter(den_ngay__lt=today).count()
     page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
+    for contract in page_obj.object_list:
+        contract.is_het_han_display = is_het_han(contract)
     pagination_params = request.GET.copy()
     pagination_params.pop("page", None)
     return render(request, "quanly/danh_sach_hop_dong.html", {
@@ -3679,6 +3565,92 @@ def xuat_nhat_ky_trung(request):
 
 
 @readonly_required
+def danh_sach_phieu_thanh_toan(request):
+    query = request.GET.get("q", "").strip()
+    qs = PhieuThanhToan.objects.select_related("can_bo", "hop_dong", "hop_dong__nhom_hd").all()
+    if query:
+        qs = qs.filter(
+            Q(can_bo__ma_can_bo__icontains=query)
+            | Q(can_bo__ho_ten__icontains=query)
+            | Q(hop_dong__so_hop_dong__icontains=query)
+        )
+    trang_thai = request.GET.get("trang_thai", "").strip()
+    if trang_thai:
+        qs = qs.filter(trang_thai=trang_thai)
+    page_obj = Paginator(qs, 25).get_page(request.GET.get("page"))
+    return render(request, "quanly/danh_sach_phieu_thanh_toan.html", {
+        "page_obj": page_obj,
+        "query": query,
+        "trang_thai": trang_thai,
+        "choices": PhieuThanhToan.TRANG_THAI_CHOICES,
+    })
+
+
+@accountant_required
+def tao_phieu_thanh_toan(request):
+    nhom_id = request.POST.get("nhom_hd") or request.GET.get("nhom_hd", "")
+    ky = request.POST.get("ky") or request.GET.get("ky", "")
+    if request.method == "POST":
+        if not str(nhom_id).isdigit() or not str(ky).isdigit():
+            messages.error(request, "Cần chọn Nhóm HĐ và Kỳ can thiệp.")
+        else:
+            contracts = HopDong.objects.filter(nhom_hd_id=int(nhom_id), can_bo__isnull=False).exclude(
+                trang_thai__in={"DU_THAO", "HUY", "THANH_LY"}
+            ).select_related("can_bo")
+            errors = []
+            created = 0
+            try:
+                with transaction.atomic():
+                    for contract in contracts:
+                        try:
+                            tao_phieu_thanh_toan_service(contract.can_bo, contract, int(ky), request.user)
+                            created += 1
+                        except ValidationError as exc:
+                            errors.append(f"{contract.so_hop_dong}: {exc.messages[0] if exc.messages else exc}")
+                    if errors:
+                        raise ValidationError("Batch payment creation must be all-or-nothing.")
+            except ValidationError:
+                messages.error(request, "Khong tao phieu nao vi batch co dong khong du dieu kien.")
+                for error in errors:
+                    messages.warning(request, error)
+            else:
+                messages.success(request, f"Da tao {created} phieu thanh toan trong mot giao dich.")
+            return redirect("danh_sach_phieu_thanh_toan")
+    return render(request, "quanly/tao_phieu_thanh_toan.html", {
+        "nhom_list": NhomHD.objects.filter(is_active=True),
+        "ky_choices": range(1, 31),
+        "nhom_id": str(nhom_id),
+        "ky": str(ky),
+    })
+
+
+@accountant_required
+def huy_phieu_thanh_toan_view(request, pk):
+    if request.method != "POST":
+        return redirect("danh_sach_phieu_thanh_toan")
+    phieu = get_object_or_404(PhieuThanhToan, pk=pk)
+    try:
+        huy_phieu_thanh_toan(phieu, request.POST.get("ly_do_huy", ""), request.user)
+        messages.success(request, "Đã hủy phiếu thanh toán.")
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+    return redirect("danh_sach_phieu_thanh_toan")
+
+
+@accountant_required
+def xac_nhan_chi_phieu_thanh_toan(request, pk):
+    if request.method != "POST":
+        return redirect("danh_sach_phieu_thanh_toan")
+    phieu = get_object_or_404(PhieuThanhToan, pk=pk)
+    try:
+        xac_nhan_chi(phieu, parse_date(request.POST.get("ngay_chi")), request.user)
+        messages.success(request, "Đã xác nhận phiếu đã chi.")
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+    return redirect("danh_sach_phieu_thanh_toan")
+
+
+@readonly_required
 def thanh_quyet_toan(request):
     """Tổng hợp và lập hồ sơ thanh toán theo Nhóm HĐ + Kỳ can thiệp."""
     qs, ky, thang, nam = _journal_export_queryset(request)
@@ -3829,6 +3801,11 @@ def _journal_export_queryset(request):
     return qs, ky, thang, nam
 
 
+def _paid_voucher_journal_queryset(queryset):
+    active_voucher = ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=OuterRef("pk"), hoat_dong=True)
+    return queryset.filter(hop_dong__isnull=False).filter(Exists(active_voucher))
+
+
 def _journal_export_file_stem(qs, ky):
     first = qs.first()
     if not first:
@@ -3842,22 +3819,24 @@ def _journal_export_file_stem(qs, ky):
 @readonly_required
 def xuat_dntt_nhat_ky(request):
     qs, ky, thang, nam = _journal_export_queryset(request)
+    qs = _paid_voucher_journal_queryset(qs)
     if not qs.exists():
-        messages.error(request, "Không có nhật ký phù hợp để xuất ĐNTT.")
-        return redirect(f"{reverse('de_nghi_thanh_toan')}?{request.GET.urlencode()}")
+        messages.error(request, "Chưa có phiếu thanh toán hiệu lực; hãy tạo phiếu trước khi xuất ĐNTT.")
+        return redirect(f"{reverse('tao_phieu_thanh_toan')}?{request.GET.urlencode()}")
     archive = BytesIO()
     try:
         cbda = _selected_cbda(request)
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+            export_rows = snapshot_journals(qs)
             grouped = {}
-            for journal in qs:
+            for journal in export_rows:
                 staff = journal.can_bo_hieu_luc
                 if staff:
                     grouped.setdefault(staff.pk, []).append(journal)
             for journals in grouped.values():
                 staff = journals[0].can_bo_hieu_luc
                 period = int(ky) if ky.isdigit() else journals[0].ky_can_thiep
-                payment_round = next_payment_round(staff, period)
+                payment_round = max(item.lan_thanh_toan for item in journals)
                 output = export_journal_payment_request(journals, ky=ky, thang=thang, nam=nam, lan_tt=payment_round, nguoi_de_nghi=cbda)
                 safe_name = re.sub(r'[\\/:*?"<>|]+', "_", f"{staff.ma_can_bo} {staff.ho_ten}").strip()
                 bundle.writestr(f"L{payment_round}_DNTT - {safe_name}.docx", output.getvalue())
@@ -3871,11 +3850,13 @@ def xuat_dntt_nhat_ky(request):
 @readonly_required
 def xuat_dntt_excel_nhat_ky(request):
     qs, ky, thang, nam = _journal_export_queryset(request)
+    qs = _paid_voucher_journal_queryset(qs)
     try:
         cbda = _selected_cbda(request)
         tu_ngay, den_ngay = _selected_payment_date_range(request)
+        export_rows = snapshot_journals(qs)
         output = export_journal_payment_request_excel(
-            qs,
+            export_rows,
             ky=ky,
             thang=thang,
             nam=nam,
@@ -3893,9 +3874,11 @@ def xuat_dntt_excel_nhat_ky(request):
 @readonly_required
 def xuat_dstk_nhat_ky(request):
     qs, ky, _, _ = _journal_export_queryset(request)
+    qs = _paid_voucher_journal_queryset(qs)
     try:
         cbda = _selected_cbda(request)
-        output = export_journal_account_list(qs, nguoi_de_nghi=cbda)
+        export_rows = snapshot_journals(qs)
+        output = export_journal_account_list(export_rows, nguoi_de_nghi=cbda)
     except ValidationError as exc:
         messages.error(request, str(exc)); return redirect("nhat_ky_can_thiep")
     response = HttpResponse(output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -3906,11 +3889,13 @@ def xuat_dstk_nhat_ky(request):
 @readonly_required
 def xuat_dnck_nhat_ky(request):
     qs, ky, _, _ = _journal_export_queryset(request)
+    qs = _paid_voucher_journal_queryset(qs)
     try:
         cbda = _selected_cbda(request)
         tu_ngay, den_ngay = _selected_payment_date_range(request)
+        export_rows = snapshot_journals(qs)
         output = export_journal_commitment(
-            qs,
+            export_rows,
             tu_ngay=tu_ngay,
             den_ngay=den_ngay,
             nguoi_de_nghi=cbda,

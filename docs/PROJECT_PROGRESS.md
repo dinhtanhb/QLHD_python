@@ -261,3 +261,31 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - Trang `danh_sach_don_vi` hiện sắp xếp mã đơn vị giảm dần (`-ma_don_vi`), dùng `-id` làm tiêu chí phụ khi mã trùng.
 - Bổ sung test hồi quy xác nhận thứ tự danh sách sau phân trang.
 - Kiểm thử sau thay đổi: `manage.py check`, `makemigrations --check --dry-run`, `manage.py test quanly.tests` đạt `56/56`.
+
+## Vòng 2 — nền tảng sổ thanh toán thống nhất — 29/09/2026
+
+- Đã sửa các nền tảng độc lập: trạng thái `TAM_DUNG/HUY` không bị đồng bộ ghi đè, dùng `timezone.localdate()`, dry-run kiểm tra chuyển trạng thái, form Hợp đồng không cho chọn thủ công `HET_HAN/NGHIEM_THU/THANH_LY`, cấu hình cookie Secure đọc từ biến môi trường.
+- Thêm `quanly/parsing.py` với parser số chặt chẽ và parser tiền VND; import phân công không còn cho CBCT đã tồn tại nhưng thiếu Phân bổ tạo phân công rời.
+- Thêm các model `CauHinhThue`, `PhieuThanhToan`, `ChiTietPhieuThanhToan` trong migration `0033` và đăng ký cấu hình thuế/sổ phiếu trong Django Admin.
+- Thêm service `quanly/services/payment_ledger.py`: chọn nhật ký chưa thanh toán, bắt buộc HĐ hợp lệ, tính thuế theo từng phiếu, snapshot tiền/thuế, tính lần thanh toán theo phiếu hiệu lực, chặn vượt giá trị HĐ, hủy phiếu mới nhất và xác nhận đã chi.
+- Thêm giao diện sổ phiếu, tạo phiếu theo Nhóm HĐ + Kỳ, hủy/xác nhận chi; các URL xuất ĐNTT/DSTK/ĐNCK từ nhật ký chỉ tiếp tục khi nhật ký đã nằm trong phiếu hiệu lực.
+- Bảo vệ nhật ký đã thanh toán khỏi sửa các trường ảnh hưởng tiền và khỏi xóa; `recalculate_day` bỏ qua dòng đã thanh toán.
+- Test sau đợt nền tảng đạt `60/60`; đã kiểm tra `check` và `makemigrations --check --dry-run` bằng SQLite.
+- Dữ liệu thật chưa chạy migration `0033`; cần chạy `migrate` trên bản sao MySQL sau khi review. Không chuyển 151 chi tiết đi lại phụ huynh sang sổ thanh toán công CBCT.
+
+## Vòng 2 - báo cáo và chuyển sổ thanh toán cũ - 29/09/2026
+
+- Bổ sung các lệnh chỉ đọc `bao_cao_nhat_ky_thieu_hop_dong` và `bao_cao_so_thanh_toan` để rà nhật ký thiếu hợp đồng, đối chiếu sổ cũ và sổ phiếu mới.
+- Bổ sung `chuyen_so_thanh_toan_cu`: mặc định dry-run, hỗ trợ `--from`, `--to`, chỉ ghi khi có `--force`; bản ghi thiếu hợp đồng/CBCT hoặc đã có chi tiết phiếu mới được báo riêng.
+- `_payment_history` của hồ sơ nghiệm thu/thanh lý ưu tiên phiếu thanh toán mới, vẫn fallback sổ cũ để không làm mất khả năng xuất hồ sơ lịch sử. Import phân công cũ trong `views.py` đã được loại bỏ; URL dùng importer chuẩn.
+- Kiểm thử bằng SQLite: `manage.py check`, `makemigrations --check --dry-run`, `manage.py test quanly.tests` đạt `60/60`. MySQL test database hiện tại bị tồn trạng thái cũ (duplicate FK/column), cần tạo lại database test sạch khi kiểm thử MySQL.
+
+
+- Patch cuối Vòng 2: `danh_sach_phieu_thanh_toan` bỏ decorator trùng; tạo phiếu theo Nhóm HĐ + Kỳ nay all-or-nothing bằng `transaction.atomic()`, không ghi dở dang khi một hợp đồng lỗi.
+- Kiểm thử lại sau patch: `check`, `makemigrations --check --dry-run`, `manage.py test quanly.tests` đạt `60/60` trên SQLite.
+- Cap nhat thuc te 29/09/2026: Moc 1-3 da hoan thanh; Moc 4 da cung co; Moc 5 da co hop dong, gia han, xuat van ban, nghiem thu va thanh ly; Moc 6 da co nhat ky, thanh quyet toan, so thanh toan thong nhat va xuat ho so; Moc 7 da co KPI, RBAC nen tang va bao cao tong hop.
+- Dot trien khai tiep theo bo sung `quanly/reporting.py`, route `bao-cao/`, ba sheet Excel (`TongHop`, `TheoNhomKy`, `TheoTreDichVu`) va cac KPI so nhat ky, so buoi, di lai, tien cong, tien di lai.
+- Cac file DNTT/DSTK/DNCK dung snapshot tu `ChiTietPhieuThanhToan` hien hanh de tranh sai lech sau khi nhat ky da lap phieu; trang Thanh quyet toan duoc bao ve boi `readonly_required`.
+- Kiem thu: `manage.py check` dat; `makemigrations --check --dry-run` dat; `manage.py test quanly.tests --noinput` dat 61/61 tren SQLite.
+- Con lai truoc khi dong: tao clone MySQL sach, ap dung migration 0033, chay UAT theo ma tran quyen, mo kiem tra cac file XLSX/DOCX bang ung dung desktop va xac nhan so lieu voi nguoi dung. Khong tu dong thay doi database that.
+- Da tao tai lieu ban giao `docs/USER_GUIDE.md` va `docs/ADMIN_MANUAL.md`. Dot nay chua commit/push vi chua co yeu cau ro rang trong luot hien tai.

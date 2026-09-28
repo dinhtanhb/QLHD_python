@@ -1,6 +1,7 @@
 from decimal import Decimal
 from types import SimpleNamespace
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
@@ -650,8 +651,14 @@ class NhatKyThucHien(TimeStampedModel):
                 "phan_cong__phan_bo__nhom_hd",
             )
         )
+        paid_ids = set(
+            ChiTietPhieuThanhToan.objects.filter(nhat_ky_id__in=[row.pk for row in rows], hoat_dong=True)
+            .values_list("nhat_ky_id", flat=True)
+        )
         snapshots = {row.pk: row._travel_snapshot() for row in rows}
         for row in rows:
+            if row.pk in paid_ids:
+                continue
             current = snapshots[row.pk]
             others = [item for pk, item in snapshots.items() if pk != row.pk]
             conflicts = journal_conflict_types(current, others) if current.start and current.end else []
@@ -673,6 +680,16 @@ class NhatKyThucHien(TimeStampedModel):
         recalculate_travel = kwargs.pop("recalculate_travel", True)
         old_date = None
         if self.pk:
+            paid_detail = ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=self.pk, hoat_dong=True).first()
+            if paid_detail:
+                current = type(self).objects.get(pk=self.pk)
+                protected = (
+                    "ngay_thuc_hien", "gio_bat_dau", "gio_ket_thuc", "ky_can_thiep", "so_buoi_thuc_hien",
+                    "so_luot_di_lai", "so_luot_di_lai_cbct", "don_gia_cong", "dinh_muc_di_lai", "hop_dong_id",
+                    "phan_cong_id", "can_bo_nguon_id",
+                )
+                if any(getattr(current, field) != getattr(self, field) for field in protected):
+                    raise ValidationError("Nhật ký đã thanh toán chỉ được sửa ghi chú, không được thay đổi dữ liệu tính tiền.")
             old_date = type(self).objects.filter(pk=self.pk).values_list("ngay_thuc_hien", flat=True).first()
         self.full_clean()
         if self.ngay_thuc_hien and self.gio_bat_dau and self.gio_ket_thuc:
@@ -714,6 +731,8 @@ class NhatKyThucHien(TimeStampedModel):
                 type(self).recalculate_day(self.ngay_thuc_hien)
 
     def delete(self, *args, **kwargs):
+        if ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=self.pk, hoat_dong=True).exists():
+            raise ValidationError("Không thể xóa nhật ký đã nằm trong phiếu thanh toán hiệu lực.")
         date_value = self.ngay_thuc_hien
         result = super().delete(*args, **kwargs)
         type(self).recalculate_day(date_value)
@@ -948,6 +967,96 @@ class ChiTietThanhToanDiLaiPhuHuynh(TimeStampedModel):
     @property
     def chi_nhanh(self):
         return self.nhat_ky.phan_cong.tre.chi_nhanh or ""
+
+
+class CauHinhThue(TimeStampedModel):
+    tu_ngay = models.DateField(unique=True, verbose_name="Hiệu lực từ ngày")
+    nguong_thue = models.DecimalField(max_digits=18, decimal_places=0, verbose_name="Ngưỡng thuế")
+    ty_le = models.DecimalField(max_digits=8, decimal_places=6, verbose_name="Tỷ lệ thuế")
+    can_cu_phap_ly = models.TextField(verbose_name="Căn cứ pháp lý")
+
+    class Meta:
+        ordering = ["-tu_ngay", "-id"]
+
+    def clean(self):
+        errors = {}
+        if self.nguong_thue is None or self.nguong_thue < 0:
+            errors["nguong_thue"] = "Ngưỡng thuế phải lớn hơn hoặc bằng 0."
+        if self.ty_le is None or not 0 <= self.ty_le <= 1:
+            errors["ty_le"] = "Tỷ lệ thuế phải trong khoảng 0 đến 1."
+        if not self.can_cu_phap_ly:
+            errors["can_cu_phap_ly"] = "Cần nhập căn cứ pháp lý."
+        if errors:
+            raise ValidationError(errors)
+
+
+class PhieuThanhToan(TimeStampedModel):
+    TRANG_THAI_CHOICES = [
+        ("CHO_CHI", "Chờ chi"),
+        ("DA_CHI", "Đã chi"),
+        ("HUY", "Hủy"),
+    ]
+    can_bo = models.ForeignKey(CanBo, on_delete=models.PROTECT, related_name="phieu_thanh_toan", verbose_name="CBCT")
+    hop_dong = models.ForeignKey(HopDong, on_delete=models.PROTECT, related_name="phieu_thanh_toan", verbose_name="Hợp đồng")
+    ky_can_thiep = models.PositiveIntegerField(verbose_name="Kỳ can thiệp")
+    lan_thanh_toan = models.PositiveIntegerField(verbose_name="Lần thanh toán")
+    tong_tien_cong = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"))
+    tong_tien_di_lai = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"))
+    thue_tncn = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"))
+    thuc_nhan = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"))
+    nguong_thue = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"))
+    ty_le_thue = models.DecimalField(max_digits=8, decimal_places=6, default=Decimal("0"))
+    trang_thai = models.CharField(max_length=20, choices=TRANG_THAI_CHOICES, default="CHO_CHI")
+    ngay_lap = models.DateField(default=timezone.localdate)
+    lap_boi = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="phieu_thanh_toan_lap")
+    ngay_chi = models.DateField(null=True, blank=True)
+    xac_nhan_chi_boi = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="phieu_thanh_toan_xac_nhan")
+    ly_do_huy = models.TextField(blank=True, default="")
+    huy_boi = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="phieu_thanh_toan_huy")
+    ngay_huy = models.DateField(null=True, blank=True)
+    hoat_dong = models.BooleanField(null=True, default=True)
+    ghi_chu = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-ngay_lap", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["can_bo", "hop_dong", "ky_can_thiep", "hoat_dong"], name="uq_phieu_cb_hd_ky_active"),
+            models.UniqueConstraint(fields=["can_bo", "hop_dong", "lan_thanh_toan", "hoat_dong"], name="uq_phieu_cb_hd_lan_active"),
+            models.CheckConstraint(condition=models.Q(ky_can_thiep__gte=1, ky_can_thiep__lte=30), name="ck_phieu_ky_range"),
+            models.CheckConstraint(condition=models.Q(lan_thanh_toan__gte=1), name="ck_phieu_lan_gt0"),
+            models.CheckConstraint(condition=models.Q(tong_tien_cong__gte=0) & models.Q(tong_tien_di_lai__gte=0) & models.Q(thue_tncn__gte=0) & models.Q(thuc_nhan__gte=0), name="ck_phieu_amounts_gte0"),
+        ]
+
+    def clean(self):
+        errors = {}
+        if self.trang_thai == "HUY" and self.hoat_dong is not None:
+            errors["hoat_dong"] = "Phiếu hủy phải có hoat_dong = NULL."
+        if self.trang_thai != "HUY" and self.hoat_dong is None:
+            errors["hoat_dong"] = "Phiếu chưa hủy phải còn hiệu lực."
+        expected = Decimal(self.tong_tien_cong or 0) + Decimal(self.tong_tien_di_lai or 0) - Decimal(self.thue_tncn or 0)
+        if Decimal(self.thuc_nhan or 0) != expected:
+            errors["thuc_nhan"] = "Thực nhận phải bằng công + đi lại - thuế."
+        if errors:
+            raise ValidationError(errors)
+
+
+class ChiTietPhieuThanhToan(TimeStampedModel):
+    phieu = models.ForeignKey(PhieuThanhToan, on_delete=models.PROTECT, related_name="chi_tiet", verbose_name="Phiếu thanh toán")
+    nhat_ky = models.ForeignKey(NhatKyThucHien, on_delete=models.PROTECT, related_name="chi_tiet_phieu_thanh_toan", verbose_name="Nhật ký")
+    hoat_dong = models.BooleanField(null=True, default=True)
+    so_buoi = models.PositiveIntegerField(default=0)
+    so_luot_di_lai_cbct = models.PositiveIntegerField(default=0)
+    don_gia_cong = models.DecimalField(max_digits=12, decimal_places=0, default=Decimal("0"))
+    dinh_muc_di_lai = models.DecimalField(max_digits=12, decimal_places=0, default=Decimal("0"))
+    tien_cong = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"))
+    tien_di_lai = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"))
+    ghi_chu = models.TextField(blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["nhat_ky", "hoat_dong"], name="uq_ct_phieu_nhat_ky_active"),
+            models.CheckConstraint(condition=models.Q(tien_cong__gte=0) & models.Q(tien_di_lai__gte=0), name="ck_ct_phieu_amounts_gte0"),
+        ]
 
 
 class NghiemThu(TimeStampedModel):

@@ -54,8 +54,8 @@ SECURE_PROXY_SSL_HEADER = (
     if _env_bool("SECURE_PROXY_SSL_HEADER", default=False)
     else None
 )
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = _env_bool("SESSION_COOKIE_SECURE", default=not DEBUG)
+CSRF_COOKIE_SECURE = _env_bool("CSRF_COOKIE_SECURE", default=not DEBUG)
 
 # ======================================================
 # APPLICATIONS

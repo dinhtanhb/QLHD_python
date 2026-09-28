@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 from django.contrib.auth.models import Group, User
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from unittest.mock import patch
 
@@ -34,9 +35,14 @@ from .models import (
     NghiemThu,
     ThanhLyHopDong,
     DotThanhToan,
+    CauHinhThue,
+    PhieuThanhToan,
+    ChiTietPhieuThanhToan,
 )
 from .assignment_import import import_assignment_workbook
 from .services.contract_status import STATUS_TRANSITIONS, transition_hop_dong_status
+from .services.payment_ledger import huy_phieu, snapshot_journals, tao_phieu_thanh_toan, xac_nhan_chi
+from .parsing import parse_decimal_strict, parse_money_vnd, parse_number
 from .permissions import is_admin_user
 from .payment_export import (
     INTERVENTION_COMMITMENT_TEMPLATE,
@@ -672,6 +678,55 @@ class DatabaseRegressionTests(TestCase):
         don_vi_kpi = self.client.get(reverse("danh_sach_don_vi")).context["kpi"]
         self.assertEqual(don_vi_kpi, {"total": 1, "active": 1, "with_staff": 1, "with_contract": 0, "without_contract": 1})
 
+    def test_intervention_report_page_and_excel_export(self):
+        assignment = PhanCongTre.objects.create(
+            phan_bo=self.allocation,
+            can_bo_nguon=self.cb1,
+            nhom_hd=self.group,
+            tre=self.child,
+            loai_dich_vu="VLTL",
+            so_buoi_du_kien=20,
+            dinh_muc_di_lai=Decimal("50000"),
+        )
+        contract = HopDong.objects.create(
+            can_bo=self.cb1,
+            nhom_hd=self.group,
+            so_hop_dong="HD-REPORT-001",
+            ngay_ky=date(2026, 9, 1),
+            tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30),
+            gia_tri_hop_dong=Decimal("10000000"),
+            trang_thai="DA_KY",
+        )
+        NhatKyThucHien.objects.create(
+            hop_dong=contract,
+            phan_cong=assignment,
+            ngay_thuc_hien=date(2026, 9, 10),
+            ky_can_thiep=1,
+            so_buoi_thuc_hien=2,
+            don_gia_cong=Decimal("200000"),
+            dinh_muc_di_lai=Decimal("50000"),
+        )
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("bao_cao_tong_hop"), {"nhom_hd": self.group.pk, "ky": 1})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["report"]["summary"]["so_nhat_ky"], 1)
+        workbook_response = self.client.get(reverse("bao_cao_tong_hop"), {"format": "xlsx"})
+        self.assertEqual(workbook_response.status_code, 200)
+        from openpyxl import load_workbook
+        workbook = load_workbook(BytesIO(workbook_response.content), read_only=True)
+        self.assertEqual(workbook.sheetnames, ["TongHop", "TheoNhomKy", "TheoTreDichVu"])
+        workbook.close()
+
+    def test_readonly_workflows_are_hidden_from_unapproved_users(self):
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get(reverse("bao_cao_tong_hop")).status_code, 302)
+        self.assertEqual(self.client.get(reverse("thanh_quyet_toan")).status_code, 302)
+
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("bao_cao_tong_hop")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("thanh_quyet_toan")).status_code, 200)
+
     def test_don_vi_list_is_sorted_by_code_descending(self):
         DonVi.objects.create(ma_don_vi="ZZZ-001", ten_don_vi="Đơn vị Z")
         DonVi.objects.create(ma_don_vi="AAA-999", ten_don_vi="Đơn vị A")
@@ -679,6 +734,109 @@ class DatabaseRegressionTests(TestCase):
         response = self.client.get(reverse("danh_sach_don_vi"))
         codes = [item.ma_don_vi for item in response.context["page_obj"].object_list]
         self.assertEqual(codes, sorted(codes, reverse=True))
+
+    def test_strict_payment_parsing_and_tax_threshold(self):
+        self.assertEqual(parse_number("0.125"), Decimal("0.125"))
+        self.assertEqual(parse_number("0,125"), Decimal("0.125"))
+        self.assertEqual(parse_money_vnd("1.234.567"), Decimal("1234567"))
+        self.assertEqual(parse_money_vnd("1,234,567"), Decimal("1234567"))
+        with self.assertRaises(ValueError):
+            parse_decimal_strict("1.234")
+        self.assertEqual(calculate_tncn(Decimal("5000000")), Decimal("500000"))
+        self.assertEqual(calculate_tncn(Decimal("4999999")), Decimal("0"))
+
+    def test_payment_voucher_is_snapshotted_and_protects_journal(self):
+        assignment = PhanCongTre.objects.create(
+            phan_bo=self.allocation,
+            can_bo_nguon=self.cb1,
+            nhom_hd=self.group,
+            tre=self.child,
+            loai_dich_vu="VLTL",
+            so_buoi_du_kien=20,
+            dinh_muc_di_lai=Decimal("50000"),
+        )
+        contract = HopDong.objects.create(
+            can_bo=self.cb1,
+            nhom_hd=self.group,
+            so_hop_dong="HD-PAY-001",
+            ngay_ky=date(2026, 9, 1),
+            tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30),
+            gia_tri_hop_dong=Decimal("10000000"),
+            trang_thai="DA_KY",
+        )
+        journal = NhatKyThucHien.objects.create(
+            hop_dong=contract,
+            phan_cong=assignment,
+            ngay_thuc_hien=date(2026, 9, 10),
+            ky_can_thiep=1,
+            so_buoi_thuc_hien=10,
+            so_luot_di_lai_cbct=1,
+            don_gia_cong=Decimal("200000"),
+            dinh_muc_di_lai=Decimal("50000"),
+        )
+        NhatKyThucHien.objects.filter(pk=journal.pk).update(so_luot_di_lai_cbct=1)
+        voucher = tao_phieu_thanh_toan(self.cb1, contract, 1, self.admin)
+        self.assertEqual(voucher.lan_thanh_toan, 1)
+        self.assertEqual(voucher.tong_tien_cong, Decimal("2000000"))
+        self.assertEqual(voucher.tong_tien_di_lai, Decimal("50000"))
+        self.assertEqual(voucher.thue_tncn, Decimal("0"))
+        self.assertEqual(ChiTietPhieuThanhToan.objects.filter(phieu=voucher).count(), 1)
+        snapshot = snapshot_journals([journal])[0]
+        self.assertEqual(snapshot.so_buoi_thuc_hien, 10)
+        self.assertEqual(snapshot.don_gia_cong, Decimal("200000"))
+        self.assertEqual(snapshot.lan_thanh_toan, 1)
+        with self.assertRaises(ValidationError):
+            tao_phieu_thanh_toan(self.cb1, contract, 1, self.admin)
+        journal.refresh_from_db()
+        journal.so_buoi_thuc_hien = 11
+        with self.assertRaises(ValidationError):
+            journal.save()
+        with self.assertRaises(ValidationError):
+            journal.delete()
+
+    def test_payment_voucher_round_reuse_after_latest_cancel(self):
+        assignment = PhanCongTre.objects.create(
+            phan_bo=self.allocation,
+            can_bo_nguon=self.cb1,
+            nhom_hd=self.group,
+            tre=self.child,
+            loai_dich_vu="VLTL",
+            so_buoi_du_kien=20,
+            dinh_muc_di_lai=Decimal("50000"),
+        )
+        contract = HopDong.objects.create(
+            can_bo=self.cb1,
+            nhom_hd=self.group,
+            so_hop_dong="HD-PAY-002",
+            ngay_ky=date(2026, 9, 1),
+            tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30),
+            gia_tri_hop_dong=Decimal("10000000"),
+            trang_thai="DA_KY",
+        )
+        for period in (1, 2, 3):
+            NhatKyThucHien.objects.create(
+                hop_dong=contract, phan_cong=assignment, ngay_thuc_hien=date(2026, 9, period),
+                ky_can_thiep=period, so_buoi_thuc_hien=1, don_gia_cong=Decimal("200000"),
+                dinh_muc_di_lai=Decimal("50000"),
+            )
+            NhatKyThucHien.objects.filter(phan_cong=assignment, ky_can_thiep=period).update(so_luot_di_lai_cbct=1)
+        first = tao_phieu_thanh_toan(self.cb1, contract, 1, self.admin)
+        second = tao_phieu_thanh_toan(self.cb1, contract, 2, self.admin)
+        third = tao_phieu_thanh_toan(self.cb1, contract, 3, self.admin)
+        self.assertEqual((first.lan_thanh_toan, second.lan_thanh_toan, third.lan_thanh_toan), (1, 2, 3))
+        huy_phieu(third, "Tạo nhầm kỳ", self.admin)
+        replacement = tao_phieu_thanh_toan(self.cb1, contract, 3, self.admin)
+        self.assertEqual(replacement.lan_thanh_toan, 3)
+        xac_nhan_chi(replacement, date(2026, 9, 30), self.admin)
+        replacement.refresh_from_db()
+        self.assertEqual(replacement.trang_thai, "DA_CHI")
+
+    def test_payment_ledger_pages_are_available_to_admin(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("danh_sach_phieu_thanh_toan")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("tao_phieu_thanh_toan")).status_code, 200)
 
     def test_khoa_phan_bo_requires_post_and_admin(self):
         self.client.force_login(self.admin)
@@ -920,6 +1078,7 @@ class DatabaseRegressionTests(TestCase):
         self.assertEqual(second.created, 0)
         self.assertEqual(second.unchanged, 1)
 
+        PhanBoChiTieu.objects.create(can_bo=self.cb2, nhom_hd=self.group, so_tre_phcn=2, so_buoi_phcn=20)
         other = import_assignment_workbook(self._workbook([self._base_row(**{"Mã CB": "ABP0002"})]))
         self.assertEqual(other.created, 1)
         self.assertEqual(PhanCongTre.objects.filter(tre=self.child, loai_dich_vu="VLTL").count(), 2)

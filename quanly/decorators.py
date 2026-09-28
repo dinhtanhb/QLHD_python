@@ -52,3 +52,7 @@ def readonly_required(view_func):
         "CBDA",
         "KeToan",
     )(view_func)
+
+
+def accountant_required(view_func):
+    return role_required("Admin", "KeToan")(view_func)

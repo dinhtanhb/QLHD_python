@@ -1,4 +1,4 @@
-from datetime import date
+from django.utils import timezone
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -44,18 +44,29 @@ def _has_valid_liquidation(hop_dong):
 
 
 def desired_trang_thai(hop_dong):
+    if hop_dong.trang_thai in {"TAM_DUNG", "HUY"}:
+        return hop_dong.trang_thai
     if _has_valid_liquidation(hop_dong):
         return "THANH_LY"
     if _has_valid_acceptance(hop_dong):
         return "NGHIEM_THU"
     acceptance = getattr(hop_dong, "nghiem_thu", None)
     if acceptance and hop_dong.trang_thai == "NGHIEM_THU":
-        return "DANG_THUC_HIEN" if not hop_dong.den_ngay or hop_dong.den_ngay >= date.today() else "HET_HAN"
-    if hop_dong.den_ngay and hop_dong.den_ngay < date.today():
+        return "DANG_THUC_HIEN" if not hop_dong.den_ngay or hop_dong.den_ngay >= timezone.localdate() else "HET_HAN"
+    if hop_dong.den_ngay and hop_dong.den_ngay < timezone.localdate():
         return "HET_HAN"
     if hop_dong.ngay_ky:
         return "DANG_THUC_HIEN"
     return hop_dong.trang_thai
+
+
+def is_het_han(hop_dong):
+    return bool(
+        hop_dong
+        and hop_dong.den_ngay
+        and hop_dong.den_ngay < timezone.localdate()
+        and hop_dong.trang_thai not in {"THANH_LY", "HUY"}
+    )
 
 
 @transaction.atomic
