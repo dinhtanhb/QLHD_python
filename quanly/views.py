@@ -19,6 +19,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .decorators import admin_required, dashboard_required, hopdong_required, readonly_required
+from .permissions import is_admin_user
 from .document_export import (
     create_contract_from_proposal,
     export_acceptance_record,
@@ -92,6 +93,23 @@ from .models import (
     DotThanhToanDiLaiPhuHuynh,
     ChiTietThanhToanDiLaiPhuHuynh,
 )
+
+
+def _is_operationally_locked(hop_dong):
+    """Hợp đồng đã khóa hoặc đã thanh lý thì không cho tài khoản thường phát sinh dữ liệu."""
+    return bool(hop_dong and (hop_dong.is_locked or hop_dong.trang_thai == "THANH_LY"))
+
+
+def _hop_dong_has_financial_records(hop_dong):
+    return any(
+        (
+            NghiemThu.objects.filter(hop_dong=hop_dong).exists(),
+            ThanhLyHopDong.objects.filter(hop_dong=hop_dong).exists(),
+            DotThanhToan.objects.filter(hop_dong=hop_dong).exists(),
+            DotThanhToanDiLaiPhuHuynh.objects.filter(hop_dong=hop_dong).exists(),
+            ChiTietThanhToanDiLaiPhuHuynh.objects.filter(nhat_ky__hop_dong=hop_dong).exists(),
+        )
+    )
 
 
 # =========================================================
@@ -855,15 +873,15 @@ def them_phan_cong(request):
             PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd"),
             pk=int(phan_bo_id),
         )
-        if phan_bo.is_locked:
+        if phan_bo.is_locked and not is_admin_user(request.user):
             messages.error(request, f"Phân bổ #{phan_bo.pk} đã khóa, không thể thêm phân công.")
             return redirect("danh_sach_phan_bo")
 
     if request.method == "POST":
-        form = PhanCongTreForm(request.POST)
+        form = PhanCongTreForm(request.POST, allow_locked=is_admin_user(request.user))
     else:
         initial = {"phan_bo": phan_bo} if phan_bo else {}
-        form = PhanCongTreForm(initial=initial)
+        form = PhanCongTreForm(initial=initial, allow_locked=is_admin_user(request.user))
 
     if request.method == "POST" and form.is_valid():
         obj = form.save()
@@ -882,6 +900,9 @@ def them_phan_cong(request):
 @hopdong_required
 def sua_phan_cong(request, pk):
     item = get_object_or_404(PhanCongTre, pk=pk)
+    if item.phan_bo_id and item.phan_bo.is_locked and not is_admin_user(request.user):
+        messages.error(request, "Phân bổ đã khóa, chỉ Admin mới được sửa phân công.")
+        return redirect("danh_sach_phan_cong")
     form = PhanCongTreForm(request.POST or None, instance=item)
     if request.method == "POST" and form.is_valid():
         affected_dates = set(
@@ -914,6 +935,11 @@ def dieu_chuyen_phan_cong(request, pk):
         messages.error(request, "Phân công chưa thuộc Phân bổ; chưa thể điều chuyển CBCT.")
         return redirect("danh_sach_phan_cong")
     queryset = PhanBoChiTieu.objects.filter(nhom_hd=item.phan_bo.nhom_hd).exclude(pk=item.phan_bo_id).select_related("can_bo", "nhom_hd")
+    if not is_admin_user(request.user):
+        if item.phan_bo.is_locked:
+            messages.error(request, "Phân bổ đã khóa, chỉ Admin mới được điều chuyển phân công.")
+            return redirect("danh_sach_phan_cong")
+        queryset = queryset.filter(is_locked=False)
     if request.method == "POST":
         form = DieuChuyenPhanCongForm(request.POST)
         form.fields["phan_bo"].queryset = queryset
@@ -1547,9 +1573,6 @@ def xoa_phan_bo(request, pk):
     if request.method != "POST":
         return redirect("danh_sach_phan_bo")
     item = get_object_or_404(PhanBoChiTieu, pk=pk)
-    if item.is_locked:
-        messages.error(request, "Phân bổ đã khóa, không thể xóa.")
-        return redirect("danh_sach_phan_bo")
     try:
         item.delete()
         messages.success(request, "Đã xóa Phân bổ chỉ tiêu.")
@@ -1561,9 +1584,6 @@ def xoa_phan_bo(request, pk):
 @admin_required
 def sua_phan_bo_chi_tieu(request, pk):
     item = get_object_or_404(PhanBoChiTieu, pk=pk)
-    if item.is_locked:
-        messages.error(request, "Phân bổ đã khóa, không thể sửa.")
-        return redirect("danh_sach_phan_bo")
     form = PhanBoChiTieuForm(request.POST or None, instance=item)
     if request.method == "POST" and form.is_valid():
         form.save()
@@ -1584,6 +1604,20 @@ def khoa_phan_bo(request, pk):
     item.is_locked = True
     item.save(update_fields=["is_locked", "updated_at"])
     messages.success(request, f"Đã khóa Phân bổ #{item.pk}.")
+    return redirect("danh_sach_phan_bo")
+
+
+@admin_required
+def mo_khoa_phan_bo(request, pk):
+    item = get_object_or_404(PhanBoChiTieu, pk=pk)
+    if request.method != "POST":
+        return redirect("danh_sach_phan_bo")
+    if not item.is_locked:
+        messages.info(request, f"Phân bổ #{item.pk} đang ở trạng thái mở.")
+        return redirect("danh_sach_phan_bo")
+    item.is_locked = False
+    item.save(update_fields=["is_locked", "updated_at"])
+    messages.success(request, f"Đã mở khóa Phân bổ #{item.pk} để tiếp tục kiểm thử/chỉnh sửa.")
     return redirect("danh_sach_phan_bo")
 
 
@@ -1930,9 +1964,6 @@ def danh_sach_hop_dong(request):
 def sua_hop_dong(request, pk):
     hop_dong = get_object_or_404(HopDong, pk=pk)
     current_status = hop_dong.trang_thai
-    if hop_dong.is_locked:
-        messages.error(request, "Hợp đồng đã khóa, không thể sửa.")
-        return redirect("danh_sach_hop_dong")
     form = HopDongForm(request.POST or None, instance=hop_dong)
     if request.method == "POST" and form.is_valid():
         target_status = form.cleaned_data.get("trang_thai")
@@ -1948,6 +1979,7 @@ def sua_hop_dong(request, pk):
                         raise ValidationError("Chỉ được chuyển sang nghiệm thu/thanh lý sau khi có hồ sơ nghiệm thu Đạt.")
             with transaction.atomic():
                 form.save()
+                _sync_hop_dong_from_signed_extensions(hop_dong)
             messages.success(request, f"Đã cập nhật hợp đồng {hop_dong.so_hop_dong}.")
             return redirect("danh_sach_hop_dong")
         except ValidationError as exc:
@@ -1960,14 +1992,25 @@ def xoa_hop_dong(request, pk):
     if request.method != "POST":
         return redirect("danh_sach_hop_dong")
     hop_dong = get_object_or_404(HopDong, pk=pk)
-    if hop_dong.is_locked or hop_dong.trang_thai not in {"DU_THAO", "HUY"}:
-        messages.error(request, "Chỉ được xóa hợp đồng dự thảo hoặc đã hủy và chưa khóa.")
-        return redirect("danh_sach_hop_dong")
     try:
         hop_dong.delete()
         messages.success(request, "Đã xóa hợp đồng.")
     except Exception as exc:
         messages.error(request, f"Không thể xóa hợp đồng vì còn dữ liệu liên quan: {exc}")
+    return redirect("danh_sach_hop_dong")
+
+
+@admin_required
+def mo_khoa_hop_dong(request, pk):
+    hop_dong = get_object_or_404(HopDong, pk=pk)
+    if request.method != "POST":
+        return redirect("danh_sach_hop_dong")
+    if not hop_dong.is_locked:
+        messages.info(request, f"Hợp đồng {hop_dong.so_hop_dong} đang ở trạng thái mở.")
+        return redirect("danh_sach_hop_dong")
+    hop_dong.is_locked = False
+    hop_dong.save(update_fields=["is_locked", "updated_at"])
+    messages.success(request, f"Đã mở khóa hợp đồng {hop_dong.so_hop_dong} để tiếp tục kiểm thử/chỉnh sửa.")
     return redirect("danh_sach_hop_dong")
 
 
@@ -2306,6 +2349,9 @@ def them_nhat_ky_thuc_hien(request, hop_dong_id):
         HopDong.objects.select_related("de_xuat__phan_bo"),
         pk=hop_dong_id,
     )
+    if _is_operationally_locked(hop_dong) and not is_admin_user(request.user):
+        messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được thêm nhật ký.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     form = NhatKyThucHienForm(request.POST or None, hop_dong=hop_dong)
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
@@ -2335,6 +2381,9 @@ def them_nhat_ky_can_thiep(request):
     form = NhatKyCanThiepForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
+        if item.hop_dong_id and _is_operationally_locked(item.hop_dong) and not is_admin_user(request.user):
+            messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được thêm nhật ký.")
+            return redirect("nhat_ky_can_thiep")
         effective_staff = item.can_bo_hieu_luc
         if not item.pk and effective_staff:
             item.lan_thanh_toan = next_payment_round(effective_staff, item.ky_can_thiep)
@@ -2359,6 +2408,9 @@ def sua_nhat_ky_can_thiep(request, pk):
         NhatKyThucHien.objects.select_related("hop_dong", "phan_cong"),
         pk=pk,
     )
+    if item.hop_dong_id and _is_operationally_locked(item.hop_dong) and not is_admin_user(request.user):
+        messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được sửa nhật ký.")
+        return redirect("nhat_ky_can_thiep")
     form = NhatKyCanThiepForm(
         request.POST or None,
         instance=item,
@@ -2395,6 +2447,9 @@ def xoa_nhat_ky_can_thiep(request, pk):
     if request.method != "POST":
         return redirect("nhat_ky_can_thiep")
     item = get_object_or_404(NhatKyThucHien, pk=pk)
+    if item.hop_dong_id and _is_operationally_locked(item.hop_dong) and not is_admin_user(request.user):
+        messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được xóa nhật ký.")
+        return redirect("nhat_ky_can_thiep")
     try:
         item.delete()
         messages.success(request, "Đã xóa nhật ký can thiệp.")
@@ -2406,6 +2461,9 @@ def xoa_nhat_ky_can_thiep(request, pk):
 @hopdong_required
 def tao_dot_thanh_toan(request, hop_dong_id):
     hop_dong = get_object_or_404(HopDong, pk=hop_dong_id)
+    if _is_operationally_locked(hop_dong) and not is_admin_user(request.user):
+        messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được tạo đợt thanh toán.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     form = DotThanhToanForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
@@ -2526,6 +2584,9 @@ def xuat_danh_sach_tai_khoan(request, pk):
 @hopdong_required
 def cap_nhat_nghiem_thu(request, hop_dong_id):
     hop_dong = get_object_or_404(HopDong.objects.select_related("de_xuat__phan_bo"), pk=hop_dong_id)
+    if _is_operationally_locked(hop_dong) and not is_admin_user(request.user):
+        messages.error(request, "Hợp đồng đã khóa/thanh lý, chỉ Admin mới được sửa nghiệm thu.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     record = NghiemThu.objects.filter(hop_dong=hop_dong).first()
     journal_total = NhatKyThucHien.objects.filter(hop_dong=hop_dong).aggregate(total=Sum("thanh_tien"))["total"] or Decimal("0")
     if request.method == "POST":
@@ -2550,6 +2611,9 @@ def cap_nhat_nghiem_thu(request, hop_dong_id):
 @hopdong_required
 def cap_nhat_thanh_ly(request, hop_dong_id):
     hop_dong = get_object_or_404(HopDong.objects.select_related("de_xuat__phan_bo"), pk=hop_dong_id)
+    if _is_operationally_locked(hop_dong) and not is_admin_user(request.user):
+        messages.error(request, "Hợp đồng đã khóa/thanh lý, chỉ Admin mới được sửa thanh lý.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     acceptance = NghiemThu.objects.filter(hop_dong=hop_dong).first()
     if not acceptance or not acceptance.ngay_nghiem_thu or acceptance.ket_qua != "DAT":
         messages.error(request, "Chỉ được thanh lý sau khi đã lập biên bản nghiệm thu.")
@@ -2607,6 +2671,9 @@ def xuat_bien_ban_thanh_ly(request, pk):
 @hopdong_required
 def tao_dot_thanh_toan_phu_huynh(request, hop_dong_id):
     hop_dong = get_object_or_404(HopDong, pk=hop_dong_id)
+    if _is_operationally_locked(hop_dong) and not is_admin_user(request.user):
+        messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được tạo đợt thanh toán đi lại phụ huynh.")
+        return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     form_instance = DotThanhToanDiLaiPhuHuynh(hop_dong=hop_dong)
     if request.method == "POST":
         form = DotThanhToanDiLaiPhuHuynhForm(request.POST, instance=form_instance)
@@ -2630,22 +2697,27 @@ def tao_dot_thanh_toan_phu_huynh(request, hop_dong_id):
     return render(request, "quanly/tao_dot_thanh_toan_phu_huynh.html", {"form": form, "hop_dong": hop_dong})
 
 
-def _parent_travel_group_journals(nhom_hd, ky_can_thiep, nam, thang):
+def _parent_travel_group_journals(nhom_hd, ky_can_thiep, nam, thang, include_locked=True):
     group_filter = (
         Q(nhom_hd_nguon=nhom_hd)
         | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd=nhom_hd)
         | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd__isnull=True, phan_cong__phan_bo__nhom_hd=nhom_hd)
     )
-    return NhatKyThucHien.objects.filter(
+    queryset = NhatKyThucHien.objects.filter(
         group_filter,
         ky_can_thiep=ky_can_thiep,
+        ngay_thuc_hien__year=nam,
+        ngay_thuc_hien__month=thang,
         so_luot_di_lai__gt=0,
     ).select_related(
         "nhom_hd_nguon",
         "hop_dong",
         "phan_cong__nhom_hd",
         "phan_cong__phan_bo__nhom_hd",
-    ).order_by("ngay_thuc_hien", "id")
+    )
+    if not include_locked:
+        queryset = queryset.exclude(hop_dong__is_locked=True).exclude(hop_dong__trang_thai="THANH_LY")
+    return queryset.order_by("ngay_thuc_hien", "id")
 
 
 def _sync_parent_travel_group_dot(dot, journals):
@@ -2670,6 +2742,14 @@ def _sync_parent_travel_group_dot(dot, journals):
         )
         added += 1
     return added
+
+
+def _parent_travel_dot_is_locked(dot):
+    if dot.hop_dong_id:
+        return _is_operationally_locked(dot.hop_dong)
+    return dot.chi_tiet.filter(
+        Q(nhat_ky__hop_dong__is_locked=True) | Q(nhat_ky__hop_dong__trang_thai="THANH_LY")
+    ).exists()
 
 
 @hopdong_required
@@ -2709,10 +2789,20 @@ def tao_dot_thanh_toan_di_lai_phu_huynh_theo_nhom(request):
         ky_can_thiep = form.cleaned_data["ky_can_thiep"]
         nam = form.cleaned_data["nam"]
         thang = form.cleaned_data["thang"]
-        journals = list(_parent_travel_group_journals(nhom_hd, ky_can_thiep, nam, thang))
-        if not journals:
-            form.add_error(None, "Không có nhật ký có lượt đi lại phù hợp với Nhóm HĐ và Kỳ đã chọn.")
+        if existing_dot and _parent_travel_dot_is_locked(existing_dot) and not is_admin_user(request.user):
+            form.add_error(None, "Đợt thanh toán đã có nhật ký thuộc hợp đồng khóa/thanh lý, chỉ Admin mới được cập nhật.")
+            journals = []
         else:
+            journals = list(_parent_travel_group_journals(
+                nhom_hd,
+                ky_can_thiep,
+                nam,
+                thang,
+                include_locked=is_admin_user(request.user),
+            ))
+        if not journals and not form.errors:
+            form.add_error(None, "Không có nhật ký có lượt đi lại phù hợp với Nhóm HĐ và Kỳ đã chọn.")
+        elif journals:
             dot = None
             added_count = 0
             try:
@@ -2744,7 +2834,13 @@ def tao_dot_thanh_toan_di_lai_phu_huynh_theo_nhom(request):
         if group_id and ky:
             nhom = NhomHD.objects.filter(pk=group_id).first()
             if nhom:
-                preview = _parent_travel_group_journals(nhom, ky, nam, thang)
+                preview = _parent_travel_group_journals(
+                    nhom,
+                    ky,
+                    nam,
+                    thang,
+                    include_locked=is_admin_user(request.user),
+                )
                 journal_count = preview.count()
                 journal_units = preview.aggregate(total=Sum("so_luot_di_lai"))["total"] or 0
                 contracts = [journal.hop_dong for journal in preview if journal.hop_dong and journal.hop_dong.tu_ngay and journal.hop_dong.den_ngay]
@@ -2795,7 +2891,7 @@ def danh_sach_gia_han_hop_dong(request):
     })
 
 
-def _sync_hop_dong_from_signed_extensions(hop_dong):
+def _sync_hop_dong_from_signed_extensions(hop_dong, fallback_end=None, fallback_total=None, fallback_volume=None):
     """Đồng bộ HĐ theo các phụ lục đã ký, kể cả khi Admin bỏ ký một phụ lục."""
     time_extensions = hop_dong.phu_luc.filter(
         loai_phu_luc="GIA_HAN_THOI_GIAN",
@@ -2806,7 +2902,7 @@ def _sync_hop_dong_from_signed_extensions(hop_dong):
     effective_end = (
         signed_time.den_ngay_moi
         if signed_time
-        else (first_time.den_ngay_cu if first_time else hop_dong.den_ngay)
+        else (first_time.den_ngay_cu if first_time else fallback_end if fallback_end is not None else hop_dong.den_ngay)
     )
 
     volume_extensions = hop_dong.phu_luc.filter(
@@ -2820,7 +2916,13 @@ def _sync_hop_dong_from_signed_extensions(hop_dong):
     elif first_volume:
         effective_total = first_volume.tong_tien_moi - first_volume.tong_tien_tang_them
     else:
-        effective_total = hop_dong.gia_tri_hop_dong
+        if fallback_total is not None:
+            effective_total = fallback_total
+        else:
+            detail_total = ChiTietKhoiLuongHopDong.objects.filter(hop_dong=hop_dong).aggregate(
+                total=Sum("thanh_tien")
+            )["total"]
+            effective_total = detail_total if detail_total is not None else hop_dong.gia_tri_hop_dong
 
     update_fields = []
     if hop_dong.den_ngay != effective_end:
@@ -2833,9 +2935,11 @@ def _sync_hop_dong_from_signed_extensions(hop_dong):
         update_fields.append("updated_at")
         hop_dong.save(update_fields=update_fields)
 
+    effective_services = set()
     if effective_volume:
         is_signed = bool(signed_volume)
         for detail in effective_volume.chi_tiet_gia_han_khoi_luong.all():
+            effective_services.add(detail.loai_dich_vu)
             ChiTietKhoiLuongHopDong.objects.update_or_create(
                 hop_dong=hop_dong,
                 loai_dich_vu=detail.loai_dich_vu,
@@ -2846,15 +2950,56 @@ def _sync_hop_dong_from_signed_extensions(hop_dong):
                     "dinh_muc_di_lai": detail.dinh_muc_di_lai,
                 },
             )
+    elif fallback_volume is not None:
+        for detail in fallback_volume:
+            effective_services.add(detail["loai_dich_vu"])
+            ChiTietKhoiLuongHopDong.objects.update_or_create(
+                hop_dong=hop_dong,
+                loai_dich_vu=detail["loai_dich_vu"],
+                defaults={
+                    "so_tre": detail["so_tre"],
+                    "so_buoi": detail["so_buoi"],
+                    "don_gia_cong": detail["don_gia_cong"],
+                    "dinh_muc_di_lai": detail["dinh_muc_di_lai"],
+                },
+            )
+    if effective_services:
+        ChiTietKhoiLuongHopDong.objects.filter(hop_dong=hop_dong).exclude(
+            loai_dich_vu__in=effective_services
+        ).delete()
+
+    contract_details = list(ChiTietKhoiLuongHopDong.objects.filter(hop_dong=hop_dong))
+    if contract_details:
+        rate_fields = {
+            "don_gia_cong": contract_details[0].don_gia_cong,
+        }
+        service_rates = {detail.loai_dich_vu: detail.dinh_muc_di_lai for detail in contract_details}
+        if "VLTL" in service_rates:
+            rate_fields["dinh_muc_di_lai_phcn"] = service_rates["VLTL"]
+        if "CSXH" in service_rates:
+            rate_fields["dinh_muc_di_lai_cs"] = service_rates["CSXH"]
+        rate_update_fields = []
+        for field, value in rate_fields.items():
+            if getattr(hop_dong, field) != value:
+                setattr(hop_dong, field, value)
+                rate_update_fields.append(field)
+        if rate_update_fields:
+            hop_dong.save(update_fields=[*rate_update_fields, "updated_at"])
 
 
 @hopdong_required
 def them_gia_han_thoi_gian(request, hop_dong_id=None):
     selected = get_object_or_404(HopDong, pk=hop_dong_id) if hop_dong_id else None
+    if selected and _is_operationally_locked(selected) and not is_admin_user(request.user):
+        messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được thêm phụ lục gia hạn.")
+        return redirect("danh_sach_gia_han_hop_dong")
     initial = {"hop_dong": selected} if selected else {}
     form = GiaHanThoiGianForm(request.POST or None, initial=initial)
     if request.method == "POST" and form.is_valid():
         hop_dong = form.cleaned_data["hop_dong"]
+        if _is_operationally_locked(hop_dong) and not is_admin_user(request.user):
+            messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được thêm phụ lục gia hạn.")
+            return redirect("danh_sach_gia_han_hop_dong")
         with transaction.atomic():
             current_end = (
                 PhuLucHopDong.objects.filter(hop_dong=hop_dong, loai_phu_luc="GIA_HAN_THOI_GIAN", den_ngay_moi__isnull=False)
@@ -2893,12 +3038,18 @@ def them_gia_han_thoi_gian(request, hop_dong_id=None):
 @hopdong_required
 def them_gia_han_khoi_luong(request, hop_dong_id=None):
     selected = get_object_or_404(HopDong, pk=hop_dong_id) if hop_dong_id else None
+    if selected and _is_operationally_locked(selected) and not is_admin_user(request.user):
+        messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được thêm phụ lục gia hạn.")
+        return redirect("danh_sach_gia_han_hop_dong")
     form = GiaHanKhoiLuongForm(request.POST or None)
     if selected and request.method != "POST":
         form.initial["hop_dong"] = selected
         form.set_contract_initial(selected)
     if request.method == "POST" and form.is_valid():
         hop_dong = form.cleaned_data["hop_dong"]
+        if _is_operationally_locked(hop_dong) and not is_admin_user(request.user):
+            messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được thêm phụ lục gia hạn.")
+            return redirect("danh_sach_gia_han_hop_dong")
         baseline = form.baseline(hop_dong)
         current_end = _current_contract_end(hop_dong)
         new_end = form.cleaned_data["den_ngay_moi"]
@@ -2988,6 +3139,9 @@ def sua_gia_han_hop_dong(request, pk):
 
     if request.method == "POST" and form.is_valid():
         hop_dong = form.cleaned_data["hop_dong"]
+        if extension.is_signed and _hop_dong_has_financial_records(hop_dong):
+            messages.error(request, "Không thể sửa phụ lục đã ký sau khi hợp đồng đã phát sinh nghiệm thu, thanh lý hoặc thanh toán.")
+            return redirect("danh_sach_gia_han_hop_dong")
         try:
             with transaction.atomic():
                 if is_volume:
@@ -3043,6 +3197,53 @@ def sua_gia_han_hop_dong(request, pk):
         return render(request, "quanly/them_gia_han_khoi_luong.html", context)
     context["contract_end_dates"] = form.contract_end_dates
     return render(request, "quanly/them_gia_han_thoi_gian.html", context)
+
+
+@admin_required
+def xoa_gia_han_hop_dong(request, pk):
+    extension = get_object_or_404(
+        PhuLucHopDong.objects.prefetch_related("chi_tiet_gia_han_khoi_luong"),
+        pk=pk,
+        loai_phu_luc__in={"GIA_HAN_THOI_GIAN", "GIA_HAN_KHOI_LUONG"},
+    )
+    if request.method != "POST":
+        return redirect("danh_sach_gia_han_hop_dong")
+
+    hop_dong = extension.hop_dong
+    if extension.is_signed and _hop_dong_has_financial_records(hop_dong):
+        messages.error(
+            request,
+            "Không thể xóa phụ lục đã ký vì hợp đồng đã phát sinh nghiệm thu, thanh lý hoặc thanh toán.",
+        )
+        return redirect("danh_sach_gia_han_hop_dong")
+    fallback_end = extension.den_ngay_cu if extension.loai_phu_luc == "GIA_HAN_THOI_GIAN" and extension.is_signed else None
+    fallback_total = None
+    fallback_volume = None
+    if extension.loai_phu_luc == "GIA_HAN_KHOI_LUONG" and extension.is_signed:
+        fallback_total = extension.tong_tien_moi - extension.tong_tien_tang_them
+        fallback_volume = [
+            {
+                "loai_dich_vu": detail.loai_dich_vu,
+                "so_tre": detail.so_tre_cu,
+                "so_buoi": detail.so_buoi_cu,
+                "don_gia_cong": detail.don_gia_cong,
+                "dinh_muc_di_lai": detail.dinh_muc_di_lai,
+            }
+            for detail in extension.chi_tiet_gia_han_khoi_luong.all()
+        ]
+    try:
+        with transaction.atomic():
+            extension.delete()
+            _sync_hop_dong_from_signed_extensions(
+                hop_dong,
+                fallback_end=fallback_end,
+                fallback_total=fallback_total,
+                fallback_volume=fallback_volume,
+            )
+        messages.success(request, "Đã xóa phụ lục gia hạn và đồng bộ lại hợp đồng.")
+    except ProtectedError:
+        messages.error(request, "Không thể xóa phụ lục vì còn hồ sơ phụ thuộc đang được bảo vệ.")
+    return redirect("danh_sach_gia_han_hop_dong")
 
 
 @hopdong_required
@@ -3217,6 +3418,9 @@ def cap_nhat_thoi_gian_thanh_toan_di_lai_phu_huynh(request, pk):
     dot = get_object_or_404(DotThanhToanDiLaiPhuHuynh, pk=pk)
     if request.method != "POST":
         return redirect("chi_tiet_dot_thanh_toan_phu_huynh", pk=dot.pk)
+    if _parent_travel_dot_is_locked(dot) and not is_admin_user(request.user):
+        messages.error(request, "Đợt thanh toán có dữ liệu thuộc hợp đồng khóa/thanh lý, chỉ Admin mới được sửa thời gian.")
+        return redirect("chi_tiet_dot_thanh_toan_phu_huynh", pk=dot.pk)
     form = DotThanhToanDiLaiPhuHuynhDateForm(request.POST, instance=dot)
     if form.is_valid():
         form.save()
@@ -3234,6 +3438,9 @@ def them_chi_tiet_thanh_toan_phu_huynh(request, dot_id):
         DotThanhToanDiLaiPhuHuynh.objects.select_related("hop_dong", "nhom_hd"),
         pk=dot_id,
     )
+    if _parent_travel_dot_is_locked(dot) and not is_admin_user(request.user):
+        messages.error(request, "Đợt thanh toán có dữ liệu thuộc hợp đồng khóa/thanh lý, chỉ Admin mới được thêm chi tiết.")
+        return redirect("chi_tiet_dot_thanh_toan_phu_huynh", pk=dot.pk)
     form_kwargs = {
         "hop_dong": dot.hop_dong,
         "nhom_hd": dot.nhom_hd,
@@ -3248,6 +3455,8 @@ def them_chi_tiet_thanh_toan_phu_huynh(request, dot_id):
             try:
                 with transaction.atomic():
                     item.nhat_ky = NhatKyThucHien.objects.select_for_update().get(pk=item.nhat_ky_id)
+                    if item.nhat_ky.hop_dong_id and _is_operationally_locked(item.nhat_ky.hop_dong) and not is_admin_user(request.user):
+                        raise ValidationError("Nhật ký thuộc hợp đồng khóa/thanh lý, chỉ Admin mới được thêm vào đợt.")
                     item.dinh_muc_di_lai = item.nhat_ky.dinh_muc_di_lai
                     item.save()
             except ValidationError as exc:
@@ -3662,6 +3871,9 @@ def xuat_dnck_nhat_ky(request):
 @hopdong_required
 def them_chi_tiet_thanh_toan(request, dot_id):
     dot = get_object_or_404(DotThanhToan.objects.select_related("hop_dong"), pk=dot_id)
+    if _is_operationally_locked(dot.hop_dong) and not is_admin_user(request.user):
+        messages.error(request, "Hợp đồng đã khóa/thanh lý, chỉ Admin mới được thêm chi tiết thanh toán.")
+        return redirect("chi_tiet_dot_thanh_toan", pk=dot.pk)
     form = ChiTietThanhToanForm(request.POST or None, hop_dong=dot.hop_dong)
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
@@ -3680,7 +3892,7 @@ def them_khoi_luong_hop_dong(request, hop_dong_id):
 @hopdong_required
 def them_phu_luc_hop_dong(request, hop_dong_id):
     hop_dong = get_object_or_404(HopDong, pk=hop_dong_id)
-    if hop_dong.is_locked:
+    if _is_operationally_locked(hop_dong) and not is_admin_user(request.user):
         messages.error(request, "Hợp đồng đã khóa, không thể thêm phụ lục.")
         return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     form = PhuLucHopDongForm(request.POST or None)

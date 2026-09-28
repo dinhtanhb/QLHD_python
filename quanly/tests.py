@@ -33,6 +33,7 @@ from .models import (
     Tre,
     NghiemThu,
     ThanhLyHopDong,
+    DotThanhToan,
 )
 from .assignment_import import import_assignment_workbook
 from .services.contract_status import STATUS_TRANSITIONS, transition_hop_dong_status
@@ -665,6 +666,94 @@ class DatabaseRegressionTests(TestCase):
         self.client.force_login(self.admin)
         self.assertEqual(self.client.get(reverse("import_phan_cong")).status_code, 200)
 
+    def test_admin_can_edit_delete_and_unlock_locked_allocation(self):
+        self.client.force_login(self.admin)
+        self.allocation.is_locked = True
+        self.allocation.save(update_fields=["is_locked", "updated_at"])
+        payload = {
+            "can_bo": self.cb1.pk,
+            "cbda_quan_ly": "CBDA test",
+            "nhom_hd": self.group.pk,
+            "tham_gia_ct": "on",
+            "ngay_lap": "2026-09-01",
+            "so_tre_phcn": "3",
+            "so_buoi_phcn": "20",
+            "dinh_muc_di_lai_phcn": "50000",
+            "so_tre_cs": "0",
+            "so_buoi_cs": "10",
+            "dinh_muc_di_lai_cs": "50000",
+            "ghi_chu": "",
+        }
+        response = self.client.post(reverse("sua_phan_bo_chi_tieu", args=[self.allocation.pk]), payload)
+        self.assertEqual(response.status_code, 302)
+        self.allocation.refresh_from_db()
+        self.assertEqual(self.allocation.so_tre_phcn, 3)
+
+        unlock = self.client.post(reverse("mo_khoa_phan_bo", args=[self.allocation.pk]))
+        self.assertEqual(unlock.status_code, 302)
+        self.allocation.refresh_from_db()
+        self.assertFalse(self.allocation.is_locked)
+
+        locked_for_delete = PhanBoChiTieu.objects.create(can_bo=self.cb2, nhom_hd=self.group, is_locked=True)
+        delete_response = self.client.post(reverse("xoa_phan_bo", args=[locked_for_delete.pk]))
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertFalse(PhanBoChiTieu.objects.filter(pk=locked_for_delete.pk).exists())
+
+    def test_non_admin_cannot_mutate_assignment_or_workflow_under_locked_records(self):
+        assignment = PhanCongTre.objects.create(
+            phan_bo=self.allocation,
+            can_bo_nguon=self.cb1,
+            nhom_hd=self.group,
+            tre=self.child,
+            loai_dich_vu="VLTL",
+            so_buoi_du_kien=20,
+            dinh_muc_di_lai=Decimal("50000"),
+        )
+        self.allocation.is_locked = True
+        self.allocation.save(update_fields=["is_locked", "updated_at"])
+        contract = HopDong.objects.create(
+            can_bo=self.cb1,
+            nhom_hd=self.group,
+            so_hop_dong="HD-P0-LOCKED",
+            tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30),
+            gia_tri_hop_dong=Decimal("1000"),
+            is_locked=True,
+        )
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get(reverse("sua_phan_cong", args=[assignment.pk])).status_code, 302)
+        self.assertEqual(
+            self.client.get(reverse("them_gia_han_thoi_gian_theo_hop_dong", args=[contract.pk])).status_code,
+            302,
+        )
+        self.assertEqual(self.client.get(reverse("them_nhat_ky_thuc_hien", args=[contract.pk])).status_code, 302)
+        self.assertEqual(self.client.get(reverse("tao_dot_thanh_toan", args=[contract.pk])).status_code, 302)
+
+    def test_signed_extension_cannot_be_deleted_after_payment(self):
+        contract = HopDong.objects.create(
+            can_bo=self.cb1,
+            nhom_hd=self.group,
+            so_hop_dong="HD-P0-008",
+            tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 10, 31),
+            gia_tri_hop_dong=Decimal("1000"),
+            is_locked=True,
+        )
+        extension = PhuLucHopDong.objects.create(
+            hop_dong=contract,
+            loai_phu_luc="GIA_HAN_THOI_GIAN",
+            so_phu_luc="GH-TG-008",
+            ngay_lap=date(2026, 9, 28),
+            is_signed=True,
+            den_ngay_cu=date(2026, 9, 30),
+            den_ngay_moi=date(2026, 10, 31),
+        )
+        DotThanhToan.objects.create(hop_dong=contract, nam=2026, thang=9)
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("xoa_gia_han_hop_dong", args=[extension.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(PhuLucHopDong.objects.filter(pk=extension.pk).exists())
+
     def test_acceptance_get_does_not_create_and_value_is_user_confirmed(self):
         contract = HopDong.objects.create(
             can_bo=self.cb1,
@@ -743,7 +832,48 @@ class DatabaseRegressionTests(TestCase):
         self.assertEqual(contract.trang_thai, "DU_THAO")
         contract.is_locked = True
         contract.save(update_fields=["is_locked", "updated_at"])
-        self.assertEqual(self.client.get(reverse("sua_hop_dong", args=[contract.pk])).status_code, 302)
+        self.assertEqual(self.client.get(reverse("sua_hop_dong", args=[contract.pk])).status_code, 200)
+
+    def test_admin_can_edit_and_delete_locked_contract(self):
+        contract = HopDong.objects.create(
+            can_bo=self.cb1, nhom_hd=self.group, so_hop_dong="HD-P0-006", tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30), gia_tri_hop_dong=Decimal("1000"), is_locked=True,
+        )
+        self.client.force_login(self.admin)
+        payload = {
+            "so_hop_dong": contract.so_hop_dong, "ngay_ky": "2026-09-01", "tu_ngay": "2026-09-01",
+            "den_ngay": "2026-09-30", "don_gia_cong": "200", "dinh_muc_di_lai_phcn": "50",
+            "dinh_muc_di_lai_cs": "50", "gia_tri_hop_dong": "1200", "trang_thai": "DU_THAO", "ghi_chu": "test",
+        }
+        response = self.client.post(reverse("sua_hop_dong", args=[contract.pk]), payload)
+        self.assertEqual(response.status_code, 302)
+        contract.refresh_from_db()
+        self.assertEqual(contract.gia_tri_hop_dong, Decimal("1200"))
+
+        delete_response = self.client.post(reverse("xoa_hop_dong", args=[contract.pk]))
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertFalse(HopDong.objects.filter(pk=contract.pk).exists())
+
+    def test_admin_can_delete_signed_time_extension_and_restore_contract_end(self):
+        contract = HopDong.objects.create(
+            can_bo=self.cb1, nhom_hd=self.group, so_hop_dong="HD-P0-007", tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 10, 31), gia_tri_hop_dong=Decimal("1000"), is_locked=True,
+        )
+        extension = PhuLucHopDong.objects.create(
+            hop_dong=contract,
+            loai_phu_luc="GIA_HAN_THOI_GIAN",
+            so_phu_luc="GH-TG-007",
+            ngay_lap=date(2026, 9, 28),
+            is_signed=True,
+            den_ngay_cu=date(2026, 9, 30),
+            den_ngay_moi=date(2026, 10, 31),
+        )
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("xoa_gia_han_hop_dong", args=[extension.pk]))
+        self.assertEqual(response.status_code, 302)
+        contract.refresh_from_db()
+        self.assertEqual(contract.den_ngay, date(2026, 9, 30))
+        self.assertFalse(PhuLucHopDong.objects.filter(pk=extension.pk).exists())
 
     def test_import_is_idempotent_and_identity_contains_cbct(self):
         first = import_assignment_workbook(self._workbook([self._base_row()]))

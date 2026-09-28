@@ -14,6 +14,15 @@
 - Hai bản sao hiện tại đã được tạo tại `backups/`; không bao gồm `.env`, database, dữ liệu thật, `venv`, log hoặc file tạm.
 - Lượt cập nhật quy trình này chưa commit/push tại thời điểm ghi; cần thực hiện commit/push cùng lượt để kiểm tra quy trình mới.
 
+## Admin override dữ liệu khóa phục vụ kiểm thử — 28/09/2026
+
+- Tài khoản quản trị có thể sửa/xóa phân bổ chỉ tiêu và hợp đồng dù `is_locked=True`; bổ sung nút `Mở khóa` cho phân bổ và hợp đồng.
+- Admin có thể thêm phân công vào phân bổ đã khóa; các tài khoản nghiệp vụ khác vẫn bị chặn theo quy tắc khóa hiện hành.
+- Bổ sung thao tác sửa/xóa phụ lục gia hạn. Khi xóa phụ lục gia hạn đã ký, hệ thống đồng bộ lại ngày kết thúc, giá trị và khối lượng hợp đồng theo phụ lục còn lại hoặc snapshot cũ; quan hệ `PROTECT` vẫn được giữ để không xóa mù hồ sơ liên kết.
+- Cập nhật template danh sách/chi tiết để hiển thị đúng thao tác quản trị và không lộ nút admin cho tài khoản thường.
+- Kiểm thử: `manage.py check`, `makemigrations --check --dry-run`, SQLite `manage.py test quanly.tests --noinput` đạt **52/52**, `git diff --check` đạt.
+- Rủi ro còn lại: xóa hợp đồng/phụ lục có hồ sơ thanh toán hoặc snapshot được bảo vệ vẫn sẽ báo không thể xóa; đây là bảo vệ toàn vẹn dữ liệu, không phải lỗi quyền admin.
+
 ## Baseline đã xác minh
 
 - `manage.py check`: đạt.
@@ -223,3 +232,15 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - Cần chạy UAT trên MySQL bản sao sau khi người dùng kiểm tra các file import thật; đặc biệt rà các dòng trẻ mới thiếu ngày sinh/giới tính và các phân bổ CBDA được suy tự động.
 - Hai agent review độc lập không phát hiện P0. Các rủi ro P1 còn lại gồm các importer cũ (CBCT/đơn vị/nhật ký/hợp đồng) chưa được chuyển toàn bộ sang atomic trong Vòng 1 và chưa có test MySQL sạch; `import_phan_cong` đã đáp ứng atomic/validate-only theo phạm vi T4. Cấu hình HTTPS/HSTS mặc định cho phép tắt để chạy HTTP nội bộ; production phải bật các biến bảo mật tương ứng.
 - Chưa xử lý sổ thanh toán thống nhất, tối ưu TQT quy mô lớn hoặc tách `views.py`; đây là phạm vi Vòng 2–3 theo tài liệu yêu cầu.
+
+## Quyền Admin sửa/xóa dữ liệu khóa phục vụ kiểm thử — 28/09/2026
+
+- Cho phép tài khoản Admin sửa/xóa Phân bổ chỉ tiêu và Hợp đồng kể cả khi bản ghi đang khóa; bổ sung thao tác Mở khóa và hiển thị đúng theo quyền trên các danh sách, chi tiết hợp đồng và danh sách gia hạn.
+- Cho phép Admin thêm/sửa/xóa các nghiệp vụ liên quan khi dữ liệu khóa; tài khoản thường bị chặn ở các luồng sửa phân công, điều chuyển, nhật ký, tạo phụ lục và tạo đợt thanh toán.
+- Bổ sung xóa phụ lục gia hạn cho Admin. Khi xóa phụ lục đã ký, hệ thống đồng bộ lại ngày kết thúc, giá trị và chi tiết khối lượng; không cho xóa nếu hợp đồng đã phát sinh nghiệm thu, thanh lý hoặc thanh toán để tránh lệch hồ sơ tài chính.
+- Đồng bộ dọn các dòng chi tiết khối lượng dịch vụ không còn thuộc phụ lục hiệu lực; khi sửa Hợp đồng, các phụ lục đã ký tiếp tục là nguồn dữ liệu chính cho ngày kết thúc, giá trị và khối lượng.
+- Đã bổ sung test quyền và toàn vẹn dữ liệu. Kiểm thử đạt: `manage.py check`, `makemigrations --check --dry-run`, `manage.py test quanly.tests` **54/54**, `git diff --check`.
+- Rủi ro còn lại: xóa Hợp đồng có dữ liệu phụ thuộc vẫn bị cơ sở dữ liệu bảo vệ; cần dùng luồng điều chỉnh nghiệp vụ thay vì xóa cưỡng bức. UAT MySQL với dữ liệu thật chưa chạy trong lượt này.
+- Bổ sung guard lần cuối cho nghiệm thu/thanh lý, gom thanh toán đi lại theo Nhóm HĐ và cập nhật chi tiết/khoảng ngày; tài khoản thường không thể thao tác tiếp trên HĐ đã khóa hoặc đã thanh lý. Xóa phụ lục đã ký cũng kiểm tra cả các chi tiết thanh toán đi lại theo Nhóm HĐ.
+- Bổ sung guard cho thêm chi tiết thanh toán công và tránh xóa toàn bộ chi tiết khối lượng khi phụ lục hiện hành bị thiếu snapshot; các dữ liệu bất thường được giữ lại để Admin xử lý thủ công.
+- Admin vẫn toàn quyền trên hồ sơ chưa phát sinh tài chính; sau khi phụ lục đã ký và hợp đồng đã phát sinh nghiệm thu/thanh lý/thanh toán, hệ thống chặn sửa/xóa phụ lục để bảo vệ khả năng đối soát.

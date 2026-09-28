@@ -147,6 +147,7 @@ class PhanCongTreForm(BootstrapModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.allow_locked = kwargs.pop("allow_locked", False)
         super().__init__(*args, **kwargs)
 
         phan_bo = self.initial.get("phan_bo")
@@ -163,7 +164,7 @@ class PhanCongTreForm(BootstrapModelForm):
         loai_dich_vu = cleaned_data.get("loai_dich_vu")
         dinh_muc_di_lai = cleaned_data.get("dinh_muc_di_lai")
 
-        if phan_bo and phan_bo.is_locked and not self.instance.pk:
+        if phan_bo and phan_bo.is_locked and not self.instance.pk and not self.allow_locked:
             raise forms.ValidationError("Phân bổ đã khóa, không thể thêm phân công mới.")
         if (cleaned_data.get("so_buoi_du_kien") or 0) <= 0:
             self.add_error("so_buoi_du_kien", "Số buổi dự kiến phải lớn hơn 0.")

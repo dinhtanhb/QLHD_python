@@ -58,3 +58,9 @@ Theo ủy quyền thường trực của người dùng, sau mỗi đợt thay �
 ## Lưu ý môi trường Windows
 
 `.env` của môi trường hiện tại có thể đặt `DEBUG` thành giá trị không phải Boolean. Khi chạy kiểm thử local, đặt `$env:DEBUG = 'True'` trong phiên PowerShell hiện tại; không sửa `.env` chỉ để chạy test.
+### Quyền Admin trong giai đoạn kiểm thử
+
+- Admin có thể sửa, xóa và mở khóa phân bổ, hợp đồng và phụ lục để phục vụ UAT.
+- Tài khoản thường không được sửa phân công, nhật ký, phụ lục hoặc tạo đợt thanh toán trên hợp đồng/phân bổ đã khóa.
+- Không xóa phụ lục đã ký sau khi hợp đồng đã có nghiệm thu, thanh lý hoặc thanh toán; trường hợp này phải tạo hồ sơ điều chỉnh đúng nghiệp vụ.
+- Khi bỏ phụ lục đã ký, phải kiểm tra lại ngày kết thúc, giá trị và chi tiết khối lượng hợp đồng sau khi đồng bộ.

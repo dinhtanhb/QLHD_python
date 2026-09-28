@@ -66,15 +66,24 @@
                                 {% if item.is_locked %}<span class="badge bg-secondary">Đã khóa</span>{% else %}<span class="badge bg-warning text-dark">Đang mở</span>{% endif %}
                             </td>
                             <td class="text-center">
-                                {% if not item.is_locked %}
+                                {% if not item.is_locked or is_admin %}
                                     <a href="{% url 'them_phan_cong' %}?phan_bo_id={{ item.pk }}" class="btn btn-sm btn-primary">Phân công</a>
-                                    <a href="{% url 'sua_phan_bo_chi_tieu' item.pk %}" class="btn btn-sm btn-warning">Sửa</a>
                                     {% if item.official_assignment_count > 0 %}<a href="{% url 'tao_de_xuat_hop_dong' item.pk %}" class="btn btn-sm btn-success">Tạo đề xuất</a>{% endif %}
-                                    <form method="post" action="{% url 'khoa_phan_bo' item.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận khóa Phân bổ chỉ tiêu này?');">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-sm btn-secondary">Khóa</button>
-                                    </form>
-                                    <form method="post" action="{% url 'xoa_phan_bo' item.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa Phân bổ chỉ tiêu này?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger">Xóa</button></form>
+                                    {% if is_admin %}
+                                        <a href="{% url 'sua_phan_bo_chi_tieu' item.pk %}" class="btn btn-sm btn-warning">Sửa</a>
+                                        {% if item.is_locked %}
+                                            <form method="post" action="{% url 'mo_khoa_phan_bo' item.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận mở khóa Phân bổ chỉ tiêu này?');">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-secondary">Mở khóa</button>
+                                            </form>
+                                        {% else %}
+                                            <form method="post" action="{% url 'khoa_phan_bo' item.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận khóa Phân bổ chỉ tiêu này?');">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-secondary">Khóa</button>
+                                            </form>
+                                        {% endif %}
+                                        <form method="post" action="{% url 'xoa_phan_bo' item.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa Phân bổ chỉ tiêu này?');">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger">Xóa</button></form>
+                                    {% endif %}
                                 {% else %}
                                     {% if item.official_assignment_count > 0 %}<a href="{% url 'danh_sach_phan_cong' %}?phan_bo_id={{ item.pk }}" class="btn btn-sm btn-outline-primary">Xem phân công</a>{% endif %}
                                 {% endif %}
