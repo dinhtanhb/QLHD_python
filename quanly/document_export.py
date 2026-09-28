@@ -8,9 +8,10 @@ import re
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
-from .financial import FinancialConfig, calculate_payment_breakdown
+from .financial import FinancialConfig, calculate_payment_breakdown, normalize_travel_location
 from .models import (
     ChiTietGiaHanKhoiLuong,
     ChiTietKhoiLuongHopDong,
@@ -18,6 +19,7 @@ from .models import (
     ChiTietThanhToan,
     DeXuatHopDong,
     HopDong,
+    NhatKyThucHien,
     PhanCongTre,
     PhuLucHopDong,
 )
@@ -146,13 +148,196 @@ def _export_simple_contract_record(hop_dong, record, template_path, context):
     return output
 
 
+def _contract_journals(hop_dong):
+    """Lấy nhật ký trực tiếp và nhật ký lịch sử thuộc phân bổ của hợp đồng."""
+    scope = Q(hop_dong=hop_dong)
+    if hop_dong.de_xuat_id:
+        scope |= Q(
+            hop_dong__isnull=True,
+            phan_cong__phan_bo_id=hop_dong.de_xuat.phan_bo_id,
+        )
+    return list(
+        NhatKyThucHien.objects.filter(scope)
+        .select_related("phan_cong__tre", "phan_cong__phan_bo", "hop_dong")
+        .order_by("ngay_thuc_hien", "id")
+    )
+
+
+def _contract_workload(hop_dong):
+    """Trả về khối lượng hợp đồng theo hai nhóm PHCN/CS từ dữ liệu đã chốt."""
+    result = {
+        "PHCN": {"so_tre": 0, "so_buoi": 0, "don_gia": Decimal("0"), "dinh_muc": Decimal("0")},
+        "CS": {"so_tre": 0, "so_buoi": 0, "don_gia": Decimal("0"), "dinh_muc": Decimal("0")},
+    }
+    items = list(hop_dong.chi_tiet_khoi_luong.all())
+    for item in items:
+        group = PhanCongTre.service_group(item.loai_dich_vu)
+        if group not in result:
+            continue
+        result[group] = {
+            "so_tre": item.so_tre,
+            "so_buoi": item.so_buoi,
+            "don_gia": Decimal(item.don_gia_cong or 0),
+            "dinh_muc": Decimal(item.dinh_muc_di_lai or 0),
+        }
+    if items or not hop_dong.de_xuat_id:
+        return result
+
+    allocation = hop_dong.de_xuat.phan_bo
+    result["PHCN"] = {
+        "so_tre": allocation.so_tre_phcn,
+        "so_buoi": allocation.so_buoi_phcn,
+        "don_gia": Decimal(hop_dong.don_gia_cong or 0),
+        "dinh_muc": Decimal(hop_dong.dinh_muc_di_lai_phcn or 0),
+    }
+    result["CS"] = {
+        "so_tre": allocation.so_tre_cs,
+        "so_buoi": allocation.so_buoi_cs,
+        "don_gia": Decimal(hop_dong.don_gia_cong or 0),
+        "dinh_muc": Decimal(hop_dong.dinh_muc_di_lai_cs or 0),
+    }
+    return result
+
+
+def _journal_workload_rows(hop_dong):
+    """Gom bảng nghiệm thu theo trẻ + dịch vụ, kèm số buổi theo địa điểm."""
+    assignments = []
+    if hop_dong.de_xuat_id:
+        assignments = list(
+            ChiTietPhuLucPhanCong.objects.filter(
+                phu_luc__hop_dong=hop_dong,
+                phu_luc__loai_phu_luc="KY_1",
+            ).order_by("id")
+        )
+        if not assignments:
+            assignments = list(
+                PhanCongTre.objects.filter(
+                    phan_bo_id=hop_dong.de_xuat.phan_bo_id,
+                    ky_phan_cong=1,
+                )
+                .select_related("tre")
+                .order_by("id")
+            )
+    journals = _contract_journals(hop_dong)
+    rows = {}
+
+    def ensure(key, ma_tre, ten_tre, service, planned=0):
+        if key not in rows:
+            rows[key] = {
+                "ma_tre": ma_tre,
+                "ten_tre": ten_tre,
+                "service": service,
+                "planned": planned or 0,
+                "actual": 0,
+                "home": 0,
+                "school": 0,
+                "other": 0,
+            }
+        elif planned:
+            rows[key]["planned"] = max(rows[key]["planned"], planned)
+        return rows[key]
+
+    for assignment in assignments:
+        if hasattr(assignment, "ma_tre"):
+            ma_tre, ten_tre = assignment.ma_tre, assignment.ten_tre
+            service, planned = assignment.loai_dich_vu, assignment.so_buoi_du_kien
+        else:
+            ma_tre, ten_tre = assignment.tre.ma_tre, assignment.tre.ho_ten
+            service, planned = assignment.loai_dich_vu, assignment.so_buoi_du_kien
+        ensure((ma_tre, service), ma_tre, ten_tre, service, planned)
+
+    for journal in journals:
+        ma_tre = journal.phan_cong.tre.ma_tre
+        ten_tre = journal.phan_cong.tre.ho_ten
+        service = journal.phan_cong.loai_dich_vu
+        row = ensure((ma_tre, service), ma_tre, ten_tre, service)
+        sessions = journal.so_buoi_thuc_hien or 0
+        row["actual"] += sessions
+        location = normalize_travel_location(
+            journal.phan_cong.hinh_thuc_ct
+            or journal.dia_diem_ct
+            or journal.phan_cong.dia_diem_ct
+        )
+        if location == "nha":
+            row["home"] += sessions
+        elif location == "truong":
+            row["school"] += sessions
+        else:
+            row["other"] += sessions
+
+    return list(rows.values())
+
+
+def _payment_history(hop_dong):
+    """Gom các đợt thanh toán CBCT theo tháng để đưa vào phụ lục thanh lý."""
+    details = list(
+        ChiTietThanhToan.objects.filter(dot_thanh_toan__hop_dong=hop_dong)
+        .select_related("dot_thanh_toan", "nhat_ky")
+        .order_by("dot_thanh_toan__nam", "dot_thanh_toan__thang", "id")
+    )
+    grouped = {}
+    for detail in details:
+        dot = detail.dot_thanh_toan
+        row = grouped.setdefault(
+            dot.pk,
+            {
+                "date": (dot.nam, dot.thang),
+                "labor": Decimal("0"),
+                "tax": Decimal("0"),
+                "travel": Decimal("0"),
+            },
+        )
+        row["labor"] += detail.tien_cong
+        row["tax"] += detail.thue_tncn
+        row["travel"] += detail.tien_di_lai
+    result = []
+    for index, row in enumerate(grouped.values(), start=1):
+        net_labor = row["labor"] - row["tax"]
+        result.append({
+            "label": f"Lần {index} - {row['date'][1]:02d}/{row['date'][0]}",
+            "labor": row["labor"],
+            "tax": row["tax"],
+            "net_labor": net_labor,
+            "travel": row["travel"],
+            "received": net_labor + row["travel"],
+        })
+    return result
+
+
 def _record_context(hop_dong, record):
     staff = hop_dong.can_bo
-    allocation = hop_dong.de_xuat.phan_bo
+    if not staff:
+        raise ValidationError("Biên bản nghiệm thu/thanh lý hiện chỉ áp dụng cho hợp đồng CBCT.")
+    workload = _contract_workload(hop_dong)
     acceptance = getattr(hop_dong, "nghiem_thu", None)
     acceptance_date = getattr(acceptance, "ngay_nghiem_thu", None) or getattr(record, "ngay_nghiem_thu", None)
-    acceptance_value = getattr(acceptance, "gia_tri_nghiem_thu", None) or getattr(record, "gia_tri_nghiem_thu", 0)
-    return {
+    payment_rows = _payment_history(hop_dong)
+    paid_labor = sum((row["labor"] for row in payment_rows), Decimal("0"))
+    paid_tax = sum((row["tax"] for row in payment_rows), Decimal("0"))
+    paid_travel = sum((row["travel"] for row in payment_rows), Decimal("0"))
+    acceptance_value = getattr(acceptance, "gia_tri_nghiem_thu", None)
+    if acceptance_value is None:
+        acceptance_value = getattr(record, "gia_tri_nghiem_thu", None)
+    if acceptance_value is None:
+        acceptance_value = getattr(record, "gia_tri_thanh_ly", None)
+    if acceptance_value is None:
+        raise ValidationError("Hồ sơ chưa có giá trị nghiệm thu/thanh lý được xác nhận.")
+    liquidation_value = getattr(record, "gia_tri_thanh_ly", None)
+    if liquidation_value is None:
+        liquidation_value = acceptance_value
+    contract_labor = sum(
+        (Decimal(item["so_tre"]) * Decimal(item["so_buoi"]) * item["don_gia"] for item in workload.values()),
+        Decimal("0"),
+    )
+    contract_travel = sum(
+        (Decimal(item["so_tre"]) * Decimal(item["so_buoi"]) * item["dinh_muc"] for item in workload.values()),
+        Decimal("0"),
+    )
+    remaining = calculate_payment_breakdown(
+        max(Decimal("0"), contract_labor - paid_labor),
+        max(Decimal("0"), contract_travel - paid_travel),
+    )
+    context = {
         "MaSoGVMN": staff.ma_can_bo,
         "HoTenGVMN": staff.ho_ten,
         "DanhXung": "Ông/Bà",
@@ -173,25 +358,118 @@ def _record_context(hop_dong, record):
         "NoiCapCccd": staff.noi_cap or "",
         "DienThoai": staff.dien_thoai or "",
         "Email": staff.email or "",
-        "SoTrePHCN": allocation.so_tre_phcn,
-        "SoBuoiPHCN": allocation.so_buoi_phcn,
-        "SoTreCS": allocation.so_tre_cs,
-        "SoBuoiCS": allocation.so_buoi_cs,
+        "SoTrePHCN": workload["PHCN"]["so_tre"],
+        "SoBuoiPHCN": workload["PHCN"]["so_buoi"],
+        "SoTreCS": workload["CS"]["so_tre"],
+        "SoBuoiCS": workload["CS"]["so_buoi"],
+        "SoLuotDiLaiPHCN": workload["PHCN"]["so_tre"] * workload["PHCN"]["so_buoi"],
+        "SoLuotDiLaiCS": workload["CS"]["so_tre"] * workload["CS"]["so_buoi"],
+        "ThanhTienPHCN": _money(workload["PHCN"]["so_tre"] * workload["PHCN"]["so_buoi"] * workload["PHCN"]["don_gia"]),
+        "HoTroDiLaiPHCN": _money(workload["PHCN"]["so_tre"] * workload["PHCN"]["so_buoi"] * workload["PHCN"]["dinh_muc"]),
+        "ThanhTienCS": _money(workload["CS"]["so_tre"] * workload["CS"]["so_buoi"] * workload["CS"]["don_gia"]),
+        "HoTroDiLaiCS": _money(workload["CS"]["so_tre"] * workload["CS"]["so_buoi"] * workload["CS"]["dinh_muc"]),
         "GiaTriNghiemThuBangChu": _number_to_words(acceptance_value),
         "GiaTriNghiemThu": _money(acceptance_value),
+        "GiaTriThanhLyBangChu": _number_to_words(liquidation_value),
+        "GiaTriThanhLy": _money(liquidation_value),
+        "TongCong_TienCong": _money(paid_labor),
+        "TongCong_Thue": _money(paid_tax),
+        "TongCong_ThanhTien": _money(paid_labor - paid_tax),
+        "TongCong_DiLai": _money(paid_travel),
+        "TongCong_ThucNhan": _money(paid_labor - paid_tax + paid_travel),
+        "ConLai_TienCong": _money(remaining["tien_cong"]),
+        "ConLai_Thue": _money(remaining["thue_tncn"]),
+        "ConLai_ThanhTien": _money(remaining["tien_cong"] - remaining["thue_tncn"]),
+        "ConLai_DiLai": _money(remaining["tien_di_lai"]),
+        "ConLai_ThucNhan": _money(remaining["thuc_linh"]),
         "HoTenGVMN": staff.ho_ten,
         "SoTaiKhoan": staff.tai_khoan or "",
         "NganHang": staff.ngan_hang or "",
         "ChiNhanh": staff.chi_nhanh or "",
     }
+    for index in range(1, 16):
+        row = payment_rows[index - 1] if index <= len(payment_rows) else None
+        context.update({
+            f"TenLan_{index}": row["label"] if row else "",
+            f"TienCong_{index}": _money(row["labor"]) if row else "",
+            f"Thue_{index}": _money(row["tax"]) if row else "",
+            f"ThanhTien_{index}": _money(row["net_labor"]) if row else "",
+            f"DiLai_{index}": _money(row["travel"]) if row else "",
+            f"ThucNhan_{index}": _money(row["received"]) if row else "",
+        })
+    return context
+
+
+def _fill_acceptance_table(document, rows):
+    for table in document.tables:
+        if not table.rows:
+            continue
+        header = " ".join(cell.text.replace("\n", " ") for cell in table.rows[0].cells)
+        required = ("Mã", "Họ tên", "Loại CT", "Hồ sơ can thiệp")
+        if not all(item in header for item in required) or len(table.rows) < 2:
+            continue
+        template_xml = deepcopy(table.rows[1]._tr)
+        _remove_row(table.rows[1])
+        for index, item in enumerate(rows, start=1):
+            table._tbl.append(deepcopy(template_xml))
+            row = table.rows[-1]
+            actual = item["actual"]
+            _replace_row(row, {
+                "STT": index,
+                "MaTre": item["ma_tre"],
+                "HoTenTre": item["ten_tre"],
+                "DichVu": _service_display(item["service"]),
+                "HoSo": "Đầy đủ" if actual else "Chưa có nhật ký",
+                "SoBuoiTaiNha": item["home"],
+                "SoBuoiTaiTruong": item["school"],
+                "GhiChuTre": "" if not item["other"] else f"Khác: {item['other']} buổi",
+            })
+        return
+
+
+def _fill_liquidation_payment_table(document, payment_count):
+    for table in document.tables:
+        if not table.rows:
+            continue
+        header = " ".join(cell.text.replace("\n", " ") for cell in table.rows[0].cells)
+        header_lower = header.lower()
+        if "lần thanh toán" not in header_lower or "thực nhận" not in header_lower:
+            continue
+        total_index = next(
+            (index for index, row in enumerate(table.rows) if "Cộng" in row.cells[0].text),
+            len(table.rows) - 2,
+        )
+        # Dòng A/B/C... trong mẫu là dòng chú giải công thức, không phải kỳ thanh toán.
+        data_start = 2 if len(table.rows) > 1 and table.rows[1].cells[0].text.strip() == "A" else 1
+        for index in range(total_index - 1, data_start + payment_count - 1, -1):
+            _remove_row(table.rows[index])
+        return
 
 
 def export_acceptance_record(hop_dong, record):
-    return _export_simple_contract_record(hop_dong, record, ACCEPTANCE_TEMPLATE, _record_context(hop_dong, record))
+    if not ACCEPTANCE_TEMPLATE.exists():
+        raise ValidationError(f"Chưa có template {ACCEPTANCE_TEMPLATE.name}.")
+    document = _document(ACCEPTANCE_TEMPLATE)
+    _fill_acceptance_table(document, _journal_workload_rows(hop_dong))
+    _replace_document(document, _record_context(hop_dong, record))
+    output = BytesIO()
+    document.save(output)
+    output.seek(0)
+    return output
 
 
 def export_liquidation_record(hop_dong, record):
-    return _export_simple_contract_record(hop_dong, record, LIQUIDATION_TEMPLATE, _record_context(hop_dong, record))
+    if not LIQUIDATION_TEMPLATE.exists():
+        raise ValidationError(f"Chưa có template {LIQUIDATION_TEMPLATE.name}.")
+    context = _record_context(hop_dong, record)
+    document = _document(LIQUIDATION_TEMPLATE)
+    payment_count = sum(1 for index in range(1, 16) if context.get(f"TenLan_{index}"))
+    _fill_liquidation_payment_table(document, payment_count)
+    _replace_document(document, context)
+    output = BytesIO()
+    document.save(output)
+    output.seek(0)
+    return output
 
 
 def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_tt=None, nguoi_de_nghi=None):

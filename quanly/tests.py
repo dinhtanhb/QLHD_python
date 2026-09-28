@@ -1,16 +1,41 @@
 from decimal import Decimal
 from datetime import date, time
+from io import BytesIO
 from types import SimpleNamespace
 
+import pandas as pd
+from django.contrib.auth.models import Group, User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from unittest.mock import patch
 
-from django.test import RequestFactory, SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase
 from django.urls import reverse
 
 from .financial import FinancialConfig, calculate_payment_breakdown, calculate_tncn, calculate_travel_flags, journal_conflict_types, normalize_travel_location
-from .document_export import _allocation_context, _date_parts, _number_to_words, _payment_statement_total
+from .document_export import (
+    _allocation_context,
+    _date_parts,
+    _number_to_words,
+    _payment_statement_total,
+    export_acceptance_record,
+    export_liquidation_record,
+)
 from .forms import GiaHanKhoiLuongForm, GiaHanThoiGianForm
-from .models import PhanCongTre, PhuLucHopDong
+from .models import (
+    CanBo,
+    DonVi,
+    HopDong,
+    NhatKyThucHien,
+    NhomHD,
+    PhanBoChiTieu,
+    PhanCongTre,
+    PhuLucHopDong,
+    Tre,
+    NghiemThu,
+    ThanhLyHopDong,
+)
+from .assignment_import import import_assignment_workbook
+from .services.contract_status import STATUS_TRANSITIONS, transition_hop_dong_status
 from .permissions import is_admin_user
 from .payment_export import (
     INTERVENTION_COMMITMENT_TEMPLATE,
@@ -33,6 +58,14 @@ class FinancialRulesTests(SimpleTestCase):
         self.assertEqual(views.normalize_service_code("GDDB"), "GDDB")
         self.assertEqual(views.normalize_service_code("Giáo dục đặc biệt"), "GDDB")
         self.assertEqual(views.normalize_service_code("Vật lý trị liệu"), "VLTL")
+
+    def test_parse_decimal_accepts_excel_number_variants_without_float_math(self):
+        self.assertEqual(views.parse_decimal(50000), Decimal("50000"))
+        self.assertEqual(views.parse_decimal(50000.0), Decimal("50000"))
+        self.assertEqual(views.parse_decimal("50,000"), Decimal("50000"))
+        self.assertEqual(views.parse_decimal("50.000"), Decimal("50000"))
+        self.assertEqual(views.parse_decimal("50 000"), Decimal("50000"))
+        self.assertEqual(views.parse_decimal("1.234,56"), Decimal("1234.56"))
 
     def test_import_occurrences_do_not_collapse_repeated_assignments(self):
         first = object()
@@ -457,6 +490,92 @@ class FinancialRulesTests(SimpleTestCase):
                 workbook.close()
 
 
+class AcceptanceLiquidationExportTests(SimpleTestCase):
+    def _contract(self):
+        staff = SimpleNamespace(
+            ma_can_bo="ABP0001",
+            ho_ten="Nguyễn Văn Test",
+            dia_chi="Đồng Nai",
+            cccd="012345678901",
+            ngay_cap=date(2020, 1, 1),
+            noi_cap="Cục CSQLHC",
+            dien_thoai="0900000000",
+            email="test@example.com",
+            tai_khoan="123456",
+            ngan_hang="Ngân hàng Test",
+            chi_nhanh="Đồng Nai",
+        )
+        return SimpleNamespace(
+            can_bo=staff,
+            de_xuat_id=None,
+            so_hop_dong="01-26/HĐDV-VH",
+            ngay_ky=date(2026, 1, 1),
+            gia_tri_hop_dong=Decimal("1000000"),
+            chi_tiet_khoi_luong=SimpleNamespace(all=lambda: []),
+        )
+
+    def test_acceptance_export_fills_workload_table(self):
+        from . import document_export
+
+        contract = self._contract()
+        record = SimpleNamespace(
+            ngay_nghiem_thu=date(2026, 9, 28),
+            gia_tri_nghiem_thu=Decimal("1000000"),
+        )
+        rows = [{
+            "ma_tre": "CBP0001",
+            "ten_tre": "Trẻ Test",
+            "service": "GDDB",
+            "planned": 10,
+            "actual": 10,
+            "home": 4,
+            "school": 6,
+            "other": 0,
+        }]
+        workload = {
+            "PHCN": {"so_tre": 1, "so_buoi": 10, "don_gia": Decimal("200000"), "dinh_muc": Decimal("50000")},
+            "CS": {"so_tre": 0, "so_buoi": 0, "don_gia": Decimal("200000"), "dinh_muc": Decimal("50000")},
+        }
+        with patch.object(document_export, "_journal_workload_rows", return_value=rows), patch.object(
+            document_export, "_contract_workload", return_value=workload
+        ), patch.object(document_export, "_contract_journals", return_value=[]), patch.object(
+            document_export, "_payment_history", return_value=[]
+        ):
+            output = export_acceptance_record(contract, record)
+
+        from docx import Document
+
+        document = Document(output)
+        table = document.tables[1]
+        self.assertEqual(len(table.rows), 2)
+        self.assertIn("CBP0001", table.rows[1].cells[1].text)
+        self.assertNotIn("{{", "\n".join(paragraph.text for paragraph in document.paragraphs))
+
+    def test_liquidation_export_removes_unused_payment_rows(self):
+        from . import document_export
+
+        contract = self._contract()
+        record = SimpleNamespace(
+            ngay_thanh_ly=date(2026, 9, 28),
+            gia_tri_thanh_ly=Decimal("1000000"),
+        )
+        workload = {
+            "PHCN": {"so_tre": 1, "so_buoi": 10, "don_gia": Decimal("200000"), "dinh_muc": Decimal("50000")},
+            "CS": {"so_tre": 0, "so_buoi": 0, "don_gia": Decimal("200000"), "dinh_muc": Decimal("50000")},
+        }
+        with patch.object(document_export, "_contract_workload", return_value=workload), patch.object(
+            document_export, "_contract_journals", return_value=[]
+        ), patch.object(document_export, "_payment_history", return_value=[]):
+            output = export_liquidation_record(contract, record)
+
+        from docx import Document
+
+        document = Document(output)
+        payment_table = document.tables[1]
+        self.assertEqual(len(payment_table.rows), 4)
+        self.assertNotIn("{{", "\n".join(paragraph.text for paragraph in document.paragraphs))
+
+
 class DashboardViewTests(SimpleTestCase):
     def test_homepage_returns_response_after_login(self):
         class EmptyQuerySet:
@@ -487,3 +606,194 @@ class DashboardViewTests(SimpleTestCase):
         ):
             response = views.trang_chu.__wrapped__(RequestFactory().get("/"))
         self.assertIs(response, expected)
+
+
+class DatabaseRegressionTests(TestCase):
+    """DB-backed regression coverage for the P0 import and contract lifecycle rules."""
+
+    def setUp(self):
+        self.admin_group = Group.objects.create(name="Admin")
+        self.admin = User.objects.create_user(username="p0-admin", password="secret")
+        self.admin.groups.add(self.admin_group)
+        self.viewer = User.objects.create_user(username="p0-viewer", password="secret")
+        self.don_vi = DonVi.objects.create(ma_don_vi="DV-TEST", ten_don_vi="Đơn vị test", nguoi_dai_dien="Người test")
+        self.cb1 = CanBo.objects.create(ma_can_bo="ABP0001", ho_ten="Cán bộ Một", don_vi=self.don_vi)
+        self.cb2 = CanBo.objects.create(ma_can_bo="ABP0002", ho_ten="Cán bộ Hai", don_vi=self.don_vi)
+        self.group = NhomHD.objects.create(ma_nhom_hd="1", ten_nhom_hd="Nhóm HĐ 1")
+        self.child = Tre.objects.create(ma_tre="CBP0001", ho_ten="Trẻ Một", ngay_sinh=date(2015, 1, 1), gioi_tinh="Nam")
+        self.allocation = PhanBoChiTieu.objects.create(can_bo=self.cb1, nhom_hd=self.group, so_tre_phcn=2, so_buoi_phcn=20)
+
+    def _workbook(self, rows):
+        stream = BytesIO()
+        pd.DataFrame(rows).to_excel(stream, index=False)
+        return SimpleUploadedFile("phan_cong_test.xlsx", stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    def _base_row(self, **overrides):
+        row = {
+            "Mã CB": "ABP0001",
+            "IDChild": "CBP0001",
+            "Nhóm HĐ": "1",
+            "Loại dịch vụ": "VLTL",
+            "Số buổi dự kiến": 20,
+            "Đợt phân công": 1,
+            "Kỳ phân công": 1,
+            "Ngày phân công": "2026-09-01",
+        }
+        row.update(overrides)
+        return row
+
+    def test_khoa_phan_bo_requires_post_and_admin(self):
+        self.client.force_login(self.admin)
+        get_response = self.client.get(reverse("khoa_phan_bo", args=[self.allocation.pk]))
+        self.allocation.refresh_from_db()
+        self.assertEqual(get_response.status_code, 302)
+        self.assertFalse(self.allocation.is_locked)
+
+        post_response = self.client.post(reverse("khoa_phan_bo", args=[self.allocation.pk]))
+        self.allocation.refresh_from_db()
+        self.assertEqual(post_response.status_code, 302)
+        self.assertTrue(self.allocation.is_locked)
+
+        other = PhanBoChiTieu.objects.create(can_bo=self.cb2, nhom_hd=self.group)
+        self.client.force_login(self.viewer)
+        self.client.post(reverse("khoa_phan_bo", args=[other.pk]))
+        other.refresh_from_db()
+        self.assertFalse(other.is_locked)
+
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get(reverse("import_phan_cong")).status_code, 302)
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("import_phan_cong")).status_code, 200)
+
+    def test_acceptance_get_does_not_create_and_value_is_user_confirmed(self):
+        contract = HopDong.objects.create(
+            can_bo=self.cb1,
+            nhom_hd=self.group,
+            so_hop_dong="HD-P0-001",
+            ngay_ky=date(2026, 9, 1),
+            tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30),
+            gia_tri_hop_dong=Decimal("1000"),
+        )
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("cap_nhat_nghiem_thu", args=[contract.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(NghiemThu.objects.count(), 0)
+        invalid = self.client.post(reverse("cap_nhat_nghiem_thu", args=[contract.pk]), {
+            "ngay_nghiem_thu": "2026-09-30", "ket_qua": "DAT", "gia_tri_nghiem_thu": "1001", "bien_ban_so": "BB-1",
+        })
+        self.assertEqual(invalid.status_code, 200)
+        self.assertEqual(NghiemThu.objects.count(), 0)
+        valid = self.client.post(reverse("cap_nhat_nghiem_thu", args=[contract.pk]), {
+            "ngay_nghiem_thu": "2026-09-30", "ket_qua": "DAT", "gia_tri_nghiem_thu": "750", "bien_ban_so": "BB-1",
+        })
+        self.assertEqual(valid.status_code, 302)
+        acceptance = NghiemThu.objects.get(hop_dong=contract)
+        self.assertEqual(acceptance.gia_tri_nghiem_thu, Decimal("750"))
+        contract.refresh_from_db()
+        self.assertEqual(contract.trang_thai, "NGHIEM_THU")
+        changed = self.client.post(reverse("cap_nhat_nghiem_thu", args=[contract.pk]), {
+            "ngay_nghiem_thu": "2026-09-30", "ket_qua": "KHONG_DAT", "gia_tri_nghiem_thu": "500", "bien_ban_so": "BB-1",
+        })
+        self.assertEqual(changed.status_code, 302)
+        contract.refresh_from_db()
+        self.assertEqual(contract.trang_thai, "DANG_THUC_HIEN")
+
+    def test_liquidation_requires_real_acceptance_and_locks_contract(self):
+        contract = HopDong.objects.create(
+            can_bo=self.cb1, nhom_hd=self.group, so_hop_dong="HD-P0-002", ngay_ky=date(2026, 9, 1),
+            tu_ngay=date(2026, 9, 1), den_ngay=date(2026, 9, 30), gia_tri_hop_dong=Decimal("1000"),
+        )
+        self.client.force_login(self.admin)
+        blocked = self.client.get(reverse("cap_nhat_thanh_ly", args=[contract.pk]))
+        self.assertEqual(blocked.status_code, 302)
+        NghiemThu.objects.create(hop_dong=contract, ngay_nghiem_thu=date(2026, 9, 30), ket_qua="DAT", gia_tri_nghiem_thu=Decimal("800"))
+        saved = self.client.post(reverse("cap_nhat_thanh_ly", args=[contract.pk]), {
+            "ngay_thanh_ly": "2026-09-30", "bien_ban_so": "TL-1",
+        })
+        self.assertEqual(saved.status_code, 302)
+        contract.refresh_from_db()
+        self.assertEqual(contract.trang_thai, "THANH_LY")
+        self.assertTrue(contract.is_locked)
+        self.assertEqual(ThanhLyHopDong.objects.get(hop_dong=contract).gia_tri_thanh_ly, Decimal("800"))
+
+    def test_status_transition_does_not_allow_liquidation_rollback(self):
+        contract = HopDong.objects.create(
+            can_bo=self.cb1, nhom_hd=self.group, so_hop_dong="HD-P0-003", tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30), gia_tri_hop_dong=Decimal("1000"), trang_thai="THANH_LY",
+        )
+        with self.assertRaises(Exception):
+            transition_hop_dong_status(contract, "DANG_THUC_HIEN")
+        self.assertIn("THANH_LY", STATUS_TRANSITIONS)
+
+    def test_contract_edit_rejects_illegal_status_and_locked_contract(self):
+        contract = HopDong.objects.create(
+            can_bo=self.cb1, nhom_hd=self.group, so_hop_dong="HD-P0-005", tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30), gia_tri_hop_dong=Decimal("1000"),
+        )
+        self.client.force_login(self.admin)
+        payload = {
+            "so_hop_dong": contract.so_hop_dong, "ngay_ky": "2026-09-01", "tu_ngay": "2026-09-01",
+            "den_ngay": "2026-09-30", "don_gia_cong": "200", "dinh_muc_di_lai_phcn": "50",
+            "dinh_muc_di_lai_cs": "50", "gia_tri_hop_dong": "1000", "trang_thai": "THANH_LY", "ghi_chu": "",
+        }
+        response = self.client.post(reverse("sua_hop_dong", args=[contract.pk]), payload)
+        self.assertEqual(response.status_code, 200, response.headers.get("Location", ""))
+        contract.refresh_from_db()
+        self.assertEqual(contract.trang_thai, "DU_THAO")
+        contract.is_locked = True
+        contract.save(update_fields=["is_locked", "updated_at"])
+        self.assertEqual(self.client.get(reverse("sua_hop_dong", args=[contract.pk])).status_code, 302)
+
+    def test_import_is_idempotent_and_identity_contains_cbct(self):
+        first = import_assignment_workbook(self._workbook([self._base_row()]))
+        second = import_assignment_workbook(self._workbook([self._base_row()]))
+        self.assertEqual(first.created, 1)
+        self.assertEqual(PhanCongTre.objects.filter(tre=self.child).count(), 1)
+        self.assertEqual(second.created, 0)
+        self.assertEqual(second.unchanged, 1)
+
+        other = import_assignment_workbook(self._workbook([self._base_row(**{"Mã CB": "ABP0002"})]))
+        self.assertEqual(other.created, 1)
+        self.assertEqual(PhanCongTre.objects.filter(tre=self.child, loai_dich_vu="VLTL").count(), 2)
+
+    def test_import_invalid_row_rolls_back_and_never_creates_fake_child(self):
+        result = import_assignment_workbook(self._workbook([
+            self._base_row(**{"IDChild": "CBP-NEW", "Tên trẻ": ""}),
+            self._base_row(**{"IDChild": "CBP0001", "Số buổi dự kiến": 0}),
+        ]))
+        self.assertTrue(result.errors)
+        self.assertEqual(PhanCongTre.objects.count(), 0)
+        self.assertFalse(Tre.objects.filter(ma_tre="CBP-NEW").exists())
+
+    def test_import_validate_only_rolls_back(self):
+        result = import_assignment_workbook(self._workbook([self._base_row()]), validate_only=True)
+        self.assertEqual(result.created, 1)
+        self.assertEqual(PhanCongTre.objects.count(), 0)
+
+    def test_import_deduplicates_new_child_identity_within_one_file(self):
+        rows = [
+            self._base_row(**{"IDChild": "CBP-NEW", "Tên trẻ": "Trẻ Mới", "Ngày sinh": "2015-01-01", "Giới tính": "Nam"}),
+            self._base_row(**{"IDChild": "CBP-NEW", "Tên trẻ": "Trẻ Mới", "Ngày sinh": "2015-01-01", "Giới tính": "Nam"}),
+        ]
+        result = import_assignment_workbook(self._workbook(rows))
+        self.assertEqual(result.created, 1)
+        self.assertEqual(result.unchanged, 1)
+        self.assertEqual(Tre.objects.filter(ma_tre="CBP-NEW").count(), 1)
+        self.assertEqual(PhanCongTre.objects.filter(tre__ma_tre="CBP-NEW").count(), 1)
+
+    def test_journal_save_uses_decimal_formula(self):
+        assignment = PhanCongTre.objects.create(
+            phan_bo=self.allocation, can_bo_nguon=self.cb1, nhom_hd=self.group, tre=self.child,
+            loai_dich_vu="VLTL", so_buoi_du_kien=20, dinh_muc_di_lai=Decimal("50"),
+        )
+        contract = HopDong.objects.create(
+            can_bo=self.cb1, nhom_hd=self.group, so_hop_dong="HD-P0-004", tu_ngay=date(2026, 9, 1),
+            den_ngay=date(2026, 9, 30), gia_tri_hop_dong=Decimal("1000"),
+        )
+        journal = NhatKyThucHien(
+            hop_dong=contract, phan_cong=assignment, ngay_thuc_hien=date(2026, 9, 1),
+            so_buoi_thuc_hien=2, so_luot_di_lai_cbct=1, don_gia_cong=Decimal("200"), dinh_muc_di_lai=Decimal("50"),
+        )
+        journal.save(recalculate_travel=False)
+        self.assertEqual(journal.thanh_tien, Decimal("450"))

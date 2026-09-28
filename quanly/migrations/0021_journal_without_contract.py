@@ -23,6 +23,13 @@ def repair_historical_journals(apps, schema_editor):
         NhatKy.objects.filter(pk=journal.pk).update(**updates)
 
 
+def make_historical_journal_fk_nullable(apps, schema_editor):
+    # MySQL needs an explicit MODIFY because this migration predates the nullable
+    # field state. SQLite recreates the table itself and cannot parse MySQL SQL.
+    if schema_editor.connection.vendor == "mysql":
+        schema_editor.execute("ALTER TABLE quanly_nhatkythuchien MODIFY hop_dong_id bigint NULL")
+
+
 class Migration(migrations.Migration):
     dependencies = [("quanly", "0020_nhatky_historical_source")]
 
@@ -39,12 +46,9 @@ class Migration(migrations.Migration):
                 verbose_name="CBCT theo dữ liệu nguồn",
             ),
         ),
-        migrations.SeparateDatabaseAndState(
+            migrations.SeparateDatabaseAndState(
             database_operations=[
-                migrations.RunSQL(
-                    sql="ALTER TABLE quanly_nhatkythuchien MODIFY hop_dong_id bigint NULL",
-                    reverse_sql=migrations.RunSQL.noop,
-                ),
+                migrations.RunPython(make_historical_journal_fk_nullable, migrations.RunPython.noop),
             ],
             state_operations=[
                 migrations.AlterField(

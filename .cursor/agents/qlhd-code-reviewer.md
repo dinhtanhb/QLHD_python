@@ -18,4 +18,4 @@ Review the current working tree without editing files unless the parent explicit
 
 ## Output
 
-Return findings ordered by severity with file/line references, then a short list of tests run and residual risks. Do not report style-only issues ahead of data-integrity or runtime failures.
+Return findings ordered by severity with file/line references, then a short list of tests run and residual risks. Do not report style-only issues ahead of data-integrity or runtime failures. For the release gate, also confirm that the progress/docs update, review/full backup scope, and intended commit/push status are reported.

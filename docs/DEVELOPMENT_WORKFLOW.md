@@ -43,7 +43,17 @@ Kiểm thử thêm theo loại thay đổi:
 
 ### 4. Cập nhật hồ sơ
 
-Ghi vào `docs/PROJECT_PROGRESS.md`: ngày, thay đổi, file, kiểm thử, kết quả định lượng, rủi ro và bước tiếp theo. Chỉ commit/push khi có yêu cầu rõ của người dùng.
+Ghi vào `docs/PROJECT_PROGRESS.md`: ngày, thay đổi, file, kiểm thử, kết quả định lượng, rủi ro và bước tiếp theo.
+
+### 5. Bàn giao mặc định sau mỗi đợt
+
+Theo ủy quyền thường trực của người dùng, sau mỗi đợt thay đổi phải:
+
+- Cập nhật hướng dẫn, tiến độ và tài liệu nghiệp vụ bị ảnh hưởng.
+- Rà lại skill dự án và chạy agent review phù hợp; thay đổi import/tài chính phải có cả code review và data-integrity review.
+- Tạo hai bản sao ZIP `review` và `full` trong `backups/`, loại trừ `.env`, database, dữ liệu thật, `venv`, log và file tạm.
+- Stage có chọn lọc, commit và push lên GitHub sau khi kiểm thử đạt.
+- Báo cáo rõ commit, remote/nhánh, file backup, kiểm thử và mọi lỗi push còn tồn tại.
 
 ## Lưu ý môi trường Windows
 

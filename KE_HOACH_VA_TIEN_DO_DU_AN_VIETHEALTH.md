@@ -1,11 +1,13 @@
 # BÁO CÁO KẾ HOẠCH, TIẾN ĐỘ THỰC HIỆN VÀ LỘ TRÌNH HOÀN THÀNH DỰ ÁN
 **Dự án:** Hệ thống Quản lý Phân bổ Chỉ tiêu & Hợp đồng Cán bộ Chuyên trách (CBCT)
 **Đơn vị triển khai:** Trung tâm Phát triển Sức khỏe Bền vững (VietHealth)
-**Ngày cập nhật:** 14/09/2026
-**Trạng thái:** Tạm dừng các trang nghiệp vụ - Chuyển sang mốc tổng kết và lập kế hoạch hoàn thiện
+**Ngày cập nhật:** 28/09/2026
+**Trạng thái:** Đã triển khai các luồng chính; đang chuẩn hóa an toàn dữ liệu, vòng đời hợp đồng và kiểm thử hồi quy P0
 
 **Ghi chú:** Câu 1: 1 trẻ có thể được phân công cho nhiều CBCT (Cán bộ can thiệp) tùy theo nhu cầu tương ứng với các đợt phân công và hợp đồng cụ thể; Câu 2: 1 CBCT có thể có ký nhiều HĐ trong 1 năm hoặc được gia hạn cả năm, hoặc từ năm này sang năm sau; Câu 3: chỉ theo TỈnh - xã - địa chỉ chi tiết; Câu 4: mỗi tháng sẽ có 1 đợt thanh toán gồm: Đề nghị thanh toán + bảng kê các lần thanh toán (có mẫu word). Khi tới hạn kết thúc HĐ sẽ có Biên bản nghiệm thu & Thanh lý hợp đồng; Câu 5: Admin, Điều phối viên, Kế toán, Cán bộ dự án (CBDA)...
 ---
+
+> **Cập nhật trạng thái 28/09/2026:** Bảng mốc lịch sử phía dưới được bổ sung từ giai đoạn đầu. Trạng thái thực tế hiện tại, các phần đã triển khai và việc còn lại được quản lý tại [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md); tài liệu đó là nguồn chuẩn cho tiến độ hiện hành.
 
 ## I. TỔNG QUAN DỰ ÁN & MỤC TIÊU HỆ THỐNG
 
@@ -17,7 +19,7 @@
 
 ### 2. Công nghệ & Kiến trúc
 * **Backend:** Python / Django Web Framework, Django ORM, Django Admin / Custom Views.
-* **Database:** SQLite / PostgreSQL / MySQL.
+* **Database:** MySQL 8+ (`utf8mb4`, `STRICT_ALL_TABLES`); SQLite chỉ dùng cho test khi đặt `DB_ENGINE=sqlite`.
 * **Frontend:** HTML5, CSS3, JavaScript, Bootstrap 5 (Flex/Grid Layout, Modals, Badges, Bootstrap Icons).
 * **Xử lý Dữ liệu:** Pandas, OpenPyXL (Đọc, chuẩn hóa chuỗi tiêu đề, xử lý dữ liệu ẩn/đặc biệt từ Excel).
 
@@ -39,7 +41,7 @@
 | **Mốc 1** | Cấu hình & Quản lý Danh mục | **Hoàn thành** | Khai báo models `CanBo`, `FinancialConfig`, `PhanBoChiTieu`. Quản lý định mức giá công, phí đi lại. |
 | **Mốc 2** | Import Phân bổ từ Excel | **Hoàn thành** | Xây dựng view `import_phan_bo`, chuẩn hóa tiêu đề cột Excel (xóa `\xa0`, khoảng trắng thừa), kiểm tra logic, xem trước preview và lưu tập trung (`bulk_create`). |
 | **Mốc 3** | Quản lý Đề xuất & Tạo HĐ | **Hoàn thành** | Xây dựng giao diện `danh_sach_de_xuat`, tính năng Modal Popup sửa số buổi (`sua_phan_bo_chi_tieu`), tự động tính lại giá trị HĐ, tạo HĐ chính thức (`tao_hop_dong_chinh_thuc`). |
-| **Mốc 4** | Tổng kết & Đóng băng Nghiệp vụ | **Đang thực hiện** | Tạm dừng làm các trang nghiệp vụ mới; tổng hợp tiến độ, rà soát mã nguồn, lập file Kế hoạch & Lộ trình chi tiết. |
+| **Mốc 4** | Tổng kết & Đóng băng Nghiệp vụ | **Hoàn thành một phần** | Rà soát mã nguồn, chuẩn hóa template, thêm kiểm thử P0 và hồ sơ tiến độ; chi tiết tại `docs/PROJECT_PROGRESS.md`. |
 | **Mốc 5** | Quản lý Hợp đồng Chính thức | **Chờ triển khai** | Trang quản lý danh sách Hợp đồng đã ký, theo dõi thời hạn hợp đồng, xuất file Hợp đồng Word/PDF theo mẫu chuẩn. |
 | **Mốc 6** | Theo dõi Tiến độ & Nghiệm thu | **Chờ triển khai** | Quản lý nhật ký thực hiện số buổi thực tế theo tháng/quý; đối chiếu chỉ tiêu HĐ vs Thực tế; lập bảng kê nghiệm thu thanh toán. |
 | **Mốc 7** | Báo cáo Thống kê & Phân quyền | **Chờ triển khai** | Báo cáo chi phí theo khu vực/nhóm HĐ; phân quyền người dùng (Admin, Kế toán, Quản lý); kiểm thử toàn diện (UAT) và bàn giao. |

@@ -20,7 +20,11 @@
                     <form method="POST" enctype="multipart/form-data">
                         {% csrf_token %}
                         <div class="mb-3">
-                            <input type="file" name="file_excel" class="form-control" required>
+                            <input type="file" name="file_excel" class="form-control" accept=".xlsx" required>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="validate_only" value="1" id="validate_only">
+                            <label class="form-check-label" for="validate_only">Chỉ kiểm tra (không lưu)</label>
                         </div>
                         <button type="submit" class="btn btn-success">Kiểm tra và tải lên dữ liệu</button>
                     </form>

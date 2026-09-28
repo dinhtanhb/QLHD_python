@@ -375,13 +375,28 @@ class ChiTietThanhToanForm(BootstrapModelForm):
 
 
 class NghiemThuForm(BootstrapModelForm):
+    def __init__(self, *args, hop_dong=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.hop_dong = hop_dong or getattr(self.instance, "hop_dong", None)
+
     class Meta:
         model = NghiemThu
-        fields = ["ngay_nghiem_thu", "ket_qua", "bien_ban_so", "ghi_chu"]
+        fields = ["ngay_nghiem_thu", "ket_qua", "gia_tri_nghiem_thu", "bien_ban_so", "ghi_chu"]
         widgets = {
             "ngay_nghiem_thu": forms.DateInput(attrs={"type": "date"}),
+            "gia_tri_nghiem_thu": forms.NumberInput(attrs={"min": "0", "step": "1"}),
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),
         }
+
+    def clean_gia_tri_nghiem_thu(self):
+        value = self.cleaned_data.get("gia_tri_nghiem_thu")
+        if value is None:
+            raise forms.ValidationError("Cần nhập/xác nhận giá trị nghiệm thu.")
+        if value < 0:
+            raise forms.ValidationError("Giá trị nghiệm thu không được âm.")
+        if self.hop_dong and value > self.hop_dong.gia_tri_hop_dong:
+            raise forms.ValidationError("Giá trị nghiệm thu không được vượt giá trị hợp đồng.")
+        return value
 
 
 class ThanhLyHopDongForm(BootstrapModelForm):

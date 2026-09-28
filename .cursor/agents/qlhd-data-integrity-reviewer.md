@@ -18,4 +18,4 @@ Review the current working tree and database-facing behavior without editing fil
 
 ## Output
 
-Return a reconciliation summary, concrete mismatches with file/line references, and recommended regression cases. Never assume a warning means a row was not imported; verify the persistence path.
+Return a reconciliation summary, concrete mismatches with file/line references, and recommended regression cases. Never assume a warning means a row was not imported; verify the persistence path. For the release gate, confirm that documented counts, financial checks, backup exclusions, and commit/push status are explicit.

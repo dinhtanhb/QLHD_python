@@ -953,10 +953,24 @@ class ChiTietThanhToanDiLaiPhuHuynh(TimeStampedModel):
 class NghiemThu(TimeStampedModel):
     hop_dong = models.OneToOneField(HopDong, on_delete=models.PROTECT, related_name="nghiem_thu", verbose_name="Hợp đồng")
     ngay_nghiem_thu = models.DateField(null=True, blank=True, verbose_name="Ngày nghiệm thu")
-    ket_qua = models.CharField(max_length=30, default="DAT", verbose_name="Kết quả")
+    ket_qua = models.CharField(
+        max_length=30,
+        choices=[("DAT", "Đạt"), ("KHONG_DAT", "Không đạt")],
+        default="DAT",
+        verbose_name="Kết quả",
+    )
     gia_tri_nghiem_thu = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Giá trị nghiệm thu")
     bien_ban_so = models.CharField(max_length=50, blank=True, null=True, verbose_name="Số biên bản")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    def clean(self):
+        errors = {}
+        if self.gia_tri_nghiem_thu is None or self.gia_tri_nghiem_thu < 0:
+            errors["gia_tri_nghiem_thu"] = "Giá trị nghiệm thu phải lớn hơn hoặc bằng 0."
+        if self.hop_dong_id and self.gia_tri_nghiem_thu > self.hop_dong.gia_tri_hop_dong:
+            errors["gia_tri_nghiem_thu"] = "Giá trị nghiệm thu không được vượt giá trị hợp đồng."
+        if errors:
+            raise ValidationError(errors)
 
 
 class ThanhLyHopDong(TimeStampedModel):
@@ -965,3 +979,12 @@ class ThanhLyHopDong(TimeStampedModel):
     gia_tri_thanh_ly = models.DecimalField(max_digits=18, decimal_places=0, default=Decimal("0"), verbose_name="Giá trị thanh lý")
     bien_ban_so = models.CharField(max_length=50, blank=True, null=True, verbose_name="Số biên bản")
     ghi_chu = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
+
+    def clean(self):
+        errors = {}
+        if self.gia_tri_thanh_ly is None or self.gia_tri_thanh_ly < 0:
+            errors["gia_tri_thanh_ly"] = "Giá trị thanh lý phải lớn hơn hoặc bằng 0."
+        if self.hop_dong_id and self.gia_tri_thanh_ly > self.hop_dong.gia_tri_hop_dong:
+            errors["gia_tri_thanh_ly"] = "Giá trị thanh lý không được vượt giá trị hợp đồng."
+        if errors:
+            raise ValidationError(errors)

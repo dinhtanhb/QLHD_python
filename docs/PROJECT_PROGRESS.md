@@ -7,6 +7,13 @@
 
 **Cập nhật mới nhất:** đã sửa luồng xuất ĐNTT/ĐNCK, chưa commit/push.
 
+## Chuẩn hóa quy trình bàn giao — 28/09/2026
+
+- Người dùng đã ủy quyền mặc định: sau mỗi đợt sửa code/thêm app phải cập nhật hướng dẫn, tiến độ, docs liên quan, skill và agent review phù hợp; chạy kiểm thử; tạo hai bản sao `review`/`full`; sau đó commit và push GitHub.
+- Đã ghi quy trình này vào `AGENTS.md`, `docs/DEVELOPMENT_WORKFLOW.md`, skill `.cursor/skills/qlhd-change-validation/SKILL.md` và hai agent review trong `.cursor/agents/`.
+- Hai bản sao hiện tại đã được tạo tại `backups/`; không bao gồm `.env`, database, dữ liệu thật, `venv`, log hoặc file tạm.
+- Lượt cập nhật quy trình này chưa commit/push tại thời điểm ghi; cần thực hiện commit/push cùng lượt để kiểm tra quy trình mới.
+
 ## Baseline đã xác minh
 
 - `manage.py check`: đạt.
@@ -183,3 +190,36 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - Đã render kiểm tra bằng LibreOffice: tất cả mẫu Word và Excel đều nhận đúng A4; DNTT đi lại ngang, DNCK/DSTK đi lại dọc; không còn metadata external link/query table trong các mẫu Excel.
 - Kiểm thử: `manage.py check`, `makemigrations --check --dry-run`, `manage.py test quanly.tests` (36/36), mở lại 18 workbook bằng `openpyxl`, `git diff --check`; chưa commit/push.
 - Rủi ro còn lại: mẫu import có nhiều cột vẫn phải kiểm tra khi người dùng tự thêm cột ngoài cấu trúc chuẩn; file khóa tạm `~$Mau_DNTT.xlsx` được bỏ qua khi chuẩn hóa vì không phải template hợp lệ.
+
+## Hoàn thiện Nghiệm thu và Thanh lý hợp đồng — 28/09/2026
+
+- Sửa lỗi POST Nghiệm thu do thiếu import `ChiTietThanhToan` trong `quanly/views.py`.
+- Không còn tạo bản ghi nghiệm thu/thanh lý rỗng chỉ khi mở trang; Thanh lý chỉ cho phép sau khi nghiệm thu đã lưu ngày và kết quả đạt.
+- Khi lưu Nghiệm thu/Thanh lý, trạng thái hợp đồng được đồng bộ lần lượt thành `NGHIEM_THU`/`THANH_LY`; giá trị nghiệm thu lấy theo tổng chi tiết thanh toán của hợp đồng hoặc giá trị hợp đồng khi chưa có thanh toán.
+- Hoàn thiện `quanly/document_export.py`: BBNT gom bảng trẻ + dịch vụ + buổi tại nhà/trường; TLHD gom lịch sử thanh toán theo đợt, thuế TNCN, đi lại, tổng cộng và số còn lại; không còn placeholder trong file xuất.
+- Kiểm thử thực tế với hợp đồng `348`: POST nghiệm thu trả redirect và đồng bộ trạng thái trong transaction rollback; xuất thử BBNT/TLHD mở được bằng `python-docx`, render LibreOffice thành 3 trang mỗi mẫu, không lỗi bố cục.
+- Kiểm tra thêm hợp đồng `347`: GET form Nghiệm thu không tự tạo bản ghi rỗng; GET Thanh lý khi chưa nghiệm thu trả redirect về chi tiết hợp đồng.
+- Đã bổ sung 2 test hồi quy export; tổng test sau sửa đạt `38/38`. Chưa commit/push phần thay đổi này.
+- Rủi ro: dữ liệu hiện có một số bản ghi nghiệm thu cũ giá trị `0`; exporter không còn tự suy ngầm sang giá trị hợp đồng/tổng thanh toán, người dùng cần duyệt và lưu lại hồ sơ để cập nhật chính thức.
+
+## Vòng 1 (Codex/P0) — 28/09/2026
+
+- T1: chuẩn hóa `qlhd/settings.py` với parser boolean chịu lỗi, danh sách host/origin từ môi trường, cookie bảo mật, tùy chọn MySQL `utf8mb4`/`STRICT_ALL_TABLES`, log xoay vòng 5 MB × 5; thêm `.env.example` và cập nhật README theo MySQL/non-root/test SQLite.
+- T2: `khoa_phan_bo` chỉ nhận POST có CSRF; GET chỉ redirect và phân bổ đã khóa không bị ghi lại.
+- T3: thêm service `quanly/services/contract_status.py`, bảng chuyển trạng thái hợp lệ, kiểm tra giá trị nghiệm thu bằng Decimal, GET nghiệm thu/thanh lý không tạo bản ghi rỗng, thanh lý khóa hợp đồng; thêm ba management command báo cáo/đồng bộ.
+- T4: thêm `quanly/assignment_import.py`: chỉ nhận `.xlsx` tối đa 10 MB/20.000 dòng, preload danh mục, validate trước khi ghi, atomic all-or-nothing, chế độ chỉ kiểm tra, không tạo trẻ giả, identity có CBCT và báo cảnh báo phân bổ suy/tạo mới. Luồng cũ được giữ tên `_legacy_import_phan_cong` để không làm mất khả năng đối chiếu trong lượt này.
+- T5: bổ sung test DB bằng `django.test.TestCase` cho POST khóa phân bổ, quyền route import, vòng đời nghiệm thu/thanh lý, chuyển trạng thái, sửa hợp đồng đã khóa/trái luật, import idempotent/rollback/validate-only, tách CBCT, loại trùng trẻ mới và công thức tiền Decimal; sửa migration cũ để test SQLite không chạy SQL MySQL `MODIFY`.
+- T6: cập nhật README/kế hoạch và tài liệu tiến độ. Các thay đổi của lượt này chưa commit/push.
+
+### Kiểm thử Vòng 1
+
+- `DEBUG=True`, `DB_ENGINE=sqlite`: `manage.py check` đạt; `makemigrations --check --dry-run` đạt; `manage.py test quanly.tests`: **49/49 đạt**; `git diff --check` đạt.
+- Management command đã kiểm tra cú pháp qua Django check; lệnh đọc dữ liệu cần chạy trên DB đã migrate (không chạy trên SQLite rỗng ngoài test runner).
+
+### Số liệu và rủi ro còn lại
+
+- Không đọc/ghi `.env`, không thay đổi DB thật và không đưa Excel dữ liệu thật vào lượt này.
+- Migration `0021_journal_without_contract.py` có thay đổi tương thích SQLite; với MySQL đã áp dụng, nhánh SQL vẫn chỉ chạy trên backend MySQL.
+- Cần chạy UAT trên MySQL bản sao sau khi người dùng kiểm tra các file import thật; đặc biệt rà các dòng trẻ mới thiếu ngày sinh/giới tính và các phân bổ CBDA được suy tự động.
+- Hai agent review độc lập không phát hiện P0. Các rủi ro P1 còn lại gồm các importer cũ (CBCT/đơn vị/nhật ký/hợp đồng) chưa được chuyển toàn bộ sang atomic trong Vòng 1 và chưa có test MySQL sạch; `import_phan_cong` đã đáp ứng atomic/validate-only theo phạm vi T4. Cấu hình HTTPS/HSTS mặc định cho phép tắt để chạy HTTP nội bộ; production phải bật các biến bảo mật tương ứng.
+- Chưa xử lý sổ thanh toán thống nhất, tối ưu TQT quy mô lớn hoặc tách `views.py`; đây là phạm vi Vòng 2–3 theo tài liệu yêu cầu.

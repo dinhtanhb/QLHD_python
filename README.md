@@ -23,13 +23,13 @@ Hệ thống giải quyết các bài toán cốt lõi:
 * **Backend:** Python 3.10+, Django Web Framework (Django ORM, Custom Views, Forms).
 * **Frontend:** HTML5, CSS3, JavaScript, Bootstrap 5 (Flex/Grid, Modals).
 * **Xử lý Dữ liệu:** Pandas, OpenPyXL.
-* **Cơ sở dữ liệu:** SQLite (Development) / PostgreSQL (Sẵn sàng cho Production).
+* **Cơ sở dữ liệu:** MySQL 8+ với `utf8mb4` và `STRICT_ALL_TABLES`. Có thể chạy test bằng SQLite qua `DB_ENGINE=sqlite`.
 
 ---
 
 ## 🚀 III. Lộ Trình Phát Triển (Milestones)
 
-Dự án hiện tại đã hoàn thành **~60% tổng khối lượng công việc**.
+Dự án đang được phát triển theo các vòng được ghi nhận tại [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md).
 
 - [x] **Mốc 1:** Cấu hình hệ thống, quản lý danh mục (Cán bộ, Định mức tài chính).
 - [x] **Mốc 2:** Module Import Excel (Chuẩn hóa chuỗi `\xa0`, làm sạch header, preview & lưu tập trung bằng `bulk_create`).
@@ -87,6 +87,38 @@ Truy cập hệ thống tại: `http://127.0.0.1:8000/`
 ## Quy trình phát triển và kiểm thử
 
 Mọi thay đổi mã nguồn, import/export hoặc thêm app phải tuân thủ [AGENTS.md](AGENTS.md), đọc [quy trình phát triển](docs/DEVELOPMENT_WORKFLOW.md) và cập nhật [tiến độ dự án](docs/PROJECT_PROGRESS.md). Các agent rà soát chuyên trách nằm trong `.cursor/agents/`; skill kiểm thử lặp lại nằm trong `.cursor/skills/qlhd-change-validation/`.
+
+## Cấu hình môi trường
+
+Sao chép `.env.example` thành `.env`, sau đó thay các giá trị mẫu bằng cấu hình local. Không commit `.env`, dữ liệu thật hoặc file Excel dữ liệu.
+
+Môi trường chạy thật dùng tài khoản MySQL riêng cho ứng dụng, không dùng `root`:
+
+```sql
+CREATE DATABASE qlhd CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'qlhd_app'@'localhost' IDENTIFIED BY 'mat-khau-rieng';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
+  ON qlhd.* TO 'qlhd_app'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+Các biến quan trọng gồm `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`. Danh sách host/origin phân tách bằng dấu phẩy. Khi `DEBUG=False`, cookie phiên/CSRF được bật Secure; redirect SSL và HSTS do các biến `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS` điều khiển.
+
+## Chạy ứng dụng và test
+
+```powershell
+python manage.py migrate
+python manage.py runserver
+
+# Test không cần MySQL thật
+$env:DB_ENGINE = 'sqlite'
+$env:DEBUG = 'True'
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py test quanly.tests
+```
+
+Log ứng dụng nằm trong `logs/app.log`, tự xoay vòng ở mức 5 MB, tối đa 5 file lưu trữ.
 
 ---
 

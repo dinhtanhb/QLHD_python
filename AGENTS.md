@@ -38,3 +38,16 @@ Tài liệu này là quy tắc bắt buộc cho mọi lần sửa mã nguồn, t
 ## Báo cáo kết quả
 
 Mỗi lần bàn giao phải nêu: file đã thay đổi, kiểm thử đã chạy, kết quả định lượng, vấn đề còn lại và việc commit/push có thực hiện hay chưa.
+
+## Quy trình bàn giao mặc định từ 28/09/2026
+
+Theo ủy quyền thường trực của người dùng, sau mỗi đợt sửa mã nguồn, template, migration, import/export hoặc thêm app phải hoàn tất đủ các bước sau:
+
+1. Cập nhật hướng dẫn/quy trình nếu thay đổi ảnh hưởng cách vận hành hoặc kiểm thử.
+2. Cập nhật `docs/PROJECT_PROGRESS.md` và các tài liệu nghiệp vụ liên quan.
+3. Rà lại skill dự án và chạy các agent review phù hợp trong `.cursor/agents/`; nếu thay đổi import, tài chính hoặc dữ liệu thì bắt buộc dùng cả code review và data-integrity review.
+4. Chạy kiểm thử, kiểm tra định dạng và kiểm tra luồng thực tế theo phạm vi thay đổi.
+5. Tạo hai bản sao ZIP trong `backups/`: một bản `review` gọn để rà soát và một bản `full` gồm mã nguồn/tài liệu/template; không đưa `.env`, database, dữ liệu thật, `venv`, log hoặc file tạm vào bản sao.
+6. Stage đúng các file thuộc đợt thay đổi, tạo commit có mô tả rõ ràng và push lên remote GitHub của nhánh đang làm việc.
+
+Nếu commit hoặc push bị chặn bởi lỗi môi trường/quyền truy cập, phải báo rõ nguyên nhân, commit đã tạo hay chưa và lệnh còn cần người dùng thực hiện; không được coi là hoàn tất khi chưa xác nhận trạng thái remote.

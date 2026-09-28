@@ -28,4 +28,4 @@ git diff --check
 
 Then run targeted tests and a real-flow check. For Excel, validate the ZIP package, reload it with `openpyxl`, and open it with Excel when available. For Word/PDF, render and inspect pages. For HTML, load the affected route and verify filters, actions, tables, and responsive layout.
 
-Update `docs/PROJECT_PROGRESS.md` with verified results and residual risks. Do not commit or push unless explicitly requested.
+Update `docs/PROJECT_PROGRESS.md` with verified results and residual risks. The user has granted standing authorization to commit and push after each completed change: create a review ZIP and a full source/template ZIP under `backups/`, stage only intended files, commit with a clear message, and push the active branch. Never include `.env`, databases, real input data, virtual environments, logs, or temporary files in commits or backups. If commit or push fails, report the exact state and blocker instead of claiming completion.

@@ -41,6 +41,7 @@ from .payment_export import (
     parent_travel_category,
 )
 from .financial import FinancialConfig, calculate_payment_breakdown, normalize_travel_location
+from .services.contract_status import sync_trang_thai_hop_dong, validate_status_transition
 from .forms import (
     CanBoForm,
     DieuChuyenPhanCongForm,
@@ -69,6 +70,7 @@ from .forms import (
 )
 from .models import (
     CanBo,
+    ChiTietThanhToan,
     ChiTietKhoiLuongHopDong,
     ChiTietPhuLucPhanCong,
     ChiTietGiaHanKhoiLuong,
@@ -128,7 +130,18 @@ def parse_decimal(value, default=Decimal("0")):
     if value is None:
         return default
     try:
-        normalized = value.replace(",", "").replace(" ", "")
+        normalized = str(value).replace("\xa0", "").replace(" ", "")
+        if "," in normalized and "." in normalized:
+            if normalized.rfind(",") > normalized.rfind("."):
+                normalized = normalized.replace(".", "").replace(",", ".")
+            else:
+                normalized = normalized.replace(",", "")
+        elif "," in normalized:
+            left, right = normalized.rsplit(",", 1)
+            normalized = left + right if len(right) == 3 else left + "." + right
+        elif "." in normalized:
+            left, right = normalized.rsplit(".", 1)
+            normalized = left + right if len(right) == 3 else normalized
         return Decimal(normalized)
     except (InvalidOperation, ValueError, TypeError):
         return default
@@ -935,7 +948,7 @@ def lich_su_phan_cong(request, pk):
 
 
 @admin_required
-def import_phan_cong(request):
+def _legacy_import_phan_cong(request):
     if request.method != "POST" or not request.FILES.get("file_excel"):
         return render(request, "quanly/import_phan_cong.html")
 
@@ -1562,6 +1575,12 @@ def sua_phan_bo_chi_tieu(request, pk):
 @admin_required
 def khoa_phan_bo(request, pk):
     item = get_object_or_404(PhanBoChiTieu, pk=pk)
+    if request.method != "POST":
+        messages.warning(request, "Khóa Phân bổ phải được xác nhận bằng biểu mẫu POST.")
+        return redirect("danh_sach_phan_bo")
+    if item.is_locked:
+        messages.error(request, f"Phân bổ #{item.pk} đã được khóa trước đó.")
+        return redirect("danh_sach_phan_bo")
     item.is_locked = True
     item.save(update_fields=["is_locked", "updated_at"])
     messages.success(request, f"Đã khóa Phân bổ #{item.pk}.")
@@ -1910,11 +1929,29 @@ def danh_sach_hop_dong(request):
 @admin_required
 def sua_hop_dong(request, pk):
     hop_dong = get_object_or_404(HopDong, pk=pk)
+    current_status = hop_dong.trang_thai
+    if hop_dong.is_locked:
+        messages.error(request, "Hợp đồng đã khóa, không thể sửa.")
+        return redirect("danh_sach_hop_dong")
     form = HopDongForm(request.POST or None, instance=hop_dong)
     if request.method == "POST" and form.is_valid():
-        form.save()
-        messages.success(request, f"Đã cập nhật hợp đồng {hop_dong.so_hop_dong}.")
-        return redirect("danh_sach_hop_dong")
+        target_status = form.cleaned_data.get("trang_thai")
+        try:
+            # ModelForm mutates its instance during _post_clean; compare with
+            # the status captured before validation, not the mutated instance.
+            hop_dong.trang_thai = current_status
+            if target_status != current_status:
+                validate_status_transition(hop_dong, target_status)
+                if target_status in {"NGHIEM_THU", "THANH_LY"}:
+                    acceptance = NghiemThu.objects.filter(hop_dong=hop_dong).first()
+                    if not acceptance or not acceptance.ngay_nghiem_thu or acceptance.ket_qua != "DAT":
+                        raise ValidationError("Chỉ được chuyển sang nghiệm thu/thanh lý sau khi có hồ sơ nghiệm thu Đạt.")
+            with transaction.atomic():
+                form.save()
+            messages.success(request, f"Đã cập nhật hợp đồng {hop_dong.so_hop_dong}.")
+            return redirect("danh_sach_hop_dong")
+        except ValidationError as exc:
+            form.add_error("trang_thai", str(exc))
     return render(request, "quanly/sua_hop_dong.html", {"form": form, "hop_dong": hop_dong})
 
 
@@ -2489,36 +2526,49 @@ def xuat_danh_sach_tai_khoan(request, pk):
 @hopdong_required
 def cap_nhat_nghiem_thu(request, hop_dong_id):
     hop_dong = get_object_or_404(HopDong.objects.select_related("de_xuat__phan_bo"), pk=hop_dong_id)
-    record, _ = NghiemThu.objects.get_or_create(hop_dong=hop_dong)
+    record = NghiemThu.objects.filter(hop_dong=hop_dong).first()
+    journal_total = NhatKyThucHien.objects.filter(hop_dong=hop_dong).aggregate(total=Sum("thanh_tien"))["total"] or Decimal("0")
     if request.method == "POST":
-        form = NghiemThuForm(request.POST, instance=record)
+        form = NghiemThuForm(request.POST, instance=record, hop_dong=hop_dong)
         if form.is_valid():
-            obj = form.save(commit=False)
-            paid_total = ChiTietThanhToan.objects.filter(nhat_ky__hop_dong=hop_dong).aggregate(total=Sum("thanh_tien"))["total"]
-            obj.gia_tri_nghiem_thu = paid_total or hop_dong.gia_tri_hop_dong
-            obj.save()
-            messages.success(request, "Đã lưu thông tin nghiệm thu.")
-            return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+            try:
+                with transaction.atomic():
+                    obj = form.save(commit=False)
+                    obj.hop_dong = hop_dong
+                    obj.save()
+                    sync_trang_thai_hop_dong(hop_dong)
+                messages.success(request, "Đã lưu thông tin nghiệm thu.")
+                return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+            except ValidationError as exc:
+                form.add_error(None, str(exc))
     else:
-        form = NghiemThuForm(instance=record)
-    return render(request, "quanly/cap_nhat_nghiem_thu.html", {"form": form, "hop_dong": hop_dong, "record": record})
+        instance = record or NghiemThu(gia_tri_nghiem_thu=journal_total)
+        form = NghiemThuForm(instance=instance, hop_dong=hop_dong)
+    return render(request, "quanly/cap_nhat_nghiem_thu.html", {"form": form, "hop_dong": hop_dong, "record": record, "journal_total": journal_total})
 
 
 @hopdong_required
 def cap_nhat_thanh_ly(request, hop_dong_id):
     hop_dong = get_object_or_404(HopDong.objects.select_related("de_xuat__phan_bo"), pk=hop_dong_id)
-    if not hasattr(hop_dong, "nghiem_thu"):
+    acceptance = NghiemThu.objects.filter(hop_dong=hop_dong).first()
+    if not acceptance or not acceptance.ngay_nghiem_thu or acceptance.ket_qua != "DAT":
         messages.error(request, "Chỉ được thanh lý sau khi đã lập biên bản nghiệm thu.")
         return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
-    record, _ = ThanhLyHopDong.objects.get_or_create(hop_dong=hop_dong, defaults={"gia_tri_thanh_ly": hop_dong.nghiem_thu.gia_tri_nghiem_thu})
+    record = ThanhLyHopDong.objects.filter(hop_dong=hop_dong).first()
     if request.method == "POST":
         form = ThanhLyHopDongForm(request.POST, instance=record)
         if form.is_valid():
-            obj = form.save(commit=False)
-            obj.gia_tri_thanh_ly = hop_dong.nghiem_thu.gia_tri_nghiem_thu
-            obj.save()
-            messages.success(request, "Đã lưu thông tin thanh lý hợp đồng.")
-            return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+            try:
+                with transaction.atomic():
+                    obj = form.save(commit=False)
+                    obj.hop_dong = hop_dong
+                    obj.gia_tri_thanh_ly = acceptance.gia_tri_nghiem_thu
+                    obj.save()
+                    sync_trang_thai_hop_dong(hop_dong)
+                messages.success(request, "Đã lưu thông tin thanh lý hợp đồng.")
+                return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
+            except ValidationError as exc:
+                form.add_error(None, str(exc))
     else:
         form = ThanhLyHopDongForm(instance=record)
     return render(request, "quanly/cap_nhat_thanh_ly.html", {"form": form, "hop_dong": hop_dong, "record": record})
@@ -2535,6 +2585,8 @@ def xuat_bien_ban_nghiem_thu(request, pk):
     hop_dong = get_object_or_404(HopDong.objects.select_related("can_bo", "de_xuat__phan_bo"), pk=pk)
     try:
         record = hop_dong.nghiem_thu
+        if not record.ngay_nghiem_thu or record.ket_qua != "DAT":
+            raise ValidationError("Hồ sơ nghiệm thu chưa có ngày và kết quả Đạt.")
         return _document_response(export_acceptance_record(hop_dong, record), f"BBNT_{hop_dong.so_hop_dong}.docx")
     except (NghiemThu.DoesNotExist, ValidationError) as exc:
         messages.error(request, "Chưa có hồ sơ nghiệm thu hợp lệ để xuất.")
@@ -3639,3 +3691,35 @@ def them_phu_luc_hop_dong(request, hop_dong_id):
         messages.success(request, "Đã thêm phụ lục hợp đồng.")
         return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
     return render(request, "quanly/them_phu_luc_hop_dong.html", {"form": form, "hop_dong": hop_dong})
+
+
+@admin_required
+def import_phan_cong(request):
+    if request.method != "POST" or not request.FILES.get("file_excel"):
+        return render(request, "quanly/import_phan_cong.html")
+    from .assignment_import import import_assignment_workbook
+
+    validate_only = request.POST.get("validate_only") == "1"
+    try:
+        result = import_assignment_workbook(request.FILES["file_excel"], validate_only=validate_only)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return render(request, "quanly/import_phan_cong.html")
+    summary = (
+        f"Import phân công {'kiểm tra' if validate_only else 'hoàn tất'}: "
+        f"thêm {result.created}, cập nhật {result.updated}, không đổi {result.unchanged}, "
+        f"lỗi {len(result.errors)}, cảnh báo {len(result.warnings)}, phân bổ tạo mới {result.phan_bo_tao_moi}."
+    )
+    if result.errors:
+        messages.error(request, summary + " Không có dữ liệu nào được lưu.")
+        for error in result.errors[:100]:
+            messages.error(request, error)
+    elif result.system_error:
+        messages.error(request, summary)
+    elif validate_only:
+        messages.success(request, summary + " Chế độ kiểm tra đã rollback, không ghi cơ sở dữ liệu.")
+    else:
+        messages.success(request, summary + " Dữ liệu đã được lưu nguyên tử.")
+    for warning in result.warnings[:100]:
+        messages.warning(request, warning)
+    return redirect("danh_sach_phan_cong")

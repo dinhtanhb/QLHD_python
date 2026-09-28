@@ -23,6 +23,9 @@ db.sqlite3
 logs/
 *.log
 
+# Local review/full backup archives
+backups/
+
 # Static build
 staticfiles/
 
