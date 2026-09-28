@@ -1,4 +1,5 @@
 {% extends 'quanly/base.html' %}
+{% load number_format %}
 
 {% block title %}Danh sách trẻ{% endblock %}
 
@@ -35,6 +36,15 @@
             </div>
         </div>
         
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-xl-2"><div class="card border-primary h-100"><div class="card-body py-3"><div class="text-muted small">Tổng số trẻ</div><div class="fs-3 fw-bold text-primary">{{ kpi.total|vn_number }}</div><small class="text-muted">Toàn CSDL</small></div></div></div>
+            <div class="col-6 col-xl-2"><div class="card border-info h-100"><div class="card-body py-3"><div class="text-muted small">Đồng Nai</div><div class="fs-3 fw-bold text-info">{{ kpi.dong_nai|vn_number }}</div><small class="text-muted">Theo địa bàn</small></div></div></div>
+            <div class="col-6 col-xl-2"><div class="card border-success h-100"><div class="card-body py-3"><div class="text-muted small">Bình Phước</div><div class="fs-3 fw-bold text-success">{{ kpi.binh_phuoc|vn_number }}</div><small class="text-muted">Theo địa bàn</small></div></div></div>
+            <div class="col-6 col-xl-2"><div class="card border-primary h-100"><div class="card-body py-3"><div class="text-muted small">Nam</div><div class="fs-3 fw-bold text-primary">{{ kpi.nam|vn_number }}</div><small class="text-muted">Theo giới tính</small></div></div></div>
+            <div class="col-6 col-xl-2"><div class="card border-danger h-100"><div class="card-body py-3"><div class="text-muted small">Nữ</div><div class="fs-3 fw-bold text-danger">{{ kpi.nu|vn_number }}</div><small class="text-muted">Theo giới tính</small></div></div></div>
+            <div class="col-6 col-xl-2"><div class="card border-secondary h-100"><div class="card-body py-3"><div class="text-muted small">Khác/chưa rõ</div><div class="fs-3 fw-bold text-secondary">{{ kpi.other_gender|vn_number }}</div><small class="text-muted">Theo giới tính</small></div></div></div>
+        </div>
+
         <div class="table-responsive">
             <table class="table table-bordered table-striped align-middle">
                 <thead class="table-dark text-center">

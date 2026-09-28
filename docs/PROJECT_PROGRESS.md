@@ -244,3 +244,14 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - Bổ sung guard lần cuối cho nghiệm thu/thanh lý, gom thanh toán đi lại theo Nhóm HĐ và cập nhật chi tiết/khoảng ngày; tài khoản thường không thể thao tác tiếp trên HĐ đã khóa hoặc đã thanh lý. Xóa phụ lục đã ký cũng kiểm tra cả các chi tiết thanh toán đi lại theo Nhóm HĐ.
 - Bổ sung guard cho thêm chi tiết thanh toán công và tránh xóa toàn bộ chi tiết khối lượng khi phụ lục hiện hành bị thiếu snapshot; các dữ liệu bất thường được giữ lại để Admin xử lý thủ công.
 - Admin vẫn toàn quyền trên hồ sơ chưa phát sinh tài chính; sau khi phụ lục đã ký và hợp đồng đã phát sinh nghiệm thu/thanh lý/thanh toán, hệ thống chặn sửa/xóa phụ lục để bảo vệ khả năng đối soát.
+
+## Bổ sung KPI cho các danh mục — 28/09/2026
+
+- Bổ sung khối KPI bố cục responsive cho bốn trang `Trẻ`, `CBCT`, `Nhóm HĐ` và `Đơn vị`; số KPI lấy trên toàn bộ CSDL, không bị thay đổi bởi ô tìm kiếm hoặc phân trang.
+- Trang Trẻ hiển thị tổng số, Đồng Nai, Bình Phước và số Nam/Nữ/khác hoặc chưa rõ.
+- Trang CBCT hiển thị tổng số, đang hoạt động, địa bàn Đồng Nai/Bình Phước và số Nam/Nữ/khác hoặc chưa rõ.
+- Trang Nhóm HĐ hiển thị tổng nhóm, nhóm đang sử dụng, nhóm đã có phân bổ, đã có hợp đồng và chưa có hợp đồng.
+- Trang Đơn vị hiển thị tổng số, đang hoạt động, có CBCT, có hợp đồng và chưa có hợp đồng.
+- Địa bàn ưu tiên quy ước mã ổn định đang có trong dữ liệu: trẻ `CBP/CDN`, CBCT `ABP/ADN`; các mã khác dùng trường Tỉnh làm fallback. Kiểm tra dữ liệu thật cho thấy 2.165 trẻ hiện chưa gắn bản ghi Tỉnh, nên nếu chỉ đếm theo khóa ngoại Tỉnh sẽ cho KPI địa bàn sai.
+- Đã bổ sung test hồi quy kiểm tra context KPI và số đếm địa bàn theo fixture; kiểm thử hiện đạt `55/55`.
+- Rủi ro còn lại: khi thêm quy ước mã địa bàn mới cần cập nhật logic fallback hoặc nhập đầy đủ trường Tỉnh để KPI tiếp tục chính xác.

@@ -398,7 +398,18 @@ def lay_danh_sach_xa(request):
 @hopdong_required
 def danh_sach_nhom_hd(request):
     ds_nhom = NhomHD.objects.all().order_by("ma_nhom_hd")
-    return render(request, "quanly/danh_sach_nhom_hd.html", {"ds_nhom": ds_nhom})
+    nhom_metrics = NhomHD.objects.annotate(
+        so_hop_dong=Count("hop_dong", distinct=True),
+        so_phan_bo=Count("phan_bo_chi_tieu", distinct=True),
+    )
+    kpi = {
+        "total": nhom_metrics.count(),
+        "active": nhom_metrics.filter(is_active=True).count(),
+        "with_allocation": nhom_metrics.filter(so_phan_bo__gt=0).count(),
+        "with_contract": nhom_metrics.filter(so_hop_dong__gt=0).count(),
+        "without_contract": nhom_metrics.filter(so_hop_dong=0).count(),
+    }
+    return render(request, "quanly/danh_sach_nhom_hd.html", {"ds_nhom": ds_nhom, "kpi": kpi})
 
 
 @hopdong_required
@@ -445,7 +456,15 @@ def danh_sach_don_vi(request):
     if query:
         qs = qs.filter(Q(ma_don_vi__icontains=query) | Q(ten_don_vi__icontains=query) | Q(mstdv__icontains=query))
     page_obj = Paginator(qs.order_by("ten_don_vi"), 15).get_page(request.GET.get("page"))
-    return render(request, "quanly/danh_sach_don_vi.html", {"page_obj": page_obj, "query": query})
+    contract_unit_ids = HopDong.objects.filter(don_vi__isnull=False).values("don_vi_id").distinct()
+    kpi = {
+        "total": DonVi.objects.count(),
+        "active": DonVi.objects.filter(is_active=True).count(),
+        "with_staff": DonVi.objects.filter(pk__in=CanBo.objects.values("don_vi_id").distinct()).count(),
+        "with_contract": DonVi.objects.filter(pk__in=contract_unit_ids).count(),
+        "without_contract": DonVi.objects.exclude(pk__in=contract_unit_ids).count(),
+    }
+    return render(request, "quanly/danh_sach_don_vi.html", {"page_obj": page_obj, "query": query, "kpi": kpi})
 
 
 @admin_required
@@ -570,7 +589,24 @@ def danh_sach_tre(request):
             | Q(dien_thoai__icontains=query)
         )
     page_obj = Paginator(qs.order_by("ma_tre"), 15).get_page(request.GET.get("page"))
-    return render(request, "quanly/danh_sach_tre.html", {"page_obj": page_obj, "query": query})
+    all_tre = Tre.objects.all()
+    known_child_location = Q(ma_tre__istartswith="CBP") | Q(ma_tre__istartswith="CDN")
+    kpi = {
+        "total": all_tre.count(),
+        # Dữ liệu hiện hữu dùng tiền tố mã trẻ; Tỉnh là fallback cho mã mới/khác quy ước.
+        "dong_nai": all_tre.filter(
+            Q(ma_tre__istartswith="CDN")
+            | (~known_child_location & Q(tinh__ten_tinh__icontains="Đồng Nai"))
+        ).count(),
+        "binh_phuoc": all_tre.filter(
+            Q(ma_tre__istartswith="CBP")
+            | (~known_child_location & Q(tinh__ten_tinh__icontains="Bình Phước"))
+        ).count(),
+        "nam": all_tre.filter(gioi_tinh="Nam").count(),
+        "nu": all_tre.filter(gioi_tinh="Nữ").count(),
+        "other_gender": all_tre.exclude(gioi_tinh__in=["Nam", "Nữ"]).count(),
+    }
+    return render(request, "quanly/danh_sach_tre.html", {"page_obj": page_obj, "query": query, "kpi": kpi})
 
 
 @admin_required
@@ -670,7 +706,25 @@ def danh_sach_can_bo(request):
             | Q(don_vi__ten_don_vi__icontains=query)
         )
     page_obj = Paginator(qs.order_by("ho_ten"), 15).get_page(request.GET.get("page"))
-    return render(request, "quanly/danh_sach_can_bo.html", {"page_obj": page_obj, "query": query})
+    all_can_bo = CanBo.objects.all()
+    known_staff_location = Q(ma_can_bo__istartswith="ABP") | Q(ma_can_bo__istartswith="ADN")
+    kpi = {
+        "total": all_can_bo.count(),
+        "active": all_can_bo.filter(is_active=True).count(),
+        # Mã ABP/ADN là quy ước địa bàn đang dùng; Tỉnh là fallback cho mã khác.
+        "dong_nai": all_can_bo.filter(
+            Q(ma_can_bo__istartswith="ADN")
+            | (~known_staff_location & Q(tinh__ten_tinh__icontains="Đồng Nai"))
+        ).count(),
+        "binh_phuoc": all_can_bo.filter(
+            Q(ma_can_bo__istartswith="ABP")
+            | (~known_staff_location & Q(tinh__ten_tinh__icontains="Bình Phước"))
+        ).count(),
+        "nam": all_can_bo.filter(gioi_tinh="Nam").count(),
+        "nu": all_can_bo.filter(gioi_tinh="Nữ").count(),
+        "other_gender": all_can_bo.exclude(gioi_tinh__in=["Nam", "Nữ"]).count(),
+    }
+    return render(request, "quanly/danh_sach_can_bo.html", {"page_obj": page_obj, "query": query, "kpi": kpi})
 
 
 @admin_required

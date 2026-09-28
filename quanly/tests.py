@@ -643,6 +643,35 @@ class DatabaseRegressionTests(TestCase):
         row.update(overrides)
         return row
 
+    def test_catalog_pages_expose_global_kpis(self):
+        self.client.force_login(self.admin)
+        expected_keys = {
+            "danh_sach_tre": {"total", "dong_nai", "binh_phuoc", "nam", "nu", "other_gender"},
+            "danh_sach_can_bo": {"total", "active", "dong_nai", "binh_phuoc", "nam", "nu", "other_gender"},
+            "danh_sach_nhom_hd": {"total", "active", "with_allocation", "with_contract", "without_contract"},
+            "danh_sach_don_vi": {"total", "active", "with_staff", "with_contract", "without_contract"},
+        }
+        for url_name, keys in expected_keys.items():
+            with self.subTest(url_name=url_name):
+                response = self.client.get(reverse(url_name))
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(keys.issubset(response.context["kpi"].keys()))
+
+        tre_kpi = self.client.get(reverse("danh_sach_tre")).context["kpi"]
+        self.assertEqual(
+            tre_kpi,
+            {"total": 1, "dong_nai": 0, "binh_phuoc": 1, "nam": 1, "nu": 0, "other_gender": 0},
+        )
+        cb_kpi = self.client.get(reverse("danh_sach_can_bo")).context["kpi"]
+        self.assertEqual(
+            cb_kpi,
+            {"total": 2, "active": 2, "dong_nai": 0, "binh_phuoc": 2, "nam": 0, "nu": 0, "other_gender": 2},
+        )
+        nhom_kpi = self.client.get(reverse("danh_sach_nhom_hd")).context["kpi"]
+        self.assertEqual(nhom_kpi, {"total": 1, "active": 1, "with_allocation": 1, "with_contract": 0, "without_contract": 1})
+        don_vi_kpi = self.client.get(reverse("danh_sach_don_vi")).context["kpi"]
+        self.assertEqual(don_vi_kpi, {"total": 1, "active": 1, "with_staff": 1, "with_contract": 0, "without_contract": 1})
+
     def test_khoa_phan_bo_requires_post_and_admin(self):
         self.client.force_login(self.admin)
         get_response = self.client.get(reverse("khoa_phan_bo", args=[self.allocation.pk]))

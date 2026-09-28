@@ -1,4 +1,5 @@
 {% extends 'quanly/base.html' %}
+{% load number_format %}
 
 {% block title %}Danh sách Đơn vị{% endblock %}
 
@@ -22,6 +23,14 @@
             </div>
         </div>
         
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-xl"><div class="card border-primary h-100"><div class="card-body py-3"><div class="text-muted small">Tổng nhóm HĐ</div><div class="fs-3 fw-bold text-primary">{{ kpi.total|vn_number }}</div><small class="text-muted">Toàn CSDL</small></div></div></div>
+            <div class="col-6 col-xl"><div class="card border-success h-100"><div class="card-body py-3"><div class="text-muted small">Đang sử dụng</div><div class="fs-3 fw-bold text-success">{{ kpi.active|vn_number }}</div><small class="text-muted">Nhóm hoạt động</small></div></div></div>
+            <div class="col-6 col-xl"><div class="card border-info h-100"><div class="card-body py-3"><div class="text-muted small">Có phân bổ</div><div class="fs-3 fw-bold text-info">{{ kpi.with_allocation|vn_number }}</div><small class="text-muted">Đã lập chỉ tiêu</small></div></div></div>
+            <div class="col-6 col-xl"><div class="card border-warning h-100"><div class="card-body py-3"><div class="text-muted small">Có hợp đồng</div><div class="fs-3 fw-bold text-warning">{{ kpi.with_contract|vn_number }}</div><small class="text-muted">Đã phát sinh HĐ</small></div></div></div>
+            <div class="col-6 col-xl"><div class="card border-secondary h-100"><div class="card-body py-3"><div class="text-muted small">Chưa có hợp đồng</div><div class="fs-3 fw-bold text-secondary">{{ kpi.without_contract|vn_number }}</div><small class="text-muted">Cần xử lý tiếp</small></div></div></div>
+        </div>
+
         <div class="table-responsive">
             <table class="table table-bordered table-striped align-middle table-hover">
                 <thead class="table-dark text-center">
