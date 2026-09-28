@@ -127,3 +127,5 @@ Phan trang thai o tren la ke hoach ban dau va khong con phan anh day du ma nguon
 ### Dieu kien dong du an
 
 `check`, `makemigrations --check --dry-run` va 61 test SQLite da dat. Can tao clone MySQL sach, ap dung migration 0033, chay UAT theo ma tran quyen va doi chieu so lieu truoc khi ap dung len database van hanh. Khong tu dong thay doi database that trong giai doan nay.
+
+Cap nhat sau UAT 29/09/2026: da tao database MySQL UAT rieng `qlhd_codex_uat_20260929_c`; toan bo migration den 0033, `check`, `makemigrations --check --dry-run` va 62/62 test da dat tren MySQL. SQLite cung dat 62/62. Da sua migration 0010 de xu ly foreign key cu do RenameModel va sua ba management command de chay an toan tren Windows cp1252. Database van hanh chua bi thay doi.

@@ -10,7 +10,7 @@ from quanly.services.payment_ledger import lay_cau_hinh_thue
 
 
 class Command(BaseCommand):
-    help = "Chuyển sổ công CBCT cũ sang sổ mới; mặc định chỉ dry-run, dùng --force để ghi."
+    help = "Migrate the legacy CBCT ledger to the new ledger; dry-run by default."
 
     def add_arguments(self, parser):
         parser.add_argument("--from", dest="from_date")
@@ -34,7 +34,7 @@ class Command(BaseCommand):
             contract = journal.hop_dong_hieu_luc or detail.dot_thanh_toan.hop_dong
             staff = journal.can_bo_hieu_luc
             if not contract or not staff:
-                skipped.append((detail, "thiếu hợp đồng hoặc CBCT hiệu lực"))
+                skipped.append((detail, "missing current contract or CBCT"))
                 continue
             groups[(staff.pk, contract.pk, journal.ky_can_thiep, detail.dot_thanh_toan.pk)].append(detail)
 
@@ -45,19 +45,20 @@ class Command(BaseCommand):
                 nhat_ky_id__in=[item.nhat_ky_id for item in details], hoat_dong=True
             ).exists()
             if active:
-                skipped.append((details[0], "đã có chi tiết trong phiếu mới"))
+                skipped.append((details[0], "already has details in the new voucher"))
                 continue
             planned += 1
             if not options["force"]:
                 continue
             with transaction.atomic():
-                voucher = self._create_voucher(staff_id, contract_id, ky, dot_id, details)
+                self._create_voucher(staff_id, contract_id, ky, dot_id, details)
                 created += 1
 
-        mode = "ĐÃ GHI" if options["force"] else "DRY-RUN"
-        self.stdout.write(self.style.SUCCESS(f"{mode}: dự kiến {planned}, đã tạo {created}, bỏ qua {len(skipped)}."))
+        mode = "WRITE" if options["force"] else "DRY-RUN"
+        self.stdout.write(self.style.SUCCESS(f"{mode}: planned {planned}, created {created}, skipped {len(skipped)}."))
         for detail, reason in skipped[:100]:
-            self.stdout.write(f"Bỏ qua chi tiết #{detail.pk}: {reason}")
+            line = f"Skipped detail #{detail.pk}: {reason}"
+            self.stdout.write(line.encode("ascii", "replace").decode("ascii"))
 
     def _create_voucher(self, staff_id, contract_id, ky, dot_id, details):
         dot = details[0].dot_thanh_toan
@@ -82,7 +83,7 @@ class Command(BaseCommand):
             trang_thai="DA_CHI",
             ngay_lap=dot.ngay_de_nghi,
             ngay_chi=dot.ngay_de_nghi,
-            ghi_chu=f"Chuyển từ sổ cũ #{dot_id}",
+            ghi_chu=f"Migrated from legacy ledger #{dot_id}",
         )
         ChiTietPhieuThanhToan.objects.bulk_create([
             ChiTietPhieuThanhToan(

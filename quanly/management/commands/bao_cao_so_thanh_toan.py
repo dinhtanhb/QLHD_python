@@ -5,7 +5,7 @@ from quanly.models import ChiTietPhieuThanhToan, ChiTietThanhToan, PhieuThanhToa
 
 
 class Command(BaseCommand):
-    help = "Đối chiếu sổ thanh toán cũ với sổ thanh toán CBCT mới; chỉ đọc dữ liệu."
+    help = "Compare the legacy payment ledger with the new CBCT ledger; read-only."
 
     def handle(self, *args, **options):
         old = ChiTietThanhToan.objects.aggregate(tien=Sum("thanh_tien"))
@@ -17,12 +17,12 @@ class Command(BaseCommand):
             thuc_nhan=Sum("thuc_nhan"),
         )
         self.stdout.write(
-            f"Sổ cũ: {ChiTietThanhToan.objects.count()} chi tiết, "
-            f"{old['tien'] or 0:,.0f} VND theo cột thành tiền."
+            f"Legacy ledger: {ChiTietThanhToan.objects.count()} details, "
+            f"{old['tien'] or 0:,.0f} VND by amount column."
         )
         self.stdout.write(
-            f"Sổ mới: {PhieuThanhToan.objects.filter(hoat_dong=True).count()} phiếu, "
-            f"{ChiTietPhieuThanhToan.objects.filter(hoat_dong=True).count()} chi tiết, "
-            f"công={new['tien_cong'] or 0:,.0f}, đi lại={new['tien_di_lai'] or 0:,.0f}, "
-            f"thuế={new['thue'] or 0:,.0f}, thực nhận={new['thuc_nhan'] or 0:,.0f} VND."
+            f"New ledger: {PhieuThanhToan.objects.filter(hoat_dong=True).count()} vouchers, "
+            f"{ChiTietPhieuThanhToan.objects.filter(hoat_dong=True).count()} details, "
+            f"labor={new['tien_cong'] or 0:,.0f}, travel={new['tien_di_lai'] or 0:,.0f}, "
+            f"tax={new['thue'] or 0:,.0f}, net={new['thuc_nhan'] or 0:,.0f} VND."
         )

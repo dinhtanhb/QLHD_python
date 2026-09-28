@@ -17,6 +17,37 @@ MASTER_TIMESTAMP_FIELDS = [
 ]
 
 
+def drop_renamed_hopdong_canbo_fk(apps, schema_editor):
+    """MySQL keeps the old FK name after RenameModel(HopDong -> PhanBoChiTieu).
+
+    Migration 0010 creates a new HopDong table with the same generated FK name.
+    Remove only the stale FK on the renamed table, and only when it is present.
+    Other database backends and already-normalized schemas are no-ops.
+    """
+    connection = schema_editor.connection
+    if connection.vendor != "mysql":
+        return
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE CONSTRAINT_SCHEMA = DATABASE()
+              AND TABLE_NAME = %s
+              AND COLUMN_NAME = %s
+              AND REFERENCED_TABLE_NAME = %s
+            """,
+            ["quanly_phanbochitieu", "can_bo_id", "quanly_canbo"],
+        )
+        constraint_names = [row[0] for row in cursor.fetchall()]
+        for constraint_name in constraint_names:
+            safe_name = str(constraint_name).replace("`", "``")
+            schema_editor.execute(
+                f"ALTER TABLE `quanly_phanbochitieu` DROP FOREIGN KEY `{safe_name}`"
+            )
+
+
 class Migration(migrations.Migration):
     dependencies = [("quanly", "0009_phanbochitieu_tham_gia_ct_and_more")]
 
@@ -84,6 +115,12 @@ class Migration(migrations.Migration):
         migrations.AlterField(model_name="phancongtre", name="ky_phan_cong", field=models.PositiveIntegerField(default=1, verbose_name="Kỳ phân công")),
         migrations.AlterField(model_name="phancongtre", name="dinh_muc_di_lai", field=models.DecimalField(decimal_places=0, default=Decimal("0"), max_digits=12, verbose_name="Định mức đi lại")),
         migrations.AlterField(model_name="phancongtre", name="trang_thai", field=models.CharField(choices=[("DANG_CAN_THIEP", "Đang can thiệp"), ("DA_HOAN_THANH", "Đã hoàn thành"), ("KHONG_CAN_THIEP", "Không can thiệp")], default="DANG_CAN_THIEP", max_length=20, verbose_name="Trạng thái")),
+
+        migrations.RunPython(
+            drop_renamed_hopdong_canbo_fk,
+            migrations.RunPython.noop,
+            atomic=False,
+        ),
 
         # HĐ chính thức.
         migrations.CreateModel(

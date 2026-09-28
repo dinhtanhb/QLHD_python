@@ -289,3 +289,7 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - Kiem thu: `manage.py check` dat; `makemigrations --check --dry-run` dat; `manage.py test quanly.tests --noinput` dat 61/61 tren SQLite.
 - Con lai truoc khi dong: tao clone MySQL sach, ap dung migration 0033, chay UAT theo ma tran quyen, mo kiem tra cac file XLSX/DOCX bang ung dung desktop va xac nhan so lieu voi nguoi dung. Khong tu dong thay doi database that.
 - Da tao tai lieu ban giao `docs/USER_GUIDE.md` va `docs/ADMIN_MANUAL.md`. Dot nay chua commit/push vi chua co yeu cau ro rang trong luot hien tai.
+- UAT MySQL sach da phat hien va sua loi migration 0010: MySQL giu foreign key cu sau khi RenameModel, lam trung ten khi tao lai HopDong. Migration chi go FK cu neu ton tai tren MySQL; SQLite va schema da chuan hoa khong bi anh huong.
+- Tao database UAT rieng `qlhd_codex_uat_20260929_c`, chay thanh cong toan bo migration den 0033; `manage.py check`, `makemigrations --check --dry-run` va 62/62 test deu dat tren MySQL. SQLite cung dat 62/62.
+- Ba management command bao cao/chuyen so duoc chuan hoa output ASCII an toan voi console Windows cp1252; da chay thanh cong tren UAT rong: 0 nhat ky thieu hop dong, 0 so cu, 0 so moi, 0 dong dry-run.
+- Sau dot nay can commit/push migration va command fix; database UAT la moi truong kiem thu, khong phai database van hanh.
