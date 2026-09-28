@@ -113,6 +113,7 @@ urlpatterns = [
     path("nhat-ky-can-thiep/import/", login_required(views.import_nhat_ky_can_thiep), name="import_nhat_ky_can_thiep"),
     path("thanh-quyet-toan/", login_required(views.thanh_quyet_toan), name="thanh_quyet_toan"),
     path("bao-cao/", login_required(views.bao_cao_tong_hop), name="bao_cao_tong_hop"),
+    path("bao-cao-thanh-toan/", login_required(views.bao_cao_tong_hop), name="bao_cao_thanh_toan"),
     path("bao-cao-hoat-dong/", login_required(views.bao_cao_tong_hop), name="bao_cao_hoat_dong"),
     path("thanh-quyet-toan/phieu/", login_required(views.danh_sach_phieu_thanh_toan), name="danh_sach_phieu_thanh_toan"),
     path("thanh-quyet-toan/phieu/them/", login_required(views.tao_phieu_thanh_toan), name="tao_phieu_thanh_toan"),

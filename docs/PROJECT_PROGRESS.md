@@ -300,3 +300,12 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - Them route alias `/bao-cao-hoat-dong/` cho trang bao cao, doi ten hien thi thanh `Bao cao hoat dong` va giu route `/bao-cao/` de tuong thich nguoc.
 - Chuan hoa thong bao batch thanh tieng Viet co dau; cac thong bao co noi dung du lieu van giu nguyen ma hop dong va ly do.
 - Kiem thu: SQLite 63/63, MySQL UAT 63/63; check va kiem tra migration dat; hai route bao cao tren server tra redirect dang nhap 302 thay vi 404.
+
+## Tối ưu Thanh quyết toán và đổi Báo cáo thanh toán theo Số hợp đồng - 29/09/2026
+
+- `quanly/reporting.py` đã chuyển sang queryset có `select_related` đầy đủ, tính tiền công/đi lại và phần đã thanh toán bằng biểu thức/subquery SQL; giảm việc truy cập quan hệ lặp trong Python.
+- Báo cáo chính được gom theo `Số hợp đồng + Kỳ`, có bộ lọc Số hợp đồng, Năm và giữ các URL cũ `/bao-cao/`, `/bao-cao-hoat-dong/`; bổ sung URL hiển thị `/bao-cao-thanh-toan/` và đổi nhãn menu thành `Báo cáo thanh toán`.
+- Bổ sung KPI `Lũy kế năm` và `Lũy kế từ ngày ký hợp đồng`, đồng thời cập nhật xuất Excel theo Số HĐ và hai mốc lũy kế.
+- `_journal_export_queryset` của Thanh quyết toán bỏ `prefetch_related` cho FK đơn trị, nạp quan hệ bằng `select_related` và duyệt theo batch để hạn chế N+1 và bộ nhớ.
+- Đã bổ sung test lọc theo Số HĐ, tổng lũy kế và route mới; SQLite đạt 63/63 và MySQL UAT sạch `qlhd_codex_uat_20260929_c` đạt 63/63. Lần chạy MySQL đầu phát hiện lỗi alias Subquery không tương thích, đã sửa bằng biểu thức subquery trực tiếp và chạy lại đạt.
+- Rủi ro còn lại: màn hình vẫn hiển thị toàn bộ dòng chi tiết trẻ/dịch vụ của phạm vi lọc; nếu dữ liệu tăng rất lớn cần bổ sung phân trang hoặc endpoint tải chi tiết riêng.

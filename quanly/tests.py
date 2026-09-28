@@ -712,6 +712,13 @@ class DatabaseRegressionTests(TestCase):
         response = self.client.get(reverse("bao_cao_tong_hop"), {"nhom_hd": self.group.pk, "ky": 1})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["report"]["summary"]["so_nhat_ky"], 1)
+        report = response.context["report"]
+        self.assertEqual(report["contracts"][0]["so_hop_dong"], "HD-REPORT-001")
+        self.assertEqual(report["year_cumulative"]["so_buoi"], 2)
+        self.assertEqual(report["since_signing"]["so_buoi"], 2)
+        contract_response = self.client.get(reverse("bao_cao_thanh_toan"), {"hop_dong": contract.pk, "nam": 2026})
+        self.assertEqual(contract_response.status_code, 200)
+        self.assertEqual(contract_response.context["report"]["contracts"][0]["hop_dong_id"], contract.pk)
         workbook_response = self.client.get(reverse("bao_cao_tong_hop"), {"format": "xlsx"})
         self.assertEqual(workbook_response.status_code, 200)
         from openpyxl import load_workbook

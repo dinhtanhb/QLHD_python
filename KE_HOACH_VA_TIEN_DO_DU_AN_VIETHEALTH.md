@@ -131,3 +131,5 @@ Phan trang thai o tren la ke hoach ban dau va khong con phan anh day du ma nguon
 Cap nhat sau UAT 29/09/2026: da tao database MySQL UAT rieng `qlhd_codex_uat_20260929_c`; toan bo migration den 0033, `check`, `makemigrations --check --dry-run` va 62/62 test da dat tren MySQL. SQLite cung dat 62/62. Da sua migration 0010 de xu ly foreign key cu do RenameModel va sua ba management command de chay an toan tren Windows cp1252. Database van hanh chua bi thay doi.
 
 Cap nhat sua loi 29/09/2026: tao phieu theo Nhom HD + Ky nay bo qua hop dong khong co nhat ky moi du dieu kien, khong rollback ca nhom; them alias `/bao-cao-hoat-dong/` va hien thi tieng Viet co dau. Kiem thu sau sua dat 63/63 tren ca SQLite va MySQL UAT.
+
+Cap nhat 29/09/2026: tối ưu truy vấn Thanh quyết toán; đổi Báo cáo hoạt động thành Báo cáo thanh toán theo Số hợp đồng + Kỳ; thêm lọc HĐ/Năm và KPI lũy kế theo năm, từ ngày ký hợp đồng; cập nhật xuất Excel. SQLite và MySQL UAT sạch đều đạt 63/63.

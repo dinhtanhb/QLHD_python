@@ -332,9 +332,12 @@ def calculate_expected_value(so_tre_phcn, so_buoi_phcn, dm_phcn, so_tre_cs, so_b
 @readonly_required
 def bao_cao_tong_hop(request):
     nhom_id = request.GET.get("nhom_hd", "").strip()
+    hop_dong_id = request.GET.get("hop_dong", "").strip()
     ky_value = request.GET.get("ky", "").strip()
+    nam_value = request.GET.get("nam", "").strip()
     tu_ngay_value = request.GET.get("tu_ngay", "").strip()
     den_ngay_value = request.GET.get("den_ngay", "").strip()
+    report_year = int(nam_value) if nam_value.isdigit() else timezone.localdate().year
     tu_ngay = parse_date(tu_ngay_value)
     den_ngay = parse_date(den_ngay_value)
     date_error = ""
@@ -344,11 +347,32 @@ def bao_cao_tong_hop(request):
         date_error = "Từ ngày không được sau Đến ngày."
     queryset = intervention_report_queryset(
         nhom_hd_id=int(nhom_id) if nhom_id.isdigit() else None,
+        hop_dong_id=int(hop_dong_id) if hop_dong_id.isdigit() else None,
         ky=int(ky_value) if ky_value.isdigit() else None,
+        nam=int(nam_value) if nam_value.isdigit() else None,
         tu_ngay=tu_ngay if not date_error else None,
         den_ngay=den_ngay if not date_error else None,
     )
-    report = build_intervention_report(queryset)
+    annual_end = den_ngay or (date(report_year, 12, 31) if report_year != timezone.localdate().year else timezone.localdate())
+    annual_queryset = intervention_report_queryset(
+        nhom_hd_id=int(nhom_id) if nhom_id.isdigit() else None,
+        hop_dong_id=int(hop_dong_id) if hop_dong_id.isdigit() else None,
+        ky=int(ky_value) if ky_value.isdigit() else None,
+        tu_ngay=date(report_year, 1, 1),
+        den_ngay=annual_end if not date_error else None,
+    )
+    signing_queryset = intervention_report_queryset(
+        nhom_hd_id=int(nhom_id) if nhom_id.isdigit() else None,
+        hop_dong_id=int(hop_dong_id) if hop_dong_id.isdigit() else None,
+        ky=int(ky_value) if ky_value.isdigit() else None,
+        den_ngay=den_ngay or timezone.localdate(),
+    ).filter(ngay_thuc_hien__gte=F("hop_dong__ngay_ky"))
+    report = build_intervention_report(
+        queryset,
+        year_queryset=annual_queryset if not date_error else None,
+        since_signing_queryset=signing_queryset if not date_error else None,
+        report_year=report_year,
+    )
     if request.GET.get("format") == "xlsx":
         workbook = export_intervention_report_xlsx(report)
         output = BytesIO()
@@ -357,15 +381,19 @@ def bao_cao_tong_hop(request):
             output.getvalue(),
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        response["Content-Disposition"] = content_disposition_filename("Bao_cao_tong_hop_can_thiep.xlsx")
+        response["Content-Disposition"] = content_disposition_filename("Bao_cao_thanh_toan.xlsx")
         return response
     return render(request, "quanly/bao_cao_tong_hop.html", {
         "report": report,
         "nhom_list": NhomHD.objects.filter(is_active=True).order_by("ma_nhom_hd"),
+        "hop_dong_list": HopDong.objects.select_related("can_bo", "don_vi", "nhom_hd").order_by("-ngay_ky", "-id"),
         "ky_choices": range(1, 31),
+        "year_choices": FinancialConfig.NAM_CAN_THIEP_CHOICES,
         "filters": {
             "nhom_hd": nhom_id,
+            "hop_dong": hop_dong_id,
             "ky": ky_value,
+            "nam": nam_value,
             "tu_ngay": tu_ngay_value,
             "den_ngay": den_ngay_value,
         },
@@ -3673,7 +3701,11 @@ def thanh_quyet_toan(request):
             | Q(phan_cong__phan_bo__can_bo__ho_ten__icontains=query)
         )
     rows = {}
-    for journal in qs:
+    for journal in qs.iterator(chunk_size=1000):
+        # Các FK đã được select_related trong _journal_export_queryset; giữ một
+        # lần resolve trong vòng lặp để tránh phát sinh truy vấn N+1 khi tổng
+        # hợp hàng chục nghìn nhật ký.
+        effective_contract = journal.hop_dong_hieu_luc
         effective_group = journal.nhom_hd_hieu_luc
         effective_staff = journal.can_bo_hieu_luc
         if not effective_group or not effective_staff:
@@ -3691,8 +3723,8 @@ def thanh_quyet_toan(request):
             "tien_di_lai": Decimal("0"),
             "staff_amounts": {},
         })
-        if journal.hop_dong_hieu_luc:
-            item["hop_dong_count"].add(journal.hop_dong_id)
+        if effective_contract:
+            item["hop_dong_count"].add(effective_contract.pk)
         item["can_bo_count"].add(effective_staff.pk)
         item["journal_count"] += 1
         item["so_buoi"] += Decimal(journal.so_buoi_thuc_hien)
@@ -3796,9 +3828,9 @@ def _selected_cbda(request):
 
 def _journal_export_queryset(request):
     qs = NhatKyThucHien.objects.select_related(
-        "can_bo_nguon__don_vi", "nhom_hd_nguon", "phan_cong__tre",
-        "phan_cong__nhom_hd", "phan_cong__phan_bo__can_bo__don_vi", "phan_cong__phan_bo__nhom_hd",
-    ).prefetch_related("hop_dong__can_bo__don_vi", "hop_dong__nhom_hd").order_by("ngay_thuc_hien", "id")
+        "can_bo_nguon__don_vi", "nhom_hd_nguon", "hop_dong__can_bo__don_vi", "hop_dong__don_vi", "hop_dong__nhom_hd",
+        "phan_cong__tre", "phan_cong__nhom_hd", "phan_cong__phan_bo__can_bo__don_vi", "phan_cong__phan_bo__nhom_hd",
+    ).order_by("ngay_thuc_hien", "id")
     cb_id, nhom_id, ky, thang, nam = (request.GET.get(key, "").strip() for key in ("can_bo", "nhom_hd", "ky", "thang", "nam"))
     if cb_id.isdigit():
         qs = qs.filter(Q(can_bo_nguon_id=int(cb_id)) | Q(can_bo_nguon__isnull=True, phan_cong__phan_bo__can_bo_id=int(cb_id)))

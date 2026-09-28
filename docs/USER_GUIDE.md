@@ -24,9 +24,9 @@ Mo `http://127.0.0.1:8000/` va dang nhap bang tai khoan duoc cap.
 6. Xuat DNTT/DSTK/DNCK va doi chieu so lieu trong file voi phieu.
 7. Lap Nghiem thu, sau do Thanh ly khi ket qua nghiem thu dat.
 
-## 3. Bao cao hoat dong
+## 3. Báo cáo thanh toán
 
-Mo menu `Bao cao hoat dong`, chon Nhom HD/Ky/khoang ngay neu can. Bao cao gom KPI, bang theo Nhom-Ky, bang theo Tre-Dich vu va canh bao. Nut Excel tao file ba sheet de gui doi chieu.
+Mở menu `Báo cáo thanh toán`, lọc theo `Số hợp đồng` (khóa chính nghiệp vụ), Nhóm HĐ, Kỳ, Năm hoặc khoảng ngày nếu cần. Báo cáo gom theo Số HĐ + Kỳ, gồm KPI nhật ký, buổi, tiền công, đi lại, số đã thanh toán và cảnh báo trùng lịch. `Lũy kế năm` tính từ 01/01 của năm chọn đến ngày kết thúc bộ lọc hoặc ngày hiện tại; `Lũy kế từ ngày ký hợp đồng` tính từ ngày ký của từng hợp đồng đến cùng mốc kết thúc. Nút Excel tạo ba sheet, trong đó sheet tổng hợp và sheet chi tiết đều dùng Số HĐ.
 
 ## 4. Ho so thanh toan
 
