@@ -146,14 +146,19 @@ def _contract_rows(queryset, groups):
         if entry is None:
             contract = contracts[values["hop_dong_id"]]
             entry = merged[key] = {
-                "hop_dong_id": contract.pk, "so_hop_dong": contract.so_hop_dong, "doi_tac": _partner_label(contract),
-                "ngay_ky": contract.ngay_ky, "ky": values["ky_can_thiep"], "nhom": None, "_first": None,
+                "hop_dong_id": contract.pk, "nhom_hd_id": contract.nhom_hd_id,
+                "so_hop_dong": contract.so_hop_dong, "doi_tac": _partner_label(contract),
+                "ngay_ky": contract.ngay_ky, "ky": values["ky_can_thiep"], "nhom": None, "nhom_ma": None,
+                "co_the_lap_tt": bool(contract.can_bo_id) and contract.trang_thai not in {"DU_THAO", "HUY", "THANH_LY"},
+                "_first": None,
                 "so_nhat_ky": 0, "so_buoi": 0, "di_lai": 0,
                 "tien_cong": Decimal("0"), "tien_di_lai": Decimal("0"), "da_thanh_toan": Decimal("0"),
             }
         # Nhóm hiển thị của dòng hợp đồng × kỳ = nhóm của nhật ký sớm nhất (ngày, id).
         if entry["_first"] is None or first_key < entry["_first"]:
-            entry["_first"], entry["nhom"] = first_key, _group_label(groups.get(values["nhom_hieu_luc_id"]))
+            group = groups.get(values["nhom_hieu_luc_id"])
+            entry["_first"], entry["nhom"] = first_key, _group_label(group)
+            entry["nhom_ma"] = group.ma_nhom_hd if group else UNKNOWN_GROUP_LABEL
         base = _base_row(values)
         for name in ("so_nhat_ky", "so_buoi", "di_lai", "tien_cong", "tien_di_lai"):
             entry[name] += base[name]
@@ -190,7 +195,9 @@ def _child_rows(queryset, groups):
         service = values["phan_cong__loai_dich_vu"]
         result.append({
             "ma_tre": child.ma_tre, "ho_ten": child.ho_ten, "dich_vu": service_names.get(service, service),
-            "nhom": _group_label(groups.get(values["nhom_hieu_luc_id"])), "ky": values["ky_can_thiep"],
+            "nhom": _group_label(groups.get(values["nhom_hieu_luc_id"])),
+            "nhom_ma": groups[values["nhom_hieu_luc_id"]].ma_nhom_hd if values["nhom_hieu_luc_id"] in groups else UNKNOWN_GROUP_LABEL,
+            "ky": values["ky_can_thiep"],
             "so_buoi": values["so_buoi"] or 0, "di_lai": values["di_lai"] or 0,
             "tien_cong": _amount(values["tien_cong"]), "tien_di_lai": _amount(values["tien_di_lai"]),
         })

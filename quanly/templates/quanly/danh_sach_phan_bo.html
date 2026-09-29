@@ -29,7 +29,7 @@
             </div>
             <form method="get" class="row g-2 align-items-end mb-3">
                 <div class="col-lg-4"><label class="form-label">Tìm kiếm</label><input class="form-control" name="q" value="{{ query }}" placeholder="Mã CBCT, họ tên, nhóm hợp đồng..."></div>
-                <div class="col-lg-3"><label class="form-label">Nhóm HĐ</label><select class="form-select select2-search" name="nhom_hd"><option value="">Tất cả nhóm HĐ</option>{% for nhom in nhom_list %}<option value="{{ nhom.pk }}" {% if filters.nhom_hd == nhom.pk|stringformat:'s' %}selected{% endif %}>{{ nhom.ma_nhom_hd }} - {{ nhom.ten_nhom_hd }}</option>{% endfor %}</select></div>
+                <div class="col-lg-3"><label class="form-label">Nhóm HĐ</label><select class="form-select select2-search" name="nhom_hd"><option value="">Tất cả nhóm HĐ</option>{% for nhom in nhom_list %}<option value="{{ nhom.pk }}" {% if filters.nhom_hd == nhom.pk|stringformat:'s' %}selected{% endif %}>{{ nhom.ma_nhom_hd }}</option>{% endfor %}</select></div>
                 <div class="col-lg-2"><label class="form-label">Trạng thái</label><select class="form-select" name="trang_thai"><option value="">Tất cả</option><option value="mo" {% if filters.trang_thai == 'mo' %}selected{% endif %}>Đang mở</option><option value="khoa" {% if filters.trang_thai == 'khoa' %}selected{% endif %}>Đã khóa</option></select></div>
                 <div class="col-lg-2"><label class="form-label">Tiến độ</label><select class="form-select" name="tien_do"><option value="">Tất cả</option><option value="chua_phan_cong" {% if filters.tien_do == 'chua_phan_cong' %}selected{% endif %}>Chưa phân công</option><option value="da_phan_cong" {% if filters.tien_do == 'da_phan_cong' %}selected{% endif %}>Đã phân công</option></select></div>
                 <div class="col-lg-1 d-flex gap-1"><button class="btn btn-primary">Lọc</button><a class="btn btn-outline-secondary" href="{% url 'danh_sach_phan_bo' %}" title="Xóa lọc">×</a></div>
@@ -42,7 +42,7 @@
                     <thead class="table-dark text-center">
                         <tr>
                             <th>#</th><th>CBCT</th><th>Nhóm HĐ</th><th>Ngày lập</th>
-                            <th>PHCN</th><th>CSXH</th><th>Phân công</th><th>Trạng thái</th><th>Thao tác</th>
+                            <th>PHCN</th><th>CSXH</th><th class="text-end">Phân công</th><th>Trạng thái</th><th>Thao tác</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -50,11 +50,11 @@
                         <tr>
                             <td>{{ forloop.counter }}</td>
                             <td>{% if item.can_bo %}<strong>{{ item.can_bo.ma_can_bo }}</strong><br>{{ item.can_bo.ho_ten }}{% else %}<span class="badge bg-warning text-dark">Chưa phân CBCT</span><br><small>CBDA: {{ item.cbda_quan_ly|default:"Chưa cập nhật" }}</small>{% endif %}</td>
-                            <td>{{ item.nhom_hd.ma_nhom_hd }} - {{ item.nhom_hd.ten_nhom_hd }}</td>
+                            <td>{{ item.nhom_hd.ma_nhom_hd }}</td>
                             <td>{{ item.ngay_lap|date:"d/m/Y" }}</td>
-                            <td>{{ item.so_tre_phcn|vn_number }} trẻ / {{ item.so_buoi_phcn|vn_number }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_phcn|vn_number }} đ</td>
-                            <td>{{ item.so_tre_cs|vn_number }} trẻ / {{ item.so_buoi_cs|vn_number }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_cs|vn_number }} đ</td>
-                            <td class="text-center">
+                            <td class="text-end">{{ item.so_tre_phcn|vn_number }} trẻ / {{ item.so_buoi_phcn|vn_number }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_phcn|vn_number }}</td>
+                            <td class="text-end">{{ item.so_tre_cs|vn_number }} trẻ / {{ item.so_buoi_cs|vn_number }} buổi<br>ĐM: {{ item.dinh_muc_di_lai_cs|vn_number }}</td>
+                            <td class="text-end text-center">
                                 {% if item.official_assignment_count > 0 %}
                                     <span class="badge bg-success">{{ item.official_assignment_count|vn_number }}</span>
                                     <a href="{% url 'danh_sach_phan_cong' %}?phan_bo_id={{ item.pk }}" class="btn btn-sm btn-outline-primary ms-1">Xem</a>

@@ -7,7 +7,7 @@
 <div class="container-fluid mt-4">
   <div class="card shadow">
     <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-      <h5 class="mb-0">Đi lại phụ huynh {% if dot.hop_dong_id %}{{ dot.hop_dong.so_hop_dong }}{% else %}{{ dot.nhom_hd.ma_nhom_hd }} - {{ dot.nhom_hd.ten_nhom_hd }} · Kỳ {{ dot.ky_can_thiep }}{% endif %} - {{ dot.thang }}/{{ dot.nam }}</h5>
+      <h5 class="mb-0">Đi lại phụ huynh {% if dot.hop_dong_id %}{{ dot.hop_dong.so_hop_dong }}{% else %}{{ dot.nhom_hd.ma_nhom_hd }} · Kỳ {{ dot.ky_can_thiep|vn_number }}{% endif %} - {{ dot.thang }}/{{ dot.nam }}</h5>
       <span>Chọn đúng bộ hồ sơ theo từng nhóm</span>
     </div>
     <div class="card-body">
@@ -64,9 +64,9 @@
               <th>Tên tài khoản</th>
               <th>Số tài khoản</th>
               <th>Ngân hàng</th>
-              <th>Số lượt</th>
+              <th class="text-end">Số lượt</th>
               <th>Định mức</th>
-              <th>Thành tiền</th>
+              <th class="text-end">Thành tiền</th>
               {% if is_admin %}<th>Thao tác</th>{% endif %}
             </tr>
           </thead>
@@ -87,9 +87,9 @@
               <td>{{ item.ten_tai_khoan }}</td>
               <td>{{ item.tai_khoan }}</td>
               <td>{{ item.ngan_hang }}<br><small>{{ item.chi_nhanh }}</small></td>
-              <td>{{ item.so_luot_di_lai|vn_number }}</td>
-              <td>{{ item.dinh_muc_di_lai|vn_number }}</td>
-              <td>{{ item.thanh_tien|vn_number }}</td>
+              <td class="text-end">{{ item.so_luot_di_lai|vn_number }}</td>
+              <td class="text-end">{{ item.dinh_muc_di_lai|vn_number }}</td>
+              <td class="text-end">{{ item.thanh_tien|vn_number }}</td>
               {% if is_admin %}<td><a href="{% url 'sua_chi_tiet_thanh_toan_phu_huynh' item.pk %}" class="btn btn-sm btn-warning">Sửa</a> <form method="post" action="{% url 'xoa_chi_tiet_thanh_toan_phu_huynh' item.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa chi tiết thanh toán?');">{% csrf_token %}<button class="btn btn-sm btn-danger">Xóa</button></form></td>{% endif %}
             </tr>
             {% empty %}

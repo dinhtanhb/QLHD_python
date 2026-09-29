@@ -397,14 +397,21 @@ def bao_cao_tong_hop(request):
         )
         response["Content-Disposition"] = content_disposition_filename("Bao_cao_thanh_toan.xlsx")
         return response
-    # Bảng trẻ × dịch vụ có thể rất dài: chỉ hiển thị theo trang; file Excel vẫn xuất đầy đủ.
+    # Hai bảng có trang riêng; KPI và file Excel vẫn dùng toàn bộ phạm vi lọc.
     pagination_params = request.GET.copy()
     pagination_params.pop("page", None)
-    children_page = Paginator(report["children"], 100).get_page(request.GET.get("page"))
+    pagination_params.pop("format", None)
+    contract_params = request.GET.copy()
+    contract_params.pop("contract_page", None)
+    contract_params.pop("format", None)
+    contracts_page = Paginator(report["contracts"], 15).get_page(request.GET.get("contract_page"))
+    children_page = Paginator(report["children"], 15).get_page(request.GET.get("page"))
     return render(request, "quanly/bao_cao_tong_hop.html", {
         "report": report,
         "page_obj": children_page,
+        "contracts_page": contracts_page,
         "pagination_query": pagination_params.urlencode(),
+        "contract_pagination_query": contract_params.urlencode(),
         "nhom_list": NhomHD.objects.filter(is_active=True).order_by("ma_nhom_hd"),
         "hop_dong_list": HopDong.objects.select_related("can_bo", "don_vi", "nhom_hd").order_by("-ngay_ky", "-id"),
         "ky_choices": range(1, 31),
@@ -3634,12 +3641,15 @@ def danh_sach_phieu_thanh_toan(request):
     trang_thai = request.GET.get("trang_thai", "").strip()
     if trang_thai:
         qs = qs.filter(trang_thai=trang_thai)
-    page_obj = Paginator(qs, 25).get_page(request.GET.get("page"))
+    page_obj = Paginator(qs, 15).get_page(request.GET.get("page"))
+    pagination_params = request.GET.copy()
+    pagination_params.pop("page", None)
     return render(request, "quanly/danh_sach_phieu_thanh_toan.html", {
         "page_obj": page_obj,
         "query": query,
         "trang_thai": trang_thai,
         "choices": PhieuThanhToan.TRANG_THAI_CHOICES,
+        "pagination_query": pagination_params.urlencode(),
     })
 
 
@@ -3647,13 +3657,24 @@ def danh_sach_phieu_thanh_toan(request):
 def tao_phieu_thanh_toan(request):
     nhom_id = request.POST.get("nhom_hd") or request.GET.get("nhom_hd", "")
     ky = request.POST.get("ky") or request.GET.get("ky", "")
+    hop_dong_id = request.POST.get("hop_dong") or request.GET.get("hop_dong", "")
+    selected_contract = HopDong.objects.select_related("nhom_hd", "can_bo").filter(pk=hop_dong_id).first() if _is_id(hop_dong_id) else None
+    selected_eligible = bool(
+        selected_contract and selected_contract.can_bo_id
+        and selected_contract.trang_thai not in {"DU_THAO", "HUY", "THANH_LY"}
+    )
     if request.method == "POST":
-        if not _is_id(nhom_id) or not _is_id(ky):
-            messages.error(request, "Cần chọn Nhóm HĐ và Kỳ can thiệp.")
+        if not _is_id(nhom_id) or not _is_id(ky) or hop_dong_id and (
+            not selected_contract or selected_contract.nhom_hd_id != int(nhom_id)
+            or not selected_eligible
+        ):
+            messages.error(request, "Cần chọn Nhóm HĐ, Kỳ và Hợp đồng hợp lệ.")
         else:
             contracts = HopDong.objects.filter(nhom_hd_id=int(nhom_id), can_bo__isnull=False).exclude(
                 trang_thai__in={"DU_THAO", "HUY", "THANH_LY"}
             ).select_related("can_bo")
+            if selected_contract:
+                contracts = contracts.filter(pk=selected_contract.pk)
             errors = []
             skipped = []
             created = 0
@@ -3686,6 +3707,8 @@ def tao_phieu_thanh_toan(request):
         "ky_choices": range(1, 31),
         "nhom_id": str(nhom_id),
         "ky": str(ky),
+        "selected_contract": selected_contract if selected_contract and str(selected_contract.nhom_hd_id) == str(nhom_id) else None,
+        "selected_eligible": selected_eligible,
     })
 
 
@@ -3707,8 +3730,16 @@ def xac_nhan_chi_phieu_thanh_toan(request, pk):
     if request.method != "POST":
         return redirect("danh_sach_phieu_thanh_toan")
     phieu = get_object_or_404(PhieuThanhToan, pk=pk)
+    ngay_chi_value = request.POST.get("ngay_chi", "").strip()
     try:
-        xac_nhan_chi(phieu, parse_date(request.POST.get("ngay_chi")), request.user)
+        ngay_chi = parse_date(ngay_chi_value) if ngay_chi_value else None
+    except ValueError:
+        ngay_chi = None
+    if not ngay_chi:
+        messages.error(request, "Cần nhập ngày thanh toán hợp lệ trước khi xác nhận đã chi.")
+        return redirect("danh_sach_phieu_thanh_toan")
+    try:
+        xac_nhan_chi(phieu, ngay_chi, request.user)
         messages.success(request, "Đã xác nhận phiếu đã chi.")
     except ValidationError as exc:
         messages.error(request, "; ".join(exc.messages))
@@ -3765,8 +3796,13 @@ def thanh_quyet_toan(request):
     for item in rows.values():
         item["can_bo_count"] = len(item.pop("_staff"))
     danh_sach = sorted(rows.values(), key=lambda item: (item["nhom"].ma_nhom_hd, item["ky"]))
+    pagination_params = request.GET.copy()
+    pagination_params.pop("page", None)
+    page_obj = Paginator(danh_sach, 15).get_page(request.GET.get("page"))
     return render(request, "quanly/thanh_quyet_toan.html", {
-        "danh_sach": danh_sach,
+        "danh_sach": page_obj,
+        "page_obj": page_obj,
+        "pagination_query": pagination_params.urlencode(),
         "query": query,
         "can_bo_list": CanBo.objects.filter(is_active=True),
         "nhom_list": NhomHD.objects.filter(is_active=True),
