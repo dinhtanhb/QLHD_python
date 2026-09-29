@@ -335,3 +335,12 @@ Nguồn: bản review `Review_QLHD_Claude.md`. Các bản vá ghi trong review c
 - TQT tính thuế theo CBCT gộp nhiều hợp đồng trong cùng Nhóm×Kỳ, còn phiếu tính theo từng hợp đồng nên hai nơi có thể lệch khi một CBCT có nhiều hợp đồng; cần chốt quy tắc.
 - `resolve_contract_group` và `assignment_import` còn dùng `str.isdigit()` cho ô Excel (không phải tham số GET).
 - Chưa commit/push.
+
+## Làm rõ phiếu đã có trong cùng kỳ — 29/09/2026 (sau commit `5846c06`)
+
+- Chốt nghiệp vụ: mỗi CBCT và số HĐ chỉ có một phiếu hiệu lực trong một kỳ; không tạo phiếu bổ sung. Thuế TNCN tính riêng từng lần thanh toán theo số HĐ, đạt ngưỡng thì tính trên toàn bộ tiền công lần đó, không cộng dồn giữa các phiếu/HĐ. Người dùng kiểm thử MySQL riêng.
+- `quanly/services/payment_ledger.py`: khi còn nhật ký đủ điều kiện mà kỳ đã có phiếu hiệu lực, thông báo rõ kỳ, số HĐ, lần thanh toán, trạng thái và số nhật ký chưa đưa vào phiếu. Giữ nguyên từ chối phiếu thứ hai; chỉ hướng dẫn hủy/lập lại nếu phiếu chờ chi và là lần mới nhất. Kỳ không còn nhật ký chưa thanh toán vẫn được bỏ qua.
+- `quanly/tests.py`: thêm bốn test cho thông báo/toàn vẹn dữ liệu (kể cả batch rollback), hủy rồi lập lại, kỳ không có nhật ký mới và kỳ khác. Cập nhật `docs/USER_GUIDE.md`, `docs/KE_HOACH_VA_TIEN_DO_DU_AN_VIETHEALTH.md`.
+- Hai lượt review độc lập về code và toàn vẹn dữ liệu xác nhận vị trí kiểm tra sau bước lọc nhật ký; dùng từ “chưa được đưa vào phiếu” vì không suy đoán thời điểm nhập nhật ký.
+- Baseline SQLite trước sửa: `check`, `makemigrations --check --dry-run`, **96/96** test đạt. Sau sửa: hai lệnh kiểm tra đạt, test mục tiêu **4/4**, toàn bộ `quanly.tests` **100/100** đạt, `git diff --check` đạt.
+- Rủi ro còn lại: chưa chạy trên MySQL và dữ liệu vận hành; cần UAT trên bản sao MySQL trước khi áp dụng. Phiếu đã chi không hủy được qua luồng thông thường; xử lý điều chỉnh theo kế toán.

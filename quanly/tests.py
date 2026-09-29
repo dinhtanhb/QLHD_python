@@ -43,7 +43,7 @@ from .models import (
 )
 from .assignment_import import import_assignment_workbook
 from .services.contract_status import STATUS_TRANSITIONS, transition_hop_dong_status
-from .services.payment_ledger import huy_phieu, snapshot_journals, tao_phieu_thanh_toan, xac_nhan_chi
+from .services.payment_ledger import NoEligiblePaymentJournals, huy_phieu, snapshot_journals, tao_phieu_thanh_toan, xac_nhan_chi
 from .parsing import parse_decimal_strict, parse_money_vnd, parse_number
 from .permissions import is_admin_user
 from .payment_export import (
@@ -1808,3 +1808,60 @@ class ReportChildrenPaginationTests(SettlementReportingTestBase):
         workbook = load_workbook(BytesIO(export.content), read_only=True)
         self.assertEqual(sum(1 for _ in workbook["TheoTreDichVu"].iter_rows()) - 1, 130)
         workbook.close()
+
+
+class OnePaymentPerPeriodTests(SettlementReportingTestBase):
+    """Một CBCT chỉ có một phiếu hiệu lực cho mỗi hợp đồng và kỳ."""
+
+    def _setup_paid_period(self):
+        self.assignment = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        self.contract = self._contract("HD-ONCE", self.cb1, self.g1)
+        self.first_journal = self._journal(self.contract, self.assignment, date(2026, 9, 10), ky=1, buoi=2)
+        return tao_phieu_thanh_toan(self.cb1, self.contract, 1)
+
+    def test_unpaid_journal_in_existing_period_gets_clear_message_without_changing_data(self):
+        voucher = self._setup_paid_period()
+        late = self._journal(self.contract, self.assignment, date(2026, 9, 11), ky=1, buoi=3)
+        original_round = late.lan_thanh_toan
+        with self.assertRaises(ValidationError) as ctx:
+            tao_phieu_thanh_toan(self.cb1, self.contract, 1)
+        message = " ".join(ctx.exception.messages)
+        for expected in ("Kỳ 1", "HD-ONCE", "phiếu lần 1", "1 nhật ký", "mỗi kỳ chỉ thanh toán một lần", "hủy phiếu"):
+            self.assertIn(expected, message)
+        self.assertEqual(PhieuThanhToan.objects.filter(hop_dong=self.contract, hoat_dong=True).count(), 1)
+        voucher.refresh_from_db()
+        self.assertEqual(voucher.trang_thai, "CHO_CHI")
+        self.assertEqual(voucher.chi_tiet.filter(hoat_dong=True).count(), 1)
+        self.assertFalse(ChiTietPhieuThanhToan.objects.filter(nhat_ky=late, hoat_dong=True).exists())
+        late.refresh_from_db()
+        self.assertEqual(late.lan_thanh_toan, original_round)
+        other_contract = self._contract("HD-OTHER", self.cb1, self.g1)
+        self._journal(other_contract, self.assignment, date(2026, 9, 12), ky=1)
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("tao_phieu_thanh_toan"), {"nhom_hd": self.g1.pk, "ky": 1})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("HD-ONCE", " ".join(str(message) for message in get_messages(response.wsgi_request)))
+        self.assertFalse(PhieuThanhToan.objects.filter(hop_dong=other_contract, hoat_dong=True).exists())
+
+    def test_cancel_and_recreate_merges_both_journals_into_one_voucher(self):
+        voucher = self._setup_paid_period()
+        late = self._journal(self.contract, self.assignment, date(2026, 9, 11), ky=1, buoi=3)
+        huy_phieu(voucher, "Bổ sung nhật ký chưa đưa vào phiếu")
+        again = tao_phieu_thanh_toan(self.cb1, self.contract, 1)
+        self.assertEqual(set(again.chi_tiet.values_list("nhat_ky_id", flat=True)), {self.first_journal.pk, late.pk})
+        self.assertEqual(again.lan_thanh_toan, 1)
+        self.assertEqual(again.tong_tien_cong, Decimal("1000000"))
+        self.assertEqual(PhieuThanhToan.objects.filter(hop_dong=self.contract, hoat_dong=True).count(), 1)
+        self.assertFalse(voucher.chi_tiet.filter(hoat_dong=True).exists())
+
+    def test_period_without_unpaid_journals_is_skipped(self):
+        self._setup_paid_period()
+        with self.assertRaises(NoEligiblePaymentJournals):
+            tao_phieu_thanh_toan(self.cb1, self.contract, 1)
+
+    def test_different_period_gets_separate_payment_round(self):
+        self._setup_paid_period()
+        self._journal(self.contract, self.assignment, date(2026, 10, 2), ky=2, buoi=1)
+        second = tao_phieu_thanh_toan(self.cb1, self.contract, 2)
+        self.assertEqual((second.ky_can_thiep, second.lan_thanh_toan), (2, 2))
+        self.assertEqual(PhieuThanhToan.objects.filter(hop_dong=self.contract, hoat_dong=True).count(), 2)

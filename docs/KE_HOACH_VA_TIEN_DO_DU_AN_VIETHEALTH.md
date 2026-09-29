@@ -133,3 +133,5 @@ Cap nhat sau UAT 29/09/2026: da tao database MySQL UAT rieng `qlhd_codex_uat_202
 Cap nhat sua loi 29/09/2026: tao phieu theo Nhom HD + Ky nay bo qua hop dong khong co nhat ky moi du dieu kien, khong rollback ca nhom; them alias `/bao-cao-hoat-dong/` va hien thi tieng Viet co dau. Kiem thu sau sua dat 63/63 tren ca SQLite va MySQL UAT.
 
 Cap nhat 29/09/2026: tối ưu truy vấn Thanh quyết toán; đổi Báo cáo hoạt động thành Báo cáo thanh toán theo Số hợp đồng + Kỳ; thêm lọc HĐ/Năm và KPI lũy kế theo năm, từ ngày ký hợp đồng; cập nhật xuất Excel. SQLite và MySQL UAT sạch đều đạt 63/63.
+
+Quyết định nghiệp vụ 29/09/2026: một CBCT và một số HĐ chỉ có một phiếu hiệu lực cho mỗi kỳ; không lập phiếu bổ sung cùng kỳ. Nếu còn nhật ký chưa đưa vào phiếu, chỉ phiếu chờ chi và là lần mới nhất mới được hủy rồi lập lại. Thuế TNCN tính riêng cho mỗi lần thanh toán theo số HĐ: đạt ngưỡng thì áp tỷ lệ lên toàn bộ tiền công của lần đó, không cộng dồn giữa các phiếu hoặc HĐ. Người dùng tự kiểm thử trên MySQL trước khi áp dụng dữ liệu vận hành.

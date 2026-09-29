@@ -173,6 +173,18 @@ def tao_phieu_thanh_toan(can_bo, hop_dong, ky_can_thiep, user=None):
                     "Không có nhật ký mới đủ điều kiện để tạo phiếu thanh toán."
                 )
 
+            # Một kỳ chỉ có một phiếu hiệu lực cho mỗi CBCT và hợp đồng.
+            same_period = PhieuThanhToan.objects.filter(
+                can_bo=can_bo, hop_dong=locked_contract, ky_can_thiep=ky_can_thiep, hoat_dong=True
+            ).first()
+            if same_period:
+                raise ValidationError(
+                    f"Kỳ {ky_can_thiep} của hợp đồng {locked_contract.so_hop_dong} đã có phiếu lần {same_period.lan_thanh_toan} "
+                    f"({same_period.get_trang_thai_display().lower()}); mỗi kỳ chỉ thanh toán một lần nhưng còn {len(journals)} nhật ký "
+                    "chưa được đưa vào phiếu. Chỉ khi phiếu đang chờ chi và là lần mới nhất, hãy hủy phiếu rồi lập lại "
+                    "để gộp đủ nhật ký."
+                )
+
             latest_round = PhieuThanhToan.objects.filter(can_bo=can_bo, hop_dong=locked_contract, hoat_dong=True).aggregate(
                 value=Max("lan_thanh_toan")
             )["value"] or 0

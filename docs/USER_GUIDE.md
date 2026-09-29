@@ -32,6 +32,10 @@ Mở menu `Báo cáo thanh toán`, lọc theo `Số hợp đồng` (khóa chính
 
 Truoc khi xuat ho so, chon CBDA la nguoi de nghi va chon day du khoang ngay. DNTT/DSTK/DNCK chi lay phieu dang hieu luc. Neu file co so lieu khac man hinh, dung bao cao va chi tiet phieu de truy nguyen truoc khi gui.
 
+Mỗi CBCT và số HĐ chỉ có một phiếu thanh toán hiệu lực trong một kỳ can thiệp. Nếu kỳ đã có phiếu mà còn nhật ký đủ điều kiện chưa được đưa vào phiếu, hệ thống báo số HĐ, lần thanh toán và số nhật ký còn lại; không tạo phiếu bổ sung. Chỉ khi phiếu đang **chờ chi** và là **lần thanh toán mới nhất**, hãy hủy phiếu với lý do rồi lập lại để gộp đủ nhật ký. Phiếu đã chi không thể hủy qua luồng thông thường; chuyển kế toán/Admin xử lý theo quy trình điều chỉnh.
+
+Thuế TNCN được tính riêng trên tiền công của từng lần thanh toán theo một số HĐ. Khi tiền công của lần đó đạt ngưỡng cấu hình, tỷ lệ thuế áp trên toàn bộ tiền công của lần đó; không cộng dồn với hợp đồng hoặc lần thanh toán khác. Kiểm chứng số liệu và căn cứ thuế với bộ phận kế toán trước khi chi trả.
+
 ## 5. Luu y
 
 - Canh bao import khong dong nghia voi bo qua; xem tong `them`, `cap nhat`, `bo qua`, `canh bao`.
