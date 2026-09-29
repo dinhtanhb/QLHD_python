@@ -1,0 +1,36 @@
+{% extends 'quanly/base.html' %}
+{% block title %}Import Dữ liệu{% endblock %}
+{% block content %}
+<div class="container-fluid bg-white shadow p-4 rounded">
+    <h2 class="text-primary mb-4">Import Dữ liệu Hệ thống</h2>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="row g-4">
+        <!-- Form Import Phân Công & Hợp Đồng (Dùng file tổng hợp hiện tại) -->
+        <div class="col-md-6">
+            <div class="card border-primary h-100">
+                <div class="card-body">
+                    <h5 class="card-title text-primary">Import Hợp đồng & Phân công</h5>
+                    <p class="text-muted small">Tải lên file Excel tổng hợp để tự động cập nhật Trẻ, Cán bộ, Hợp đồng và Phân công.</p>
+                    <form method="POST" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <input type="file" name="file_excel" class="form-control" accept=".xlsx" required>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="validate_only" value="1" id="validate_only">
+                            <label class="form-check-label" for="validate_only">Chỉ kiểm tra (không lưu)</label>
+                        </div>
+                        <button type="submit" class="btn btn-success">Kiểm tra và tải lên dữ liệu</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

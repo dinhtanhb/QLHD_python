@@ -62,7 +62,18 @@ def snapshot_journals(journals):
     details = ChiTietPhieuThanhToan.objects.filter(
         nhat_ky_id__in=[journal.pk for journal in journals],
         hoat_dong=True,
-    ).select_related("phieu", "nhat_ky__phan_cong__tre", "nhat_ky__hop_dong")
+    ).select_related(
+        "phieu",
+        "nhat_ky__can_bo_nguon__don_vi",
+        "nhat_ky__nhom_hd_nguon",
+        "nhat_ky__hop_dong__can_bo__don_vi",
+        "nhat_ky__hop_dong__don_vi",
+        "nhat_ky__hop_dong__nhom_hd",
+        "nhat_ky__phan_cong__tre",
+        "nhat_ky__phan_cong__nhom_hd",
+        "nhat_ky__phan_cong__phan_bo__can_bo__don_vi",
+        "nhat_ky__phan_cong__phan_bo__nhom_hd",
+    )
     by_journal = {detail.nhat_ky_id: detail for detail in details}
     missing = [journal.pk for journal in journals if journal.pk not in by_journal]
     if missing:
@@ -112,19 +123,23 @@ def lay_cau_hinh_thue(ngay):
     )()
 
 
-def kiem_tra_dieu_kien(nhat_ky):
+def kiem_tra_dieu_kien(nhat_ky, kiem_tra_da_thanh_toan=True):
     errors = []
     hop_dong = nhat_ky.hop_dong_hieu_luc
     if not hop_dong:
         errors.append("Nhật ký chưa có hợp đồng")
     elif hop_dong.trang_thai in {"DU_THAO", "HUY", "THANH_LY"}:
         errors.append(f"Hợp đồng {hop_dong.so_hop_dong} đang ở trạng thái không được thanh toán: {hop_dong.trang_thai}")
-    effective_staff_id = getattr(nhat_ky, "_effective_staff_id", nhat_ky.can_bo_hieu_luc_id)
+    # Không dùng getattr(..., default) vì đối số mặc định luôn được tính (thêm truy vấn cho từng nhật ký).
+    if hasattr(nhat_ky, "_effective_staff_id"):
+        effective_staff_id = nhat_ky._effective_staff_id
+    else:
+        effective_staff_id = nhat_ky.can_bo_hieu_luc_id
     if not effective_staff_id:
         errors.append("Không xác định được CBCT hiệu lực")
     if nhat_ky.so_buoi_thuc_hien <= 0:
         errors.append("Nhật ký không có số buổi thực hiện hợp lệ")
-    if ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=nhat_ky.pk, hoat_dong=True).exists():
+    if kiem_tra_da_thanh_toan and ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=nhat_ky.pk, hoat_dong=True).exists():
         errors.append("Nhật ký đã nằm trong phiếu thanh toán hiệu lực")
     return errors
 
@@ -139,7 +154,9 @@ def _eligible_journals(can_bo, hop_dong, ky_can_thiep):
         "hop_dong", "can_bo_nguon", "phan_cong__tre", "phan_cong__phan_bo__can_bo"
     )
     queryset = NhatKyQuerySet.chua_thanh_toan(queryset).filter(_effective_staff_id=can_bo.pk)
-    return [item for item in queryset if not kiem_tra_dieu_kien(item)]
+    # queryset đã loại các nhật ký có chi tiết phiếu hiệu lực (Exists ở trên) nên không cần
+    # truy vấn .exists() lần nữa cho từng nhật ký.
+    return [item for item in queryset if not kiem_tra_dieu_kien(item, kiem_tra_da_thanh_toan=False)]
 
 
 def tao_phieu_thanh_toan(can_bo, hop_dong, ky_can_thiep, user=None):
@@ -213,7 +230,7 @@ def huy_phieu(phieu, ly_do, user=None):
         raise ValidationError("Chỉ phiếu chờ chi mới được hủy.")
     if not ly_do or not str(ly_do).strip():
         raise ValidationError("Bắt buộc nhập lý do hủy phiếu.")
-    latest = PhieuThanhToan.objects.filter(can_bo=phieu.can_bo, hop_dong=phieu.hop_dong).aggregate(value=Max("lan_thanh_toan"))["value"]
+    latest = PhieuThanhToan.objects.filter(can_bo=phieu.can_bo, hop_dong=phieu.hop_dong, hoat_dong=True).aggregate(value=Max("lan_thanh_toan"))["value"]
     if latest != phieu.lan_thanh_toan:
         raise ValidationError("Chỉ được hủy phiếu có lần thanh toán mới nhất.")
     with transaction.atomic():

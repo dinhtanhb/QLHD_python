@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Hệ thống Quản lý - VietHealth{% endblock %}</title>
+    
+    <!-- Bootstrap CSS & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --sidebar-bg: #102a43;
+            --sidebar-hover: #1f4b6e;
+            --sidebar-submenu-bg: #0b2033;
+            --sidebar-color: #b8c9d8;
+            --sidebar-active-color: #ffffff;
+            --accent: #18a999;
+            --page-bg: #f4f7fa;
+            --border: #e3eaf0;
+            --resizer-width: 3px;
+        }
+
+        body {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            margin: 0;
+            background-color: var(--page-bg);
+            color: #263746;
+            font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+            font-size: 0.94rem;
+        }
+
+        /* Sidebar Styles */
+        #sidebar {
+            width: 260px;
+            min-width: 70px;
+            max-width: 450px;
+            background: linear-gradient(180deg, #102a43 0%, #0b2033 100%);
+            color: var(--sidebar-color);
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+            z-index: 1000;
+        }
+
+        .sidebar-header {
+            padding: 18px 16px;
+            text-align: left;
+            font-weight: 700;
+            font-size: 1.2rem;
+            letter-spacing: 0.5px;
+            color: #fff;
+            border-bottom: 1px solid rgba(255,255,255,.1);
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .menu-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .menu-item {
+            padding: 10px 18px;
+            color: var(--sidebar-color);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .menu-item:hover {
+            color: var(--sidebar-active-color);
+            background: var(--sidebar-hover);
+            border-left-color: var(--accent);
+        }
+
+        .menu-item i.menu-icon {
+            font-size: 1.15rem;
+            min-width: 32px;
+            display: inline-block;
+        }
+
+        .menu-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-grow: 1;
+        }
+
+        .arrow-icon {
+            font-size: 0.8rem;
+            transition: transform 0.2s ease;
+        }
+
+        .menu-item.open .arrow-icon {
+            transform: rotate(180deg);
+        }
+
+        /* Submenu Styles */
+        .submenu {
+            display: none;
+            background: var(--sidebar-submenu-bg);
+        }
+
+        .submenu .menu-item {
+            padding: 8px 18px 8px 46px;
+            font-size: 0.9rem;
+        }
+
+        /* Resizer Divider */
+        #resizer {
+            width: var(--resizer-width);
+            cursor: col-resize;
+            background: #d8e1e8;
+            transition: background 0.2s;
+            z-index: 1001;
+        }
+
+        #resizer:hover, #resizer:active {
+            background: #0d6efd;
+        }
+
+        /* Main Content Layout */
+        #main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        #topbar {
+            background: rgba(255,255,255,.96);
+            padding: 14px 28px;
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 2px 12px rgba(16,42,67,.05);
+            display: flex;
+            align-items: center;
+            z-index: 999;
+        }
+
+        #content-area {
+            padding: 28px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        /* Collapsed Sidebar State */
+        .collapsed #sidebar {
+            width: 70px !important;
+        }
+
+        .collapsed .menu-text, 
+        .collapsed .submenu, 
+        .collapsed .sidebar-title,
+        .collapsed .arrow-icon {
+            display: none !important;
+        }
+
+        .collapsed .menu-item {
+            justify-content: center;
+            padding: 14px 0;
+        }
+
+        .collapsed .menu-item i.menu-icon {
+            min-width: unset;
+            text-align: center;
+        }
+
+        .collapsed #resizer {
+            cursor: default;
+            pointer-events: none;
+        }
+
+        .sidebar-footer { padding: 14px 16px 18px; border-top: 1px solid rgba(255,255,255,.1); }
+        .sidebar-footer .text-secondary { color: var(--sidebar-color) !important; }
+        .sidebar-footer .btn { width: 100%; margin-top: 10px; }
+        #toggle-btn { border-color: var(--border); color: #486581; }
+        #toggle-btn:hover { background: #eaf5f4; color: #147d72; }
+        #content-area > .container-fluid, #content-area > .container { max-width: 1480px; margin: 0 auto; }
+        .card { border: 1px solid var(--border) !important; border-radius: 14px !important; box-shadow: 0 5px 18px rgba(16,42,67,.06) !important; overflow: hidden; }
+        .card-header { border-bottom: 1px solid rgba(255,255,255,.12); padding: 14px 18px; }
+        .card-body { padding: 20px; }
+        .table { --bs-table-border-color: var(--border); margin-bottom: 0; }
+        .table thead th { background: #f6f9fb; color: #486581; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+        .table td, .table th { padding: .72rem .8rem; vertical-align: middle; }
+        .table tbody tr:hover { background: #f8fbfc; }
+        .btn { border-radius: 8px; font-weight: 600; }
+        .btn-primary { --bs-btn-bg: #147d72; --bs-btn-border-color: #147d72; --bs-btn-hover-bg: #0f665d; --bs-btn-hover-border-color: #0f665d; }
+        .btn-success { --bs-btn-bg: #147d72; --bs-btn-border-color: #147d72; --bs-btn-hover-bg: #0f665d; --bs-btn-hover-border-color: #0f665d; }
+        .form-control, .form-select { border-color: #cbd7e1; border-radius: 8px; min-height: 40px; }
+        .form-control:focus, .form-select:focus { border-color: var(--accent); box-shadow: 0 0 0 .2rem rgba(24,169,153,.14); }
+        .select2-container { width: 100% !important; }
+        .select2-container .select2-selection--single { height: 40px; border: 1px solid #cbd7e1; border-radius: 8px; }
+        .select2-container .select2-selection--single .select2-selection__rendered { line-height: 38px; color: #263746; padding-left: 12px; }
+        .select2-container .select2-selection--single .select2-selection__arrow { height: 38px; right: 6px; }
+        .select2-container--open .select2-selection--single, .select2-container--focus .select2-selection--single { border-color: var(--accent); box-shadow: 0 0 0 .2rem rgba(24,169,153,.14); }
+        form p { margin-bottom: 1rem; }
+        form p label { display: block; font-weight: 600; color: #486581; margin-bottom: .35rem; }
+        .alert { border: 0; border-radius: 10px; }
+        @media (max-width: 768px) {
+            #sidebar { width: 72px; min-width: 72px; }
+            #sidebar .menu-text, #sidebar .submenu, #sidebar .sidebar-title, #sidebar .arrow-icon, #sidebar .sidebar-footer { display: none; }
+            #sidebar .menu-item { justify-content: center; padding: 13px 0; }
+            #sidebar .menu-item i.menu-icon { min-width: unset; }
+            #content-area { padding: 16px; }
+            #topbar { padding: 12px 16px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar Navigation -->
+    <nav id="sidebar">
+        <div class="sidebar-header">
+            <span class="sidebar-title">VIETHEALTH</span>
+        </div>
+        
+        <div class="menu-list mt-2">
+            <a href="/" class="menu-item">
+                <i class="bi bi-house-door menu-icon"></i> 
+                <span class="menu-text">Trang chủ (Dashboard)</span>
+            </a>
+            <a href="{% url 'nhat_ky_can_thiep' %}" class="menu-item">
+                <i class="bi bi-clipboard2-check menu-icon"></i>
+                <span class="menu-text">Nhật ký can thiệp</span>
+            </a>
+            <a href="{% url 'thanh_quyet_toan' %}" class="menu-item">
+                <i class="bi bi-receipt menu-icon"></i>
+                <span class="menu-text">Thanh quyết toán</span>
+            </a>
+            <a href="{% url 'danh_sach_phieu_thanh_toan' %}" class="menu-item">
+                <i class="bi bi-journal-text menu-icon"></i>
+                <span class="menu-text">Sổ thanh toán CBCT</span>
+            </a>
+            <a href="{% url 'danh_sach_thanh_toan_di_lai_phu_huynh' %}" class="menu-item">
+                <i class="bi bi-car-front menu-icon"></i>
+                <span class="menu-text">TQT đi lại phụ huynh</span>
+            </a>
+                        
+            <!-- Menu Danh mục -->
+            <div class="menu-item" onclick="toggleSubmenu('danhmuc', this)">
+                <i class="bi bi-folder2-open menu-icon"></i> 
+                <span class="menu-text">Danh mục</span>
+                <i class="bi bi-chevron-down arrow-icon"></i>
+            </div>
+            <div id="danhmuc" class="submenu">
+                <a href="/don-vi/" class="menu-item">
+                    <i class="bi bi-building menu-icon"></i> 
+                    <span class="menu-text">Đơn vị</span>
+                </a>
+                <a href="/nhom-hd/" class="menu-item">
+                    <i class="bi bi-tags menu-icon"></i> 
+                    <span class="menu-text">Nhóm Hợp đồng</span>
+                </a>
+                <a href="/tre/" class="menu-item">
+                    <i class="bi bi-person-hearts menu-icon"></i> 
+                    <span class="menu-text">Quản lý Trẻ</span>
+                </a>
+                <a href="/can-bo/" class="menu-item">
+                    <i class="bi bi-person-badge menu-icon"></i> 
+                    <span class="menu-text">Quản lý Cán bộ</span>
+                </a>
+            </div>
+
+            <!-- Menu Quy trình hợp đồng -->
+            <div class="menu-item" onclick="toggleSubmenu('quanlyhopdong', this)">
+                <i class="bi bi-journal-check menu-icon"></i> 
+                <span class="menu-text">Quy trình hợp đồng</span>
+                <i class="bi bi-chevron-down arrow-icon"></i>
+            </div>
+            <div id="quanlyhopdong" class="submenu">
+                <a href="{% url 'danh_sach_phan_bo' %}" class="menu-item">
+                    <i class="bi bi-diagram-3 menu-icon"></i> 
+                    <span class="menu-text">Phân bổ chỉ tiêu</span>
+                </a>
+                <a href="{% url 'danh_sach_phan_cong' %}" class="menu-item">
+                    <i class="bi bi-person-lines-fill menu-icon"></i>
+                    <span class="menu-text">Phân công trẻ</span>
+                </a>
+                <a href="{% url 'danh_sach_de_xuat' %}" class="menu-item">
+                    <i class="bi bi-card-checklist menu-icon"></i> 
+                    <span class="menu-text">Danh sách đề xuất (Chờ HĐ)</span>
+                </a>
+                <a href="/hop-dong/" class="menu-item">
+                    <i class="bi bi-file-earmark-text menu-icon"></i> 
+                    <span class="menu-text">Danh sách Hợp đồng</span>
+                </a>
+                <a href="{% url 'danh_sach_gia_han_hop_dong' %}" class="menu-item">
+                    <i class="bi bi-calendar-plus menu-icon"></i>
+                    <span class="menu-text">Gia hạn hợp đồng</span>
+                </a>
+            </div>
+        </div>
+        <div class="sidebar-footer">
+            {% if user.is_authenticated %}
+                <span class="me-3 text-secondary small fw-semibold">
+                    <i class="bi bi-person-circle"></i> Xin chào, {{ user.username }}
+                </span>
+                <form action="{% url 'logout' %}" method="post" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-box-arrow-right"></i> Đăng xuất
+                    </button>
+                </form>
+            {% else %}
+                <a href="{% url 'login' %}" class="btn btn-primary btn-sm">Đăng nhập</a>
+            {% endif %}
+</div>
+    </nav>
+
+    <!-- Thanh kéo dãn Kích thước Sidebar -->
+    <div id="resizer"></div>
+
+    <!-- Vùng Nội dung Chính -->
+    <div id="main-content">
+        <header id="topbar">
+            <button id="toggle-btn" class="btn btn-outline-secondary btn-sm me-3" title="Thu gọn/Mở rộng Sidebar">
+                <i class="bi bi-list fs-6"></i>
+            </button>
+            <h5 class="mb-0 fw-semibold text-secondary">Hệ thống Quản lý</h5>
+        </header>
+
+        <main id="content-area">
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Đóng"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+            {% block content %}
+            {% endblock %}
+        </main>
+    </div>
+
+    <!-- JavaScript Xử lý Tương tác -->
+    <script>
+        const body = document.body;
+        const sidebar = document.getElementById('sidebar');
+        const resizer = document.getElementById('resizer');
+
+        // Toggle Bật/Tắt Sidebar
+        document.getElementById('toggle-btn').addEventListener('click', () => {
+            body.classList.toggle('collapsed');
+        });
+
+        // Kéo dãn Sidebar
+        let isResizing = false;
+
+        resizer.addEventListener('mousedown', () => { 
+            isResizing = true; 
+            document.body.style.cursor = 'col-resize';
+        });
+
+        document.addEventListener('mouseup', () => { 
+            isResizing = false; 
+            document.body.style.cursor = 'default';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing || body.classList.contains('collapsed')) return;
+            let newWidth = e.clientX;
+            if (newWidth >= 180 && newWidth <= 450) {
+                sidebar.style.width = newWidth + 'px';
+            }
+        });
+
+        // Toggle Mở/Đóng Submenu
+        function toggleSubmenu(id, parentElem) {
+            if (body.classList.contains('collapsed')) return;
+            
+            const submenu = document.getElementById(id);
+            const isOpen = submenu.style.display === 'block';
+
+            submenu.style.display = isOpen ? 'none' : 'block';
+            if (parentElem) {
+                parentElem.classList.toggle('open', !isOpen);
+            }
+        }
+    </script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        $(function () {
+            $('.select2-search').select2({ width: '100%', placeholder: 'Chọn hoặc nhập để tìm...', allowClear: true });
+        });
+    </script>
+</body>
+</html>

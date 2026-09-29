@@ -1,0 +1,42 @@
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# VS Code
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Django
+db.sqlite3
+*.sqlite3
+
+# Environment
+.env
+
+# Logs
+logs/
+*.log
+
+# Local review/full backup archives
+backups/
+
+# Static build
+staticfiles/
+
+# Media
+media/
+
+# Pytest
+.pytest_cache/
+
+# Migrations cache
+**/__pycache__/
+
+# File tạm dùng để review cấu trúc project
+structure.txt

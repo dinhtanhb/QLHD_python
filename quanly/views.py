@@ -42,8 +42,11 @@ from .payment_export import (
     parent_travel_category,
 )
 from .financial import FinancialConfig, calculate_payment_breakdown, normalize_travel_location
-from .parsing import parse_decimal as parse_decimal_legacy
-from .reporting import build_intervention_report, export_intervention_report_xlsx, intervention_report_queryset
+from .parsing import parse_decimal as parse_decimal_legacy, parse_get_int
+from .reporting import (
+    build_intervention_report, effective_group_id_expression, effective_staff_id_expression,
+    export_intervention_report_xlsx, intervention_report_queryset, labor_expression, travel_expression,
+)
 from .services.contract_status import is_het_han, sync_trang_thai_hop_dong, validate_status_transition
 from .forms import (
     CanBoForm,
@@ -99,11 +102,17 @@ from .models import (
 )
 from .services.payment_ledger import (
     huy_phieu as huy_phieu_thanh_toan,
+    lay_cau_hinh_thue,
     NoEligiblePaymentJournals,
     snapshot_journals,
     tao_phieu_thanh_toan as tao_phieu_thanh_toan_service,
     xac_nhan_chi,
 )
+
+
+def _is_id(value, min_value=1, max_value=2_147_483_647):
+    """True nếu tham số request là số nguyên ASCII hợp lệ; thay cho str.isdigit() (nhận cả "²")."""
+    return parse_get_int(value, min_value=min_value, max_value=max_value) is not None
 
 
 def _is_operationally_locked(hop_dong):
@@ -337,7 +346,12 @@ def bao_cao_tong_hop(request):
     nam_value = request.GET.get("nam", "").strip()
     tu_ngay_value = request.GET.get("tu_ngay", "").strip()
     den_ngay_value = request.GET.get("den_ngay", "").strip()
-    report_year = int(nam_value) if nam_value.isdigit() else timezone.localdate().year
+    # Tham số xấu (nam=0, nam=99999, chữ số Unicode như "²"...) bị bỏ qua thay vì gây lỗi 500.
+    nhom_filter = parse_get_int(nhom_id)
+    hop_dong_filter = parse_get_int(hop_dong_id)
+    ky_filter = parse_get_int(ky_value, max_value=1000)
+    nam_filter = parse_get_int(nam_value, min_value=1900, max_value=2100)
+    report_year = nam_filter or timezone.localdate().year
     tu_ngay = parse_date(tu_ngay_value)
     den_ngay = parse_date(den_ngay_value)
     date_error = ""
@@ -346,25 +360,25 @@ def bao_cao_tong_hop(request):
     elif tu_ngay and den_ngay and tu_ngay > den_ngay:
         date_error = "Từ ngày không được sau Đến ngày."
     queryset = intervention_report_queryset(
-        nhom_hd_id=int(nhom_id) if nhom_id.isdigit() else None,
-        hop_dong_id=int(hop_dong_id) if hop_dong_id.isdigit() else None,
-        ky=int(ky_value) if ky_value.isdigit() else None,
-        nam=int(nam_value) if nam_value.isdigit() else None,
+        nhom_hd_id=nhom_filter,
+        hop_dong_id=hop_dong_filter,
+        ky=ky_filter,
+        nam=nam_filter,
         tu_ngay=tu_ngay if not date_error else None,
         den_ngay=den_ngay if not date_error else None,
     )
     annual_end = den_ngay or (date(report_year, 12, 31) if report_year != timezone.localdate().year else timezone.localdate())
     annual_queryset = intervention_report_queryset(
-        nhom_hd_id=int(nhom_id) if nhom_id.isdigit() else None,
-        hop_dong_id=int(hop_dong_id) if hop_dong_id.isdigit() else None,
-        ky=int(ky_value) if ky_value.isdigit() else None,
+        nhom_hd_id=nhom_filter,
+        hop_dong_id=hop_dong_filter,
+        ky=ky_filter,
         tu_ngay=date(report_year, 1, 1),
         den_ngay=annual_end if not date_error else None,
     )
     signing_queryset = intervention_report_queryset(
-        nhom_hd_id=int(nhom_id) if nhom_id.isdigit() else None,
-        hop_dong_id=int(hop_dong_id) if hop_dong_id.isdigit() else None,
-        ky=int(ky_value) if ky_value.isdigit() else None,
+        nhom_hd_id=nhom_filter,
+        hop_dong_id=hop_dong_filter,
+        ky=ky_filter,
         den_ngay=den_ngay or timezone.localdate(),
     ).filter(ngay_thuc_hien__gte=F("hop_dong__ngay_ky"))
     report = build_intervention_report(
@@ -935,13 +949,13 @@ def danh_sach_phan_cong(request):
         "tre", "can_bo_nguon", "phan_bo__can_bo", "phan_bo__nhom_hd", "nhom_hd"
     )
 
-    if phan_bo_id.isdigit():
+    if _is_id(phan_bo_id):
         qs = qs.filter(phan_bo_id=int(phan_bo_id))
 
-    if nhom_hd_id.isdigit():
+    if _is_id(nhom_hd_id):
         qs = qs.filter(Q(nhom_hd_id=int(nhom_hd_id)) | Q(nhom_hd__isnull=True, phan_bo__nhom_hd_id=int(nhom_hd_id)))
 
-    if dot_phan_cong.isdigit():
+    if _is_id(dot_phan_cong):
         qs = qs.filter(dot_phan_cong=int(dot_phan_cong))
 
     if query:
@@ -961,7 +975,7 @@ def danh_sach_phan_cong(request):
     phcn_count = qs.filter(loai_dich_vu__in=PhanCongTre.PHCN_SERVICE_CODES).count()
     cs_count = qs.filter(loai_dich_vu__in=PhanCongTre.CS_SERVICE_CODES).count()
     phan_bo = None
-    if phan_bo_id.isdigit():
+    if _is_id(phan_bo_id):
         phan_bo = PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd").filter(pk=int(phan_bo_id)).first()
 
     return render(
@@ -987,7 +1001,7 @@ def danh_sach_phan_cong(request):
 def them_phan_cong(request):
     phan_bo_id = request.GET.get("phan_bo_id") or request.POST.get("phan_bo")
     phan_bo = None
-    if phan_bo_id and str(phan_bo_id).isdigit():
+    if phan_bo_id and _is_id(phan_bo_id):
         phan_bo = get_object_or_404(
             PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd"),
             pk=int(phan_bo_id),
@@ -1479,7 +1493,7 @@ def danh_sach_phan_bo(request):
             | Q(nhom_hd__ma_nhom_hd__icontains=query)
             | Q(nhom_hd__ten_nhom_hd__icontains=query)
         )
-    if nhom_id.isdigit():
+    if _is_id(nhom_id):
         qs = qs.filter(nhom_hd_id=int(nhom_id))
     if trang_thai == "mo":
         qs = qs.filter(is_locked=False)
@@ -1588,6 +1602,14 @@ def mo_khoa_phan_bo(request, pk):
     return redirect("danh_sach_phan_bo")
 
 
+def _session_safe_allocation(item):
+    """Session dùng JSONSerializer: đổi date/Decimal sang chuỗi để lưu được."""
+    return {
+        key: (value.isoformat() if isinstance(value, date) else str(value) if isinstance(value, Decimal) else value)
+        for key, value in item.items()
+    }
+
+
 @admin_required
 def import_phan_bo(request):
     if request.method != "POST" or "excel_file" not in request.FILES:
@@ -1645,7 +1667,7 @@ def import_phan_bo(request):
             "error_msg": "; ".join(errors),
         })
 
-    request.session["import_phan_bo_valid_data"] = [x for x in preview if x["is_valid"]]
+    request.session["import_phan_bo_valid_data"] = [_session_safe_allocation(x) for x in preview if x["is_valid"]]
     return render(request, "quanly/import_phan_bo.html", {
         "preview_data": preview,
         "valid_count": sum(x["is_valid"] for x in preview),
@@ -1669,13 +1691,13 @@ def confirm_import_phan_bo(request):
             can_bo_id=item["can_bo_id"],
             nhom_hd_id=item["nhom_hd_id"],
             tham_gia_ct=item["tham_gia_ct"],
-            ngay_lap=item["ngay_lap"],
+            ngay_lap=date.fromisoformat(item["ngay_lap"]) if isinstance(item["ngay_lap"], str) else item["ngay_lap"],
             so_tre_phcn=item["so_tre_phcn"],
             so_buoi_phcn=item["so_buoi_phcn"],
-            dinh_muc_di_lai_phcn=item["dmdl_phcn_val"],
+            dinh_muc_di_lai_phcn=Decimal(str(item["dmdl_phcn_val"])),
             so_tre_cs=item["so_tre_cs"],
             so_buoi_cs=item["so_buoi_cs"],
-            dinh_muc_di_lai_cs=item["dmdl_cs_val"],
+            dinh_muc_di_lai_cs=Decimal(str(item["dmdl_cs_val"])),
         ))
     PhanBoChiTieu.objects.bulk_create(records)
     messages.success(request, f"Đã lưu {len(records)} Phân bổ chỉ tiêu.")
@@ -1749,7 +1771,7 @@ def danh_sach_de_xuat(request):
             | Q(phan_bo__nhom_hd__ma_nhom_hd__icontains=query)
             | Q(phan_bo__nhom_hd__ten_nhom_hd__icontains=query)
         )
-    if nhom_id.isdigit():
+    if _is_id(nhom_id):
         qs = qs.filter(phan_bo__nhom_hd_id=int(nhom_id))
     valid_proposal_statuses = {value for value, _ in DeXuatHopDong.TRANG_THAI_CHOICES}
     if trang_thai in valid_proposal_statuses:
@@ -1883,7 +1905,7 @@ def danh_sach_hop_dong(request):
             | Q(nhom_hd__ma_nhom_hd__icontains=query)
             | Q(nhom_hd__ten_nhom_hd__icontains=query)
         )
-    if nhom_id.isdigit():
+    if _is_id(nhom_id):
         qs = qs.filter(nhom_hd_id=int(nhom_id))
     valid_contract_statuses = {value for value, _ in HopDong.TRANG_THAI_CHOICES}
     if trang_thai in valid_contract_statuses:
@@ -2728,18 +2750,18 @@ def tao_dot_thanh_toan_di_lai_phu_huynh_theo_nhom(request):
         "thang": timezone.localdate().month,
     }
     if request.method == "GET":
-        if request.GET.get("nhom_hd", "").isdigit():
+        if _is_id(request.GET.get("nhom_hd", "")):
             initial["nhom_hd"] = int(request.GET["nhom_hd"])
-        if request.GET.get("ky", "").isdigit():
+        if _is_id(request.GET.get("ky", "")):
             initial["ky_can_thiep"] = int(request.GET["ky"])
-        if request.GET.get("nam", "").isdigit():
+        if _is_id(request.GET.get("nam", ""), min_value=1900, max_value=2100):
             initial["nam"] = int(request.GET["nam"])
-        if request.GET.get("thang", "").isdigit():
+        if _is_id(request.GET.get("thang", ""), max_value=12):
             initial["thang"] = int(request.GET["thang"])
     existing_dot = None
     if request.method == "POST":
         raw_scope = [request.POST.get(name, "").strip() for name in ("nhom_hd", "ky_can_thiep", "nam", "thang")]
-        if raw_scope[0].isdigit() and raw_scope[1].isdigit() and raw_scope[2].isdigit() and raw_scope[3].isdigit():
+        if _is_id(raw_scope[0]) and _is_id(raw_scope[1]) and _is_id(raw_scope[2]) and _is_id(raw_scope[3]):
             existing_dot = DotThanhToanDiLaiPhuHuynh.objects.filter(
                 nhom_hd_id=int(raw_scope[0]),
                 ky_can_thiep=int(raw_scope[1]),
@@ -3262,7 +3284,7 @@ def danh_sach_thanh_toan_di_lai_phu_huynh(request):
             | Q(nhom_hd__ma_nhom_hd__icontains=query)
             | Q(nhom_hd__ten_nhom_hd__icontains=query)
         )
-    if nhom_hd.isdigit():
+    if _is_id(nhom_hd):
         qs = qs.filter(Q(nhom_hd_id=int(nhom_hd)) | Q(hop_dong__nhom_hd_id=int(nhom_hd)))
     if trang_thai:
         qs = qs.filter(trang_thai=trang_thai)
@@ -3448,7 +3470,7 @@ def _export_parent_travel(request, pk, category, export_kind="DNTT"):
     try:
         requester = None
         cbda_id = request.GET.get("cbda", "").strip()
-        if cbda_id.isdigit():
+        if _is_id(cbda_id):
             requester = CanBo.objects.filter(pk=int(cbda_id), ma_can_bo__istartswith="AVH").first()
         exporters = {
             "DNTT": export_parent_travel_payment_request,
@@ -3494,13 +3516,13 @@ def nhat_ky_can_thiep(request):
     ).prefetch_related("hop_dong__can_bo", "hop_dong__nhom_hd").order_by("-ngay_thuc_hien", "-id")
     if query:
         qs = qs.filter(Q(phan_cong__tre__ma_tre__icontains=query) | Q(phan_cong__tre__ho_ten__icontains=query) | Q(hop_dong__so_hop_dong__icontains=query) | Q(can_bo_nguon__ho_ten__icontains=query) | Q(phan_cong__phan_bo__can_bo__ho_ten__icontains=query))
-    if cb_id.isdigit():
-        qs = qs.filter(Q(can_bo_nguon_id=int(cb_id)) | Q(can_bo_nguon__isnull=True, phan_cong__phan_bo__can_bo_id=int(cb_id)))
-    if nhom_id.isdigit():
-        qs = qs.filter(Q(nhom_hd_nguon_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd__isnull=True, phan_cong__phan_bo__nhom_hd_id=int(nhom_id)))
-    if ky.isdigit(): qs = qs.filter(ky_can_thiep=int(ky))
-    if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
-    if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
+    if _is_id(cb_id):
+        qs = qs.annotate(can_bo_hieu_luc_pk=effective_staff_id_expression()).filter(can_bo_hieu_luc_pk=int(cb_id))
+    if _is_id(nhom_id):
+        qs = qs.annotate(nhom_hieu_luc_id=effective_group_id_expression()).filter(nhom_hieu_luc_id=int(nhom_id))
+    if _is_id(ky): qs = qs.filter(ky_can_thiep=int(ky))
+    if _is_id(thang, max_value=12): qs = qs.filter(ngay_thuc_hien__month=int(thang))
+    if _is_id(nam, min_value=1900, max_value=2100): qs = qs.filter(ngay_thuc_hien__year=int(nam))
     if only_conflicts:
         qs = qs.filter(canh_bao_trung=True)
     page_obj = Paginator(qs, 25).get_page(request.GET.get("page"))
@@ -3620,7 +3642,7 @@ def tao_phieu_thanh_toan(request):
     nhom_id = request.POST.get("nhom_hd") or request.GET.get("nhom_hd", "")
     ky = request.POST.get("ky") or request.GET.get("ky", "")
     if request.method == "POST":
-        if not str(nhom_id).isdigit() or not str(ky).isdigit():
+        if not _is_id(nhom_id) or not _is_id(ky):
             messages.error(request, "Cần chọn Nhóm HĐ và Kỳ can thiệp.")
         else:
             contracts = HopDong.objects.filter(nhom_hd_id=int(nhom_id), can_bo__isnull=False).exclude(
@@ -3689,7 +3711,12 @@ def xac_nhan_chi_phieu_thanh_toan(request, pk):
 
 @readonly_required
 def thanh_quyet_toan(request):
-    """Tổng hợp và lập hồ sơ thanh toán theo Nhóm HĐ + Kỳ can thiệp."""
+    """Tổng hợp và lập hồ sơ thanh toán theo Nhóm HĐ + Kỳ can thiệp.
+
+    Toàn bộ số liệu được gom bằng GROUP BY ở CSDL (không nạp từng nhật ký vào Python).
+    Thuế TNCN lấy từ ``CauHinhThue`` đang hiệu lực, tính trên tổng tiền công của từng CBCT
+    trong mỗi (Nhóm HĐ, Kỳ).
+    """
     qs, ky, thang, nam = _journal_export_queryset(request)
     query = request.GET.get("q", "").strip()
     if query:
@@ -3700,55 +3727,33 @@ def thanh_quyet_toan(request):
             | Q(can_bo_nguon__ho_ten__icontains=query)
             | Q(phan_cong__phan_bo__can_bo__ho_ten__icontains=query)
         )
+    scope = qs.filter(nhom_hieu_luc_id__isnull=False, can_bo_hieu_luc_pk__isnull=False).order_by()
+    staff_rows = scope.values("nhom_hieu_luc_id", "ky_can_thiep", "can_bo_hieu_luc_pk").annotate(
+        journal_count=Count("pk"), so_buoi=Sum("so_buoi_thuc_hien"), di_lai=Sum("so_luot_di_lai_cbct"),
+        tien_cong=Sum(labor_expression()), tien_di_lai=Sum(travel_expression()),
+    )
+    contract_counts = {
+        (row["nhom_hieu_luc_id"], row["ky_can_thiep"]): row["so_hd"]
+        for row in scope.values("nhom_hieu_luc_id", "ky_can_thiep").annotate(so_hd=Count("hop_dong_id", distinct=True))
+    }
+    groups = {group.pk: group for group in NhomHD.objects.filter(pk__in={group_id for group_id, _ in contract_counts})}
+    tax_config = lay_cau_hinh_thue(timezone.localdate())
     rows = {}
-    for journal in qs.iterator(chunk_size=1000):
-        # Các FK đã được select_related trong _journal_export_queryset; giữ một
-        # lần resolve trong vòng lặp để tránh phát sinh truy vấn N+1 khi tổng
-        # hợp hàng chục nghìn nhật ký.
-        effective_contract = journal.hop_dong_hieu_luc
-        effective_group = journal.nhom_hd_hieu_luc
-        effective_staff = journal.can_bo_hieu_luc
-        if not effective_group or not effective_staff:
-            continue
-        key = (effective_group.pk, journal.ky_can_thiep)
+    for values in staff_rows:
+        key = (values["nhom_hieu_luc_id"], values["ky_can_thiep"])
         item = rows.setdefault(key, {
-            "nhom": effective_group,
-            "ky": journal.ky_can_thiep,
-            "hop_dong_count": set(),
-            "can_bo_count": set(),
-            "journal_count": 0,
-            "so_buoi": Decimal("0"),
-            "di_lai": Decimal("0"),
-            "tien_cong": Decimal("0"),
-            "tien_di_lai": Decimal("0"),
-            "staff_amounts": {},
+            "nhom": groups[key[0]], "ky": key[1], "hop_dong_count": contract_counts.get(key, 0), "can_bo_count": 0,
+            "journal_count": 0, "so_buoi": Decimal("0"), "di_lai": Decimal("0"),
+            "tien_cong": Decimal("0"), "tien_di_lai": Decimal("0"), "tong_truoc_thue": Decimal("0"),
+            "thue_tncn": Decimal("0"), "thuc_linh": Decimal("0"),
         })
-        if effective_contract:
-            item["hop_dong_count"].add(effective_contract.pk)
-        item["can_bo_count"].add(effective_staff.pk)
-        item["journal_count"] += 1
-        item["so_buoi"] += Decimal(journal.so_buoi_thuc_hien)
-        item["di_lai"] += Decimal(journal.so_luot_di_lai_cbct)
-        item["tien_cong"] += Decimal(journal.so_buoi_thuc_hien) * Decimal(journal.don_gia_cong)
-        item["tien_di_lai"] += Decimal(journal.so_luot_di_lai_cbct) * Decimal(journal.dinh_muc_di_lai)
-        staff_amount = item["staff_amounts"].setdefault(
-            effective_staff.pk,
-            {"labor": Decimal("0"), "travel": Decimal("0")},
-        )
-        staff_amount["labor"] += Decimal(journal.so_buoi_thuc_hien) * Decimal(journal.don_gia_cong)
-        staff_amount["travel"] += Decimal(journal.so_luot_di_lai_cbct) * Decimal(journal.dinh_muc_di_lai)
-    for item in rows.values():
-        staff_breakdowns = [
-            calculate_payment_breakdown(amount["labor"], amount["travel"])
-            for amount in item.pop("staff_amounts").values()
-        ]
-        breakdown = {
-            key: sum((value[key] for value in staff_breakdowns), Decimal("0"))
-            for key in ("tien_cong", "tien_di_lai", "tong_truoc_thue", "thue_tncn", "thuc_linh")
-        }
-        item["hop_dong_count"] = len(item["hop_dong_count"])
-        item["can_bo_count"] = len(item["can_bo_count"])
-        item.update(breakdown)
+        breakdown = calculate_payment_breakdown(values["tien_cong"], values["tien_di_lai"], tax_config)
+        item["can_bo_count"] += 1
+        item["journal_count"] += values["journal_count"]
+        item["so_buoi"] += Decimal(values["so_buoi"] or 0)
+        item["di_lai"] += Decimal(values["di_lai"] or 0)
+        for name in ("tien_cong", "tien_di_lai", "tong_truoc_thue", "thue_tncn", "thuc_linh"):
+            item[name] += breakdown[name]
     danh_sach = sorted(rows.values(), key=lambda item: (item["nhom"].ma_nhom_hd, item["ky"]))
     return render(request, "quanly/thanh_quyet_toan.html", {
         "danh_sach": danh_sach,
@@ -3767,7 +3772,7 @@ def de_nghi_thanh_toan(request):
     """Trang xuất hồ sơ cho một Nhóm HĐ + Kỳ can thiệp đã chọn."""
     qs, ky, thang, nam = _journal_export_queryset(request)
     nhom_id = request.GET.get("nhom_hd", "").strip()
-    nhom = get_object_or_404(NhomHD, pk=int(nhom_id)) if nhom_id.isdigit() else None
+    nhom = get_object_or_404(NhomHD, pk=int(nhom_id)) if _is_id(nhom_id) else None
     tu_ngay = request.GET.get("tu_ngay", "").strip()
     den_ngay = request.GET.get("den_ngay", "").strip()
     date_error = ""
@@ -3817,7 +3822,7 @@ def _selected_payment_date_range(request):
 def _selected_cbda(request):
     cbda_id = request.GET.get("cbda", "").strip()
     cbda = CanBo.objects.filter(
-        pk=int(cbda_id) if cbda_id.isdigit() else 0,
+        pk=int(cbda_id) if _is_id(cbda_id) else 0,
         is_active=True,
         ma_can_bo__istartswith="AVH",
     ).first()
@@ -3830,16 +3835,27 @@ def _journal_export_queryset(request):
     qs = NhatKyThucHien.objects.select_related(
         "can_bo_nguon__don_vi", "nhom_hd_nguon", "hop_dong__can_bo__don_vi", "hop_dong__don_vi", "hop_dong__nhom_hd",
         "phan_cong__tre", "phan_cong__nhom_hd", "phan_cong__phan_bo__can_bo__don_vi", "phan_cong__phan_bo__nhom_hd",
+    ).annotate(
+        nhom_hieu_luc_id=effective_group_id_expression(),
+        can_bo_hieu_luc_pk=effective_staff_id_expression(),
     ).order_by("ngay_thuc_hien", "id")
-    cb_id, nhom_id, ky, thang, nam = (request.GET.get(key, "").strip() for key in ("can_bo", "nhom_hd", "ky", "thang", "nam"))
-    if cb_id.isdigit():
-        qs = qs.filter(Q(can_bo_nguon_id=int(cb_id)) | Q(can_bo_nguon__isnull=True, phan_cong__phan_bo__can_bo_id=int(cb_id)))
-    if nhom_id.isdigit():
-        qs = qs.filter(Q(nhom_hd_nguon_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd_id=int(nhom_id)) | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd__isnull=True, phan_cong__phan_bo__nhom_hd_id=int(nhom_id)))
-    if ky.isdigit(): qs = qs.filter(ky_can_thiep=int(ky))
-    if thang.isdigit(): qs = qs.filter(ngay_thuc_hien__month=int(thang))
-    if nam.isdigit(): qs = qs.filter(ngay_thuc_hien__year=int(nam))
-    return qs, ky, thang, nam
+    cb_id = parse_get_int(request.GET.get("can_bo"))
+    nhom_id = parse_get_int(request.GET.get("nhom_hd"))
+    ky = parse_get_int(request.GET.get("ky"), max_value=1000)
+    thang = parse_get_int(request.GET.get("thang"), max_value=12)
+    nam = parse_get_int(request.GET.get("nam"), min_value=1900, max_value=2100)
+    # Lọc theo CBCT/Nhóm hiệu lực đúng thứ tự ưu tiên của model (nguồn -> hợp đồng -> phân công/phân bổ).
+    if cb_id:
+        qs = qs.filter(can_bo_hieu_luc_pk=cb_id)
+    if nhom_id:
+        qs = qs.filter(nhom_hieu_luc_id=nhom_id)
+    if ky:
+        qs = qs.filter(ky_can_thiep=ky)
+    if thang:
+        qs = qs.filter(ngay_thuc_hien__month=thang)
+    if nam:
+        qs = qs.filter(ngay_thuc_hien__year=nam)
+    return qs, str(ky or ""), str(thang or ""), str(nam or "")
 
 
 def _paid_voucher_journal_queryset(queryset):
@@ -3876,7 +3892,7 @@ def xuat_dntt_nhat_ky(request):
                     grouped.setdefault(staff.pk, []).append(journal)
             for journals in grouped.values():
                 staff = journals[0].can_bo_hieu_luc
-                period = int(ky) if ky.isdigit() else journals[0].ky_can_thiep
+                period = int(ky) if _is_id(ky) else journals[0].ky_can_thiep
                 payment_round = max(item.lan_thanh_toan for item in journals)
                 output = export_journal_payment_request(journals, ky=ky, thang=thang, nam=nam, lan_tt=payment_round, nguoi_de_nghi=cbda)
                 safe_name = re.sub(r'[\\/:*?"<>|]+', "_", f"{staff.ma_can_bo} {staff.ho_ten}").strip()

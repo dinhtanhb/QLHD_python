@@ -85,3 +85,19 @@ def parse_decimal(value, default=Decimal("0")):
             return Decimal(text)
         except (InvalidOperation, ValueError, TypeError):
             return default
+
+
+def parse_get_int(value, *, min_value=1, max_value=2_147_483_647):
+    """Đọc tham số GET nguyên dương một cách an toàn; giá trị xấu -> None.
+
+    ``str.isdigit()`` chấp nhận cả chữ số Unicode như ``²`` (int() sẽ lỗi), còn
+    ``nam=0``/``nam=99999`` làm ``date()`` hoặc truy vấn năm bị lỗi 500. Hàm này
+    chỉ nhận chữ số ASCII và ép vào khoảng [min_value, max_value].
+    """
+    text = str(value if value is not None else "").strip()
+    if not text or not (text.isascii() and text.isdigit()):
+        return None
+    number = int(text)
+    if number < min_value or number > max_value:
+        return None
+    return number

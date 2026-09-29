@@ -1,30 +1,61 @@
-from collections import defaultdict
 from decimal import Decimal
 
-from django.db.models import Count, DecimalField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum
+from django.db.models import Case, Count, DecimalField, ExpressionWrapper, F, IntegerField, Min, OuterRef, Q, Subquery, Sum, Value, When
 
-from .models import ChiTietPhieuThanhToan, NhatKyThucHien
+from .models import ChiTietPhieuThanhToan, HopDong, NhatKyThucHien, NhomHD, PhanCongTre, Tre
+
+UNKNOWN_GROUP_LABEL = "Chưa xác định"
+_MONEY = DecimalField(max_digits=18, decimal_places=0)
 
 
 def _paid_subquery(field):
     return Subquery(
         ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=OuterRef("pk"), hoat_dong=True)
         .values("nhat_ky_id").annotate(total=Sum(field)).values("total")[:1],
-        output_field=DecimalField(max_digits=18, decimal_places=0),
+        output_field=_MONEY,
     )
 
 
+def effective_group_id_expression(prefix=""):
+    """Nhóm HĐ hiệu lực của nhật ký, đúng thứ tự ưu tiên của ``NhatKyThucHien.nhom_hd_hieu_luc``.
+
+    Nhóm nguồn (lịch sử) -> nhóm của hợp đồng -> nhóm của phân công -> nhóm của phân bổ.
+    Nhật ký có hợp đồng luôn lấy nhóm của hợp đồng (``HopDong.nhom_hd`` là bắt buộc).
+    """
+    return Case(
+        When(**{f"{prefix}nhom_hd_nguon_id__isnull": False}, then=F(f"{prefix}nhom_hd_nguon_id")),
+        When(**{f"{prefix}hop_dong_id__isnull": False}, then=F(f"{prefix}hop_dong__nhom_hd_id")),
+        When(**{f"{prefix}phan_cong__nhom_hd_id__isnull": False}, then=F(f"{prefix}phan_cong__nhom_hd_id")),
+        default=F(f"{prefix}phan_cong__phan_bo__nhom_hd_id"),
+        output_field=IntegerField(),
+    )
+
+
+def effective_staff_id_expression(prefix=""):
+    """CBCT hiệu lực, đúng thứ tự của ``NhatKyThucHien.can_bo_hieu_luc``."""
+    return Case(
+        When(**{f"{prefix}can_bo_nguon_id__isnull": False}, then=F(f"{prefix}can_bo_nguon_id")),
+        When(**{f"{prefix}hop_dong__can_bo_id__isnull": False}, then=F(f"{prefix}hop_dong__can_bo_id")),
+        default=F(f"{prefix}phan_cong__phan_bo__can_bo_id"),
+        output_field=IntegerField(),
+    )
+
+
+def labor_expression():
+    return ExpressionWrapper(F("so_buoi_thuc_hien") * F("don_gia_cong"), output_field=_MONEY)
+
+
+def travel_expression():
+    return ExpressionWrapper(F("so_luot_di_lai_cbct") * F("dinh_muc_di_lai"), output_field=_MONEY)
+
+
 def _annotated_journal_queryset():
-    labor = ExpressionWrapper(F("so_buoi_thuc_hien") * F("don_gia_cong"), output_field=DecimalField(max_digits=18, decimal_places=0))
-    travel = ExpressionWrapper(F("so_luot_di_lai_cbct") * F("dinh_muc_di_lai"), output_field=DecimalField(max_digits=18, decimal_places=0))
-    return NhatKyThucHien.objects.filter(hop_dong__isnull=False).select_related(
-        "hop_dong__can_bo__don_vi", "hop_dong__don_vi", "hop_dong__nhom_hd", "nhom_hd_nguon",
-        "can_bo_nguon__don_vi", "phan_cong__tre", "phan_cong__nhom_hd",
-        "phan_cong__phan_bo__can_bo__don_vi", "phan_cong__phan_bo__nhom_hd",
-    ).annotate(
-        tien_cong_tinh=labor, tien_di_lai_tinh=travel,
-        paid_tien_cong=_paid_subquery("tien_cong"), paid_tien_di_lai=_paid_subquery("tien_di_lai"),
-    ).order_by("ngay_thuc_hien", "id")
+    # Không select_related: báo cáo gom bằng GROUP BY ở CSDL, không dựng đối tượng Python.
+    return NhatKyThucHien.objects.filter(hop_dong__isnull=False).annotate(
+        nhom_hieu_luc_id=effective_group_id_expression(),
+        tien_cong_tinh=labor_expression(),
+        tien_di_lai_tinh=travel_expression(),
+    )
 
 
 def intervention_report_queryset(*, nhom_hd_id=None, hop_dong_id=None, ky=None, nam=None, tu_ngay=None, den_ngay=None):
@@ -32,12 +63,7 @@ def intervention_report_queryset(*, nhom_hd_id=None, hop_dong_id=None, ky=None, 
     if hop_dong_id:
         queryset = queryset.filter(hop_dong_id=hop_dong_id)
     if nhom_hd_id:
-        queryset = queryset.filter(
-            Q(nhom_hd_nguon_id=nhom_hd_id)
-            | Q(nhom_hd_nguon__isnull=True, hop_dong__nhom_hd_id=nhom_hd_id)
-            | Q(nhom_hd_nguon__isnull=True, hop_dong__nhom_hd__isnull=True, phan_cong__nhom_hd_id=nhom_hd_id)
-            | Q(nhom_hd_nguon__isnull=True, hop_dong__nhom_hd__isnull=True, phan_cong__nhom_hd__isnull=True, phan_cong__phan_bo__nhom_hd_id=nhom_hd_id)
-        )
+        queryset = queryset.filter(nhom_hieu_luc_id=nhom_hd_id)
     if ky:
         queryset = queryset.filter(ky_can_thiep=ky)
     if nam:
@@ -49,18 +75,8 @@ def intervention_report_queryset(*, nhom_hd_id=None, hop_dong_id=None, ky=None, 
     return queryset
 
 
-def _group_for(journal):
-    if journal.nhom_hd_nguon_id:
-        return journal.nhom_hd_nguon
-    if journal.hop_dong_id and journal.hop_dong.nhom_hd_id:
-        return journal.hop_dong.nhom_hd
-    if journal.phan_cong.nhom_hd_id:
-        return journal.phan_cong.nhom_hd
-    return journal.phan_cong.phan_bo.nhom_hd if journal.phan_cong.phan_bo_id else None
-
-
 def _group_label(group):
-    return f"{group.ma_nhom_hd} - {group.ten_nhom_hd}" if group else "Chưa xác định"
+    return f"{group.ma_nhom_hd} - {group.ten_nhom_hd}" if group else UNKNOWN_GROUP_LABEL
 
 
 def _amount(value):
@@ -68,7 +84,7 @@ def _amount(value):
 
 
 def _metrics(queryset):
-    values = queryset.aggregate(
+    values = queryset.order_by().aggregate(
         so_hop_dong=Count("hop_dong_id", distinct=True), so_nhat_ky=Count("pk"), so_buoi=Sum("so_buoi_thuc_hien"), di_lai=Sum("so_luot_di_lai_cbct"),
         tien_cong=Sum("tien_cong_tinh"), tien_di_lai=Sum("tien_di_lai_tinh"),
         # MySQL không cho tham chiếu alias của một Subquery trong SUM bên ngoài;
@@ -85,66 +101,115 @@ def _metrics(queryset):
     }
 
 
-def _new_contract_row(journal, group):
-    contract = journal.hop_dong
-    partner = contract.can_bo or contract.don_vi
-    if getattr(partner, "ma_can_bo", None):
-        partner_label = f"{partner.ma_can_bo} - {partner.ho_ten}"
-    elif partner:
-        partner_label = f"{partner.ma_don_vi} - {partner.ten_don_vi}"
-    else:
-        partner_label = "Chưa xác định"
+def _sum_measures(with_paid=False, with_conflict=False):
+    measures = {
+        "so_nhat_ky": Count("pk"),
+        "so_buoi": Sum("so_buoi_thuc_hien"),
+        "di_lai": Sum("so_luot_di_lai_cbct"),
+        "tien_cong": Sum("tien_cong_tinh"),
+        "tien_di_lai": Sum("tien_di_lai_tinh"),
+    }
+    if with_paid:
+        measures["paid_cong"] = Sum(_paid_subquery("tien_cong"))
+        measures["paid_di_lai"] = Sum(_paid_subquery("tien_di_lai"))
+    if with_conflict:
+        measures["trung_lich"] = Count("pk", filter=Q(canh_bao_trung=True))
+    return measures
+
+
+def _base_row(values):
     return {
-        "hop_dong_id": contract.pk, "so_hop_dong": contract.so_hop_dong, "doi_tac": partner_label,
-        "nhom": _group_label(group), "ngay_ky": contract.ngay_ky, "ky": journal.ky_can_thiep,
-        "so_nhat_ky": 0, "so_buoi": 0, "di_lai": 0,
-        "tien_cong": Decimal("0"), "tien_di_lai": Decimal("0"), "da_thanh_toan": Decimal("0"),
+        "so_nhat_ky": values["so_nhat_ky"] or 0, "so_buoi": values["so_buoi"] or 0, "di_lai": values["di_lai"] or 0,
+        "tien_cong": _amount(values["tien_cong"]), "tien_di_lai": _amount(values["tien_di_lai"]),
     }
 
 
+def _partner_label(contract):
+    partner = contract.can_bo or contract.don_vi
+    if getattr(partner, "ma_can_bo", None):
+        return f"{partner.ma_can_bo} - {partner.ho_ten}"
+    if partner:
+        return f"{partner.ma_don_vi} - {partner.ten_don_vi}"
+    return UNKNOWN_GROUP_LABEL
+
+
+def _contract_rows(queryset, groups):
+    rows = queryset.order_by().values("hop_dong_id", "ky_can_thiep", "nhom_hieu_luc_id").annotate(
+        first_date=Min("ngay_thuc_hien"), first_id=Min("pk"), **_sum_measures(with_paid=True),
+    )
+    contracts = {c.pk: c for c in HopDong.objects.filter(pk__in={r["hop_dong_id"] for r in rows}).select_related("can_bo", "don_vi")}
+    merged = {}
+    for values in rows:
+        key = (values["hop_dong_id"], values["ky_can_thiep"])
+        first_key = (values["first_date"] is not None, values["first_date"], values["first_id"])
+        entry = merged.get(key)
+        if entry is None:
+            contract = contracts[values["hop_dong_id"]]
+            entry = merged[key] = {
+                "hop_dong_id": contract.pk, "so_hop_dong": contract.so_hop_dong, "doi_tac": _partner_label(contract),
+                "ngay_ky": contract.ngay_ky, "ky": values["ky_can_thiep"], "nhom": None, "_first": None,
+                "so_nhat_ky": 0, "so_buoi": 0, "di_lai": 0,
+                "tien_cong": Decimal("0"), "tien_di_lai": Decimal("0"), "da_thanh_toan": Decimal("0"),
+            }
+        # Nhóm hiển thị của dòng hợp đồng × kỳ = nhóm của nhật ký sớm nhất (ngày, id).
+        if entry["_first"] is None or first_key < entry["_first"]:
+            entry["_first"], entry["nhom"] = first_key, _group_label(groups.get(values["nhom_hieu_luc_id"]))
+        base = _base_row(values)
+        for name in ("so_nhat_ky", "so_buoi", "di_lai", "tien_cong", "tien_di_lai"):
+            entry[name] += base[name]
+        entry["da_thanh_toan"] += _amount(values["paid_cong"]) + _amount(values["paid_di_lai"])
+    for entry in merged.values():
+        entry.pop("_first")
+    return sorted(merged.values(), key=lambda row: (row["so_hop_dong"], row["ky"]))
+
+
+def _group_rows(queryset, groups):
+    rows = queryset.order_by().values("nhom_hieu_luc_id", "ky_can_thiep").annotate(**_sum_measures(with_paid=True, with_conflict=True))
+    result, missing_group, conflict_count = [], 0, 0
+    for values in rows:
+        group = groups.get(values["nhom_hieu_luc_id"])
+        row = {"nhom": _group_label(group), "ky": values["ky_can_thiep"], **_base_row(values)}
+        row["da_thanh_toan"] = _amount(values["paid_cong"]) + _amount(values["paid_di_lai"])
+        result.append(row)
+        conflict_count += values["trung_lich"] or 0
+        if group is None:
+            missing_group += values["so_nhat_ky"] or 0
+    return sorted(result, key=lambda row: (row["nhom"], row["ky"])), missing_group, conflict_count
+
+
+def _child_rows(queryset, groups):
+    rows = list(queryset.order_by().values("phan_cong__tre_id", "phan_cong__loai_dich_vu", "nhom_hieu_luc_id", "ky_can_thiep").annotate(
+        so_buoi=Sum("so_buoi_thuc_hien"), di_lai=Sum("so_luot_di_lai_cbct"),
+        tien_cong=Sum("tien_cong_tinh"), tien_di_lai=Sum("tien_di_lai_tinh"),
+    ))
+    children = {c.pk: c for c in Tre.objects.filter(pk__in={r["phan_cong__tre_id"] for r in rows})}
+    service_names = dict(PhanCongTre._meta.get_field("loai_dich_vu").flatchoices)
+    result = []
+    for values in rows:
+        child = children[values["phan_cong__tre_id"]]
+        service = values["phan_cong__loai_dich_vu"]
+        result.append({
+            "ma_tre": child.ma_tre, "ho_ten": child.ho_ten, "dich_vu": service_names.get(service, service),
+            "nhom": _group_label(groups.get(values["nhom_hieu_luc_id"])), "ky": values["ky_can_thiep"],
+            "so_buoi": values["so_buoi"] or 0, "di_lai": values["di_lai"] or 0,
+            "tien_cong": _amount(values["tien_cong"]), "tien_di_lai": _amount(values["tien_di_lai"]),
+        })
+    return sorted(result, key=lambda row: (row["nhom"], row["ky"], row["ma_tre"], row["dich_vu"]))
+
+
 def build_intervention_report(queryset, *, year_queryset=None, since_signing_queryset=None, report_year=None):
-    """Tạo báo cáo thanh toán theo số HĐ, đồng thời giữ khóa dữ liệu cũ cho tương thích."""
-    journals = list(queryset)
-    by_contract, by_group, by_child = defaultdict(lambda: None), defaultdict(lambda: {
-        "nhom": "Chưa xác định", "ky": 0, "so_nhat_ky": 0, "so_buoi": 0, "di_lai": 0,
-        "tien_cong": Decimal("0"), "tien_di_lai": Decimal("0"), "da_thanh_toan": Decimal("0"),
-    }), defaultdict(lambda: {
-        "ma_tre": "", "ho_ten": "", "dich_vu": "", "nhom": "Chưa xác định", "ky": 0,
-        "so_buoi": 0, "di_lai": 0, "tien_cong": Decimal("0"), "tien_di_lai": Decimal("0"),
-    })
-    missing_group = conflict_count = 0
-    for journal in journals:
-        group = _group_for(journal)
-        group_code, group_name = (group.ma_nhom_hd if group else "?"), _group_label(group)
-        contract_key = (journal.hop_dong_id, journal.ky_can_thiep)
-        contract_row = by_contract[contract_key]
-        if contract_row is None:
-            contract_row = by_contract[contract_key] = _new_contract_row(journal, group)
-        group_row = by_group[(group_code, journal.ky_can_thiep)]
-        if not group_row["so_nhat_ky"]:
-            group_row["nhom"], group_row["ky"] = group_name, journal.ky_can_thiep
-        labor, travel = _amount(journal.tien_cong_tinh), _amount(journal.tien_di_lai_tinh)
-        paid = _amount(journal.paid_tien_cong) + _amount(journal.paid_tien_di_lai)
-        for row in (contract_row, group_row):
-            row["so_nhat_ky"] += 1; row["so_buoi"] += journal.so_buoi_thuc_hien or 0; row["di_lai"] += journal.so_luot_di_lai_cbct or 0
-            row["tien_cong"] += labor; row["tien_di_lai"] += travel; row["da_thanh_toan"] += paid
-        if not group:
-            missing_group += 1
-        if journal.canh_bao_trung:
-            conflict_count += 1
-        child = journal.phan_cong.tre
-        child_row = by_child[(child.pk, journal.phan_cong.loai_dich_vu, group_code, journal.ky_can_thiep)]
-        child_row.update({"ma_tre": child.ma_tre, "ho_ten": child.ho_ten, "dich_vu": journal.phan_cong.get_loai_dich_vu_display(), "nhom": group_name, "ky": journal.ky_can_thiep})
-        child_row["so_buoi"] += journal.so_buoi_thuc_hien or 0; child_row["di_lai"] += journal.so_luot_di_lai_cbct or 0
-        child_row["tien_cong"] += labor; child_row["tien_di_lai"] += travel
+    """Tạo báo cáo thanh toán theo số HĐ; toàn bộ phép gom chạy bằng GROUP BY ở CSDL."""
+    group_ids = set(queryset.order_by().values_list("nhom_hieu_luc_id", flat=True).distinct())
+    groups = {g.pk: g for g in NhomHD.objects.filter(pk__in={g for g in group_ids if g})}
+    group_rows, missing_group, conflict_count = _group_rows(queryset, groups)
     summary = _metrics(queryset)
     summary.update({"thieu_nhom": missing_group, "trung_lich": conflict_count})
     year_metrics = _metrics(year_queryset) if year_queryset is not None else summary.copy()
     signing_metrics = _metrics(since_signing_queryset) if since_signing_queryset is not None else summary.copy()
     return {
-        "contracts": sorted(by_contract.values(), key=lambda row: (row["so_hop_dong"], row["ky"])),
-        "groups": sorted(by_group.values(), key=lambda row: (row["nhom"], row["ky"])),
-        "children": sorted(by_child.values(), key=lambda row: (row["nhom"], row["ky"], row["ma_tre"], row["dich_vu"])),
+        "contracts": _contract_rows(queryset, groups),
+        "groups": group_rows,
+        "children": _child_rows(queryset, groups),
         "summary": summary, "year_cumulative": year_metrics, "since_signing": signing_metrics, "report_year": report_year,
     }
 

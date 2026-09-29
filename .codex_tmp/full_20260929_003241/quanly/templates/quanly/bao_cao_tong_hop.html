@@ -1,0 +1,30 @@
+{% extends 'quanly/base.html' %}
+{% load number_format %}
+{% block title %}Báo cáo tổng hợp{% endblock %}
+{% block content %}
+<div class="container-fluid bg-white shadow p-4 rounded">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div><h2 class="text-primary mb-1">Báo cáo tổng hợp can thiệp</h2><p class="text-muted mb-0">Đối chiếu nhật ký, kinh phí và phiếu thanh toán CBCT.</p></div>
+    <a class="btn btn-outline-success" href="?nhom_hd={{ filters.nhom_hd }}&ky={{ filters.ky }}&tu_ngay={{ filters.tu_ngay }}&den_ngay={{ filters.den_ngay }}&format=xlsx">Xuất Excel</a>
+  </div>
+  {% if date_error %}<div class="alert alert-danger">{{ date_error }}</div>{% endif %}
+  <form method="get" class="row g-2 align-items-end mb-4">
+    <div class="col-lg-3"><label class="form-label">Nhóm HĐ</label><select name="nhom_hd" class="form-select"><option value="">Tất cả</option>{% for item in nhom_list %}<option value="{{ item.pk }}" {% if filters.nhom_hd == item.pk|stringformat:'s' %}selected{% endif %}>{{ item.ma_nhom_hd }} - {{ item.ten_nhom_hd }}</option>{% endfor %}</select></div>
+    <div class="col-lg-2"><label class="form-label">Kỳ</label><select name="ky" class="form-select"><option value="">Tất cả</option>{% for item in ky_choices %}<option value="{{ item }}" {% if filters.ky == item|stringformat:'s' %}selected{% endif %}>Kỳ {{ item }}</option>{% endfor %}</select></div>
+    <div class="col-lg-2"><label class="form-label">Từ ngày</label><input type="date" name="tu_ngay" value="{{ filters.tu_ngay }}" class="form-control"></div>
+    <div class="col-lg-2"><label class="form-label">Đến ngày</label><input type="date" name="den_ngay" value="{{ filters.den_ngay }}" class="form-control"></div>
+    <div class="col-lg-2 d-flex gap-1"><button class="btn btn-primary">Lọc</button><a class="btn btn-outline-secondary" href="{% url 'bao_cao_tong_hop' %}">Xóa lọc</a></div>
+  </form>
+  <div class="row row-cols-2 row-cols-lg-4 g-3 mb-4">
+    <div class="col"><div class="card border-primary h-100"><div class="card-body"><div class="small text-muted">Số nhật ký</div><div class="fs-3 fw-bold text-primary">{{ report.summary.so_nhat_ky|vn_number }}</div></div></div></div>
+    <div class="col"><div class="card border-success h-100"><div class="card-body"><div class="small text-muted">Số buổi</div><div class="fs-3 fw-bold text-success">{{ report.summary.so_buoi|vn_number }}</div></div></div></div>
+    <div class="col"><div class="card border-warning h-100"><div class="card-body"><div class="small text-muted">Tổng trước thuế</div><div class="fs-5 fw-bold text-warning">{{ report.summary.tong_gross|vn_number }} đ</div></div></div></div>
+    <div class="col"><div class="card border-info h-100"><div class="card-body"><div class="small text-muted">Đã thanh toán theo sổ mới</div><div class="fs-5 fw-bold text-info">{{ report.summary.da_thanh_toan|vn_number }} đ</div></div></div></div>
+  </div>
+  <div class="alert alert-secondary small">Nhật ký trùng lịch: <strong>{{ report.summary.trung_lich|vn_number }}</strong> · Nhật ký thiếu nhóm hiệu lực: <strong>{{ report.summary.thieu_nhom|vn_number }}</strong>. Báo cáo không tự sửa dữ liệu.</div>
+  <h5 class="mt-4">Tổng hợp theo Nhóm HĐ và Kỳ</h5>
+  <div class="table-responsive"><table class="table table-bordered table-hover align-middle"><thead class="table-light"><tr><th>Nhóm HĐ</th><th>Kỳ</th><th>Nhật ký</th><th>Buổi</th><th>Đi lại</th><th>Tiền công</th><th>Đi lại</th><th>Đã thanh toán</th></tr></thead><tbody>{% for row in report.groups %}<tr><td>{{ row.nhom }}</td><td>{{ row.ky }}</td><td>{{ row.so_nhat_ky|vn_number }}</td><td>{{ row.so_buoi|vn_number }}</td><td>{{ row.di_lai|vn_number }}</td><td>{{ row.tien_cong|vn_number }} đ</td><td>{{ row.tien_di_lai|vn_number }} đ</td><td>{{ row.da_thanh_toan|vn_number }} đ</td></tr>{% empty %}<tr><td colspan="8" class="text-center text-muted">Không có dữ liệu.</td></tr>{% endfor %}</tbody></table></div>
+  <h5 class="mt-4">Chi tiết theo trẻ và dịch vụ</h5>
+  <div class="table-responsive"><table class="table table-bordered table-hover align-middle"><thead class="table-light"><tr><th>Mã trẻ</th><th>Họ tên</th><th>Dịch vụ</th><th>Nhóm HĐ</th><th>Kỳ</th><th>Buổi</th><th>Đi lại</th><th>Tiền công</th><th>Tiền đi lại</th></tr></thead><tbody>{% for row in report.children %}<tr><td>{{ row.ma_tre }}</td><td>{{ row.ho_ten }}</td><td>{{ row.dich_vu }}</td><td>{{ row.nhom }}</td><td>{{ row.ky }}</td><td>{{ row.so_buoi|vn_number }}</td><td>{{ row.di_lai|vn_number }}</td><td>{{ row.tien_cong|vn_number }} đ</td><td>{{ row.tien_di_lai|vn_number }} đ</td></tr>{% empty %}<tr><td colspan="9" class="text-center text-muted">Không có dữ liệu.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

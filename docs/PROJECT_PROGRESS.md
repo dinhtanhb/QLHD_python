@@ -309,3 +309,29 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - `_journal_export_queryset` của Thanh quyết toán bỏ `prefetch_related` cho FK đơn trị, nạp quan hệ bằng `select_related` và duyệt theo batch để hạn chế N+1 và bộ nhớ.
 - Đã bổ sung test lọc theo Số HĐ, tổng lũy kế và route mới; SQLite đạt 63/63 và MySQL UAT sạch `qlhd_codex_uat_20260929_c` đạt 63/63. Lần chạy MySQL đầu phát hiện lỗi alias Subquery không tương thích, đã sửa bằng biểu thức subquery trực tiếp và chạy lại đạt.
 - Rủi ro còn lại: màn hình vẫn hiển thị toàn bộ dòng chi tiết trẻ/dịch vụ của phạm vi lọc; nếu dữ liệu tăng rất lớn cần bổ sung phân trang hoặc endpoint tải chi tiết riêng.
+
+
+## Rà soát hiệu năng/số liệu Báo cáo – Thanh quyết toán – Phiếu (29/09/2026)
+
+Nguồn: bản review `Review_QLHD_Claude.md`. Các bản vá ghi trong review chưa nằm trong mã nguồn bàn giao nên được áp dụng lại và bổ sung kiểm thử trong đợt này.
+
+**Đã sửa**
+- `quanly/reporting.py`: viết lại bằng `GROUP BY` ở CSDL (hợp đồng×kỳ, nhóm×kỳ, trẻ×dịch vụ, tổng hợp); không còn `list(queryset)`. Nhóm HĐ hiệu lực tính bằng biểu thức `Case/When` đúng thứ tự của `NhatKyThucHien.nhom_hd_hieu_luc` (nguồn → hợp đồng → phân công → phân bổ); bỏ các nhánh `hop_dong__nhom_hd__isnull` là mã chết vì `HopDong.nhom_hd` bắt buộc.
+- `views.thanh_quyet_toan`: gom bằng `GROUP BY`; thuế TNCN đọc từ `CauHinhThue` hiệu lực (`lay_cau_hinh_thue`) thay cho hằng số 5.000.000/10%; bộ lọc Nhóm HĐ dùng nhóm hiệu lực nên khớp Báo cáo.
+- `views._journal_export_queryset` và danh sách nhật ký: bộ lọc Nhóm HĐ và CBCT dùng nhóm/CBCT hiệu lực (trước đây bỏ qua tầng hợp đồng).
+- `services/payment_ledger.huy_phieu`: chỉ tính phiếu còn hiệu lực khi xác định "lần thanh toán mới nhất".
+- `import_phan_bo`/`confirm_import_phan_bo`: chuyển `date`/`Decimal` sang chuỗi trước khi lưu session (session dùng `JSONSerializer`), đọc lại khi xác nhận.
+- Tham số GET xấu (`nam=0`, `nam=99999`, `²`, số quá lớn): thêm `parsing.parse_get_int` và `views._is_id`, giá trị không hợp lệ bị bỏ qua thay vì lỗi 500.
+- N+1 khi xuất DSTK/ĐNTT: `snapshot_journals` nạp trước các quan hệ; `_eligible_journals` bỏ `.exists()` lặp và `kiem_tra_dieu_kien` không còn truy vấn ngầm qua đối số mặc định của `getattr`.
+
+**Kiểm thử**
+- `manage.py check` và `makemigrations --check --dry-run` đạt; SQLite `manage.py test quanly.tests`: **89/89** (63 test cũ + 26 test mới).
+- Test mới chạy trên mã cũ thất bại ở các lỗi đã sửa (TQT lọc nhóm/CBCT, thuế theo cấu hình, hủy phiếu, import phân bổ, tham số GET, N+1), còn hai test đối chiếu số liệu báo cáo đạt trên cả mã cũ lẫn mã mới.
+- Đo trên SQLite với 8.000 nhật ký: Báo cáo 2,21 s → 0,50 s; Thanh quyết toán 1,38 s → 0,07 s.
+
+**Rủi ro/việc còn lại**
+- Chưa chạy trên MySQL UAT; cần chạy lại bộ test và so sánh Báo cáo/TQT trước khi triển khai.
+- Chưa xử lý: phiếu bổ sung khi phát sinh nhật ký mới (ràng buộc `uq_phieu_cb_hd_ky_active`, cần quyết định nghiệp vụ); khóa `select_for_update` cho `xac_nhan_chi`/`huy_phieu` khi hai kế toán thao tác đồng thời; cách tính thuế "vượt ngưỡng thì tính trên toàn bộ tiền công" cần người có chuyên môn xác nhận.
+- TQT tính thuế theo CBCT gộp nhiều hợp đồng trong cùng Nhóm×Kỳ, còn phiếu tính theo từng hợp đồng nên hai nơi có thể lệch khi một CBCT có nhiều hợp đồng; cần chốt quy tắc.
+- `resolve_contract_group` và `assignment_import` còn dùng `str.isdigit()` cho ô Excel (không phải tham số GET).
+- Chưa commit/push.

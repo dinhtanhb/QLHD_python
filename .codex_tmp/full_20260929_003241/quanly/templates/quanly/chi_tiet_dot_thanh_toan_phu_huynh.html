@@ -1,0 +1,130 @@
+{% extends 'quanly/base.html' %}
+{% load number_format %}
+
+{% block title %}Thanh toán đi lại phụ huynh{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card shadow">
+    <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">Đi lại phụ huynh {% if dot.hop_dong_id %}{{ dot.hop_dong.so_hop_dong }}{% else %}{{ dot.nhom_hd.ma_nhom_hd }} - {{ dot.nhom_hd.ten_nhom_hd }} · Kỳ {{ dot.ky_can_thiep }}{% endif %} - {{ dot.thang }}/{{ dot.nam }}</h5>
+      <span>Chọn đúng bộ hồ sơ theo từng nhóm</span>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-light border small">
+        <strong>NCS</strong>: phụ huynh/người chăm sóc có tài khoản ngân hàng;
+        <strong>CG</strong>: ca can thiệp bởi chuyên gia, phụ huynh có tài khoản ngân hàng;
+        <strong>CBDA</strong>: phụ huynh không có tài khoản, CBDA ký nhận thủ công.
+        Hệ thống lấy hình thức CT từ phân công; không lặp thêm cột này trong nhật ký.
+      </div>
+
+      <div class="row g-2 align-items-end mb-3">
+        <div class="col-md-5">
+          <label class="form-label fw-semibold" for="cbda-requester">CBDA - người đề nghị</label>
+          <select class="form-select" id="cbda-requester">
+            {% for item in cbda_list %}
+              <option value="{{ item.pk }}" {% if selected_cbda and item.pk == selected_cbda.pk %}selected{% endif %}>{{ item.ma_can_bo }} - {{ item.ho_ten }}</option>
+            {% empty %}
+              <option value="">Chưa có danh sách CBDA (mã AVH)</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-7 small text-muted">Tên này được ghi vào vị trí Người đề nghị/Cán bộ dự án trong mẫu khi file có vị trí tương ứng.</div>
+      </div>
+
+      <form method="post" action="{% url 'cap_nhat_thoi_gian_thanh_toan_di_lai_phu_huynh' dot.pk %}" class="row g-2 align-items-end border rounded p-3 mb-3 bg-light">
+        {% csrf_token %}
+        <div class="col-md-3">
+          <label class="form-label fw-semibold" for="id_tu_ngay">Từ ngày</label>
+          <input type="date" class="form-control" id="id_tu_ngay" name="tu_ngay" value="{% if dot.tu_ngay %}{{ dot.tu_ngay|date:'Y-m-d' }}{% endif %}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold" for="id_den_ngay">Đến ngày</label>
+          <input type="date" class="form-control" id="id_den_ngay" name="den_ngay" value="{% if dot.den_ngay %}{{ dot.den_ngay|date:'Y-m-d' }}{% endif %}">
+        </div>
+        <div class="col-md-3">
+          <button class="btn btn-outline-primary" type="submit">Lưu thời gian hồ sơ</button>
+        </div>
+        <div class="col-md-3 small text-muted">Khoảng ngày chỉ ghi trên các mẫu xuất, không lọc lại nhật ký đã gom.</div>
+      </form>
+
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <span class="badge text-bg-primary">NCS: {{ category_counts.NCS|default:0 }}</span>
+        <span class="badge text-bg-success">CG: {{ category_counts.CG|default:0 }}</span>
+        <span class="badge text-bg-warning">CBDA: {{ category_counts.CBDA|default:0 }}</span>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Trẻ</th>
+              <th>Hồ sơ</th>
+              <th>Phụ huynh</th>
+              <th>Tên tài khoản</th>
+              <th>Số tài khoản</th>
+              <th>Ngân hàng</th>
+              <th>Số lượt</th>
+              <th>Định mức</th>
+              <th>Thành tiền</th>
+              {% if is_admin %}<th>Thao tác</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in chi_tiet %}
+            <tr>
+              <td>{{ item.nhat_ky.phan_cong.tre.ma_tre }}<br>{{ item.nhat_ky.phan_cong.tre.ho_ten }}</td>
+              <td>
+                {% if item.parent_travel_category == 'CG' %}
+                  <span class="badge text-bg-success">CG</span>
+                {% elif item.parent_travel_category == 'CBDA' %}
+                  <span class="badge text-bg-warning">CBDA</span>
+                {% else %}
+                  <span class="badge text-bg-primary">NCS</span>
+                {% endif %}
+              </td>
+              <td>{{ item.nguoi_nhan }}<br><small>{{ item.nhat_ky.phan_cong.tre.dien_thoai }}</small></td>
+              <td>{{ item.ten_tai_khoan }}</td>
+              <td>{{ item.tai_khoan }}</td>
+              <td>{{ item.ngan_hang }}<br><small>{{ item.chi_nhanh }}</small></td>
+              <td>{{ item.so_luot_di_lai|vn_number }}</td>
+              <td>{{ item.dinh_muc_di_lai|vn_number }}</td>
+              <td>{{ item.thanh_tien|vn_number }}</td>
+              {% if is_admin %}<td><a href="{% url 'sua_chi_tiet_thanh_toan_phu_huynh' item.pk %}" class="btn btn-sm btn-warning">Sửa</a> <form method="post" action="{% url 'xoa_chi_tiet_thanh_toan_phu_huynh' item.pk %}" class="d-inline" onsubmit="return confirm('Xác nhận xóa chi tiết thanh toán?');">{% csrf_token %}<button class="btn btn-sm btn-danger">Xóa</button></form></td>{% endif %}
+            </tr>
+            {% empty %}
+            <tr><td colspan="{% if is_admin %}10{% else %}9{% endif %}" class="text-center text-muted">Chưa có chi tiết.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <a class="btn btn-primary" href="{% url 'them_chi_tiet_thanh_toan_phu_huynh' dot.pk %}">Thêm chi tiết</a>
+        {% if is_admin %}<a class="btn btn-warning" href="{% url 'sua_dot_thanh_toan_phu_huynh' dot.pk %}">Sửa đợt</a><form method="post" action="{% url 'xoa_dot_thanh_toan_phu_huynh' dot.pk %}" onsubmit="return confirm('Chỉ xóa được khi chưa có chi tiết. Xác nhận?');">{% csrf_token %}<button class="btn btn-danger">Xóa đợt</button></form>{% endif %}
+        <a class="btn btn-success parent-export" href="{% url 'xuat_dntt_di_lai_phu_huynh' dot.pk %}?nhom=NCS">DNTT_NCS</a>
+        <a class="btn btn-success parent-export" href="{% url 'xuat_dntt_di_lai_phu_huynh' dot.pk %}?nhom=CG">DNTT_CG</a>
+        <a class="btn btn-warning parent-export" href="{% url 'xuat_dntt_di_lai_phu_huynh' dot.pk %}?nhom=CBDA">DNTT_CBDA</a>
+        <a class="btn btn-outline-success parent-export" href="{% url 'xuat_dstk_di_lai_phu_huynh' dot.pk %}?nhom=NCS">DSTK_NCS</a>
+        <a class="btn btn-outline-success parent-export" href="{% url 'xuat_dstk_di_lai_phu_huynh' dot.pk %}?nhom=CG">DSTK_CG</a>
+        <a class="btn btn-outline-secondary parent-export" href="{% url 'xuat_dnck_di_lai_phu_huynh' dot.pk %}?nhom=NCS">DNCK_NCS</a>
+        <a class="btn btn-outline-secondary parent-export" href="{% url 'xuat_dnck_di_lai_phu_huynh' dot.pk %}?nhom=CG">DNCK_CG</a>
+        {% if dot.hop_dong_id %}<a class="btn btn-outline-secondary" href="{% url 'chi_tiet_hop_dong' dot.hop_dong.pk %}">Về hợp đồng</a>{% else %}<a class="btn btn-outline-secondary" href="{% url 'danh_sach_thanh_toan_di_lai_phu_huynh' %}">Về danh sách TQT đi lại</a>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const requester = document.getElementById("cbda-requester");
+    document.querySelectorAll(".parent-export").forEach(function (link) {
+      link.addEventListener("click", function () {
+        if (!requester || !requester.value) return;
+        const url = new URL(link.href, window.location.origin);
+        url.searchParams.set("cbda", requester.value);
+        link.href = url.toString();
+      });
+    });
+  });
+</script>
+{% endblock %}

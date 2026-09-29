@@ -1,0 +1,8 @@
+{% extends 'quanly/base.html' %}
+{% block title %}Tạo hợp đồng chính thức{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4"><div class="card shadow"><div class="card-header bg-success text-white"><h5 class="mb-0">Tạo Hợp đồng chính thức từ Đề xuất #{{ de_xuat.pk }}</h5></div><div class="card-body">
+<div class="alert alert-info">CBCT: <strong>{{ de_xuat.phan_bo.can_bo }}</strong> | Nhóm: <strong>{{ de_xuat.phan_bo.nhom_hd }}</strong>. Khi lưu, hệ thống đồng thời tạo khối lượng hợp đồng và snapshot Phụ lục phân công Kỳ 1.</div>
+<form method="post">{% csrf_token %}{% for field in form %}<div class="mb-3"><label class="form-label fw-bold">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}<a href="{% url 'danh_sach_de_xuat' %}" class="btn btn-secondary">Hủy</a> <button class="btn btn-success">Tạo Hợp đồng</button></form>
+</div></div></div>
+{% endblock %}

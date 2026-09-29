@@ -1181,3 +1181,505 @@ class DatabaseRegressionTests(TestCase):
         )
         journal.save(recalculate_travel=False)
         self.assertEqual(journal.thanh_tien, Decimal("450"))
+
+
+
+# =============================================================================
+# Hồi quy cho đợt rà soát 29/09/2026: báo cáo GROUP BY, Thanh quyết toán,
+# hủy phiếu, import phân bổ (session JSON) và tham số GET xấu.
+# =============================================================================
+from django.db import connection
+from django.db.models import F
+from django.test.utils import CaptureQueriesContext
+
+from .parsing import parse_get_int
+from .reporting import build_intervention_report, intervention_report_queryset
+from .services.payment_ledger import lay_cau_hinh_thue
+
+
+class ParseGetIntTests(SimpleTestCase):
+    def test_accepts_plain_ascii_digits_only(self):
+        self.assertEqual(parse_get_int("12"), 12)
+        self.assertEqual(parse_get_int(" 7 "), 7)
+        for bad in ("", None, "abc", "1.5", "-3", "²", "١٢", "0", "１２"):
+            with self.subTest(value=bad):
+                self.assertIsNone(parse_get_int(bad))
+
+    def test_bounds_are_enforced(self):
+        self.assertIsNone(parse_get_int("0", min_value=1900, max_value=2100))
+        self.assertIsNone(parse_get_int("99999", min_value=1900, max_value=2100))
+        self.assertEqual(parse_get_int("2026", min_value=1900, max_value=2100), 2026)
+        self.assertIsNone(parse_get_int("9" * 40))
+
+
+class SettlementReportingTestBase(TestCase):
+    """Bộ dữ liệu có đủ các tầng nhóm/CBCT để đối chiếu GROUP BY với thuộc tính của model."""
+
+    def setUp(self):
+        self.admin_group = Group.objects.create(name="Admin")
+        self.admin = User.objects.create_user(username="rpt-admin", password="secret")
+        self.admin.groups.add(self.admin_group)
+        self.don_vi = DonVi.objects.create(ma_don_vi="DV-RPT", ten_don_vi="Đơn vị báo cáo", nguoi_dai_dien="Người test")
+        self.cb1 = CanBo.objects.create(ma_can_bo="RPT0001", ho_ten="CB Một", don_vi=self.don_vi)
+        self.cb2 = CanBo.objects.create(ma_can_bo="RPT0002", ho_ten="CB Hai", don_vi=self.don_vi)
+        self.g1 = NhomHD.objects.create(ma_nhom_hd="1", ten_nhom_hd="Nhóm 1")
+        self.g12 = NhomHD.objects.create(ma_nhom_hd="12", ten_nhom_hd="Nhóm 12")
+        self.child1 = Tre.objects.create(ma_tre="RPT-T1", ho_ten="Trẻ 1", ngay_sinh=date(2015, 1, 1), gioi_tinh="Nam")
+        self.child2 = Tre.objects.create(ma_tre="RPT-T2", ho_ten="Trẻ 2", ngay_sinh=date(2016, 2, 2), gioi_tinh="Nữ")
+        self.alloc1 = PhanBoChiTieu.objects.create(can_bo=self.cb1, nhom_hd=self.g1, so_tre_phcn=2, so_buoi_phcn=50)
+        self.alloc2 = PhanBoChiTieu.objects.create(can_bo=self.cb2, nhom_hd=self.g12, so_tre_phcn=2, so_buoi_phcn=50)
+
+    # -- helpers ---------------------------------------------------------
+    def _assignment(self, alloc, child, service="VLTL", nhom=None):
+        return PhanCongTre.objects.create(
+            phan_bo=alloc, can_bo_nguon=alloc.can_bo, nhom_hd=nhom, tre=child, loai_dich_vu=service,
+            so_buoi_du_kien=500, dinh_muc_di_lai=Decimal("50000"),
+        )
+
+    def _contract(self, so, can_bo, nhom, value="1000000000", status="DA_KY"):
+        return HopDong.objects.create(
+            can_bo=can_bo, nhom_hd=nhom, so_hop_dong=so, ngay_ky=date(2026, 8, 1),
+            tu_ngay=date(2026, 8, 1), den_ngay=date(2026, 12, 31),
+            gia_tri_hop_dong=Decimal(value), trang_thai=status,
+        )
+
+    def _journal(self, contract, assignment, day, ky=1, buoi=1, di_lai=0, cong="200000", dm="50000", **extra):
+        journal = NhatKyThucHien(
+            hop_dong=contract, phan_cong=assignment, ngay_thuc_hien=day, ky_can_thiep=ky,
+            so_buoi_thuc_hien=buoi, so_luot_di_lai_cbct=di_lai,
+            don_gia_cong=Decimal(cong), dinh_muc_di_lai=Decimal(dm), du_lieu_lich_su=True, **extra,
+        )
+        journal.save(recalculate_travel=False)
+        return journal
+
+    def _scenario(self):
+        """Hợp đồng nhóm 12 nhưng phân công nhóm 1 (ca gây lỗi #2), nhóm nguồn lịch sử và nhật ký không hợp đồng."""
+        self.a1 = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        self.a3 = self._assignment(self.alloc1, self.child1, "HDTL", nhom=self.g1)
+        self.a2 = self._assignment(self.alloc2, self.child2, "CSXH")
+        self.cA = self._contract("HD-A", self.cb1, self.g12)
+        self.cB = self._contract("HD-B", self.cb2, self.g1)
+        self.j1 = self._journal(self.cA, self.a1, date(2026, 9, 10), ky=1, buoi=2, di_lai=1)
+        self.j2 = self._journal(self.cA, self.a1, date(2026, 9, 11), ky=1, buoi=3)
+        self.j3 = self._journal(self.cA, self.a3, date(2026, 9, 12), ky=2, buoi=1, di_lai=1)
+        self.j4 = self._journal(self.cB, self.a2, date(2026, 9, 10), ky=1, buoi=4, di_lai=2)
+        self.j5 = self._journal(self.cB, self.a2, date(2026, 9, 9), ky=1, buoi=1, nhom_hd_nguon=self.g12)
+        self.j6 = self._journal(None, self.a2, date(2026, 9, 13), ky=1, buoi=5)
+        NhatKyThucHien.objects.filter(pk=self.j4.pk).update(canh_bao_trung=True)
+
+    def _all_journals(self):
+        return list(NhatKyThucHien.objects.select_related(
+            "hop_dong__can_bo", "hop_dong__nhom_hd", "nhom_hd_nguon", "can_bo_nguon", "phan_cong__tre",
+            "phan_cong__nhom_hd", "phan_cong__phan_bo__can_bo", "phan_cong__phan_bo__nhom_hd",
+        ).order_by("ngay_thuc_hien", "id"))
+
+    @staticmethod
+    def _label(group):
+        return f"{group.ma_nhom_hd} - {group.ten_nhom_hd}" if group else "Chưa xác định"
+
+    @staticmethod
+    def _paid(journal):
+        total = Decimal("0")
+        for detail in journal.chi_tiet_phieu_thanh_toan.filter(hoat_dong=True):
+            total += detail.tien_cong + detail.tien_di_lai
+        return total
+
+
+class InterventionReportEquivalenceTests(SettlementReportingTestBase):
+    """Báo cáo GROUP BY phải khớp tuyệt đối với cách tính từng nhật ký qua thuộc tính model."""
+
+    def _reference(self):
+        contracts, groups, children = {}, {}, {}
+        summary = {"contracts": set(), "so_nhat_ky": 0, "so_buoi": 0, "di_lai": 0, "tien_cong": Decimal("0"),
+                   "tien_di_lai": Decimal("0"), "da_thanh_toan": Decimal("0"), "thieu_nhom": 0, "trung_lich": 0}
+
+        def bucket(store, key, **initial):
+            return store.setdefault(key, {"so_nhat_ky": 0, "so_buoi": 0, "di_lai": 0, "tien_cong": Decimal("0"),
+                                          "tien_di_lai": Decimal("0"), "da_thanh_toan": Decimal("0"), **initial})
+
+        for j in self._all_journals():
+            if not j.hop_dong_id:
+                continue
+            group = j.nhom_hd_hieu_luc
+            labor = Decimal(j.so_buoi_thuc_hien) * j.don_gia_cong
+            travel = Decimal(j.so_luot_di_lai_cbct) * j.dinh_muc_di_lai
+            paid = self._paid(j)
+            service = j.phan_cong.get_loai_dich_vu_display()
+            rows = (
+                bucket(contracts, (j.hop_dong.so_hop_dong, j.ky_can_thiep), nhom=self._label(group)),
+                bucket(groups, (self._label(group), j.ky_can_thiep)),
+                bucket(children, (j.phan_cong.tre.ma_tre, service, self._label(group), j.ky_can_thiep)),
+            )
+            for index, row in enumerate(rows):
+                row["so_nhat_ky"] += 1
+                row["so_buoi"] += j.so_buoi_thuc_hien
+                row["di_lai"] += j.so_luot_di_lai_cbct
+                row["tien_cong"] += labor
+                row["tien_di_lai"] += travel
+                if index < 2:
+                    row["da_thanh_toan"] += paid
+            summary["contracts"].add(j.hop_dong_id)
+            summary["so_nhat_ky"] += 1
+            summary["so_buoi"] += j.so_buoi_thuc_hien
+            summary["di_lai"] += j.so_luot_di_lai_cbct
+            summary["tien_cong"] += labor
+            summary["tien_di_lai"] += travel
+            summary["da_thanh_toan"] += paid
+            summary["thieu_nhom"] += 0 if group else 1
+            summary["trung_lich"] += 1 if j.canh_bao_trung else 0
+        return contracts, groups, children, summary
+
+    def test_report_matches_model_based_reference_at_every_level(self):
+        self._scenario()
+        # Lập phiếu cho HD-A kỳ 1 để có số "đã thanh toán".
+        tao_phieu_thanh_toan(self.cb1, self.cA, 1)
+        contracts, groups, children, summary = self._reference()
+
+        report = build_intervention_report(intervention_report_queryset())
+
+        got_contracts = {(r["so_hop_dong"], r["ky"]): r for r in report["contracts"]}
+        self.assertEqual(set(got_contracts), set(contracts))
+        for key, expected in contracts.items():
+            row = got_contracts[key]
+            for field in ("nhom", "so_nhat_ky", "so_buoi", "di_lai", "tien_cong", "tien_di_lai", "da_thanh_toan"):
+                self.assertEqual(row[field], expected[field], f"contract {key} field {field}")
+
+        got_groups = {(r["nhom"], r["ky"]): r for r in report["groups"]}
+        self.assertEqual(set(got_groups), set(groups))
+        for key, expected in groups.items():
+            for field in ("so_nhat_ky", "so_buoi", "di_lai", "tien_cong", "tien_di_lai", "da_thanh_toan"):
+                self.assertEqual(got_groups[key][field], expected[field], f"group {key} field {field}")
+
+        got_children = {(r["ma_tre"], r["dich_vu"], r["nhom"], r["ky"]): r for r in report["children"]}
+        self.assertEqual(set(got_children), set(children))
+        for key, expected in children.items():
+            for field in ("so_buoi", "di_lai", "tien_cong", "tien_di_lai"):
+                self.assertEqual(got_children[key][field], expected[field], f"child {key} field {field}")
+
+        s = report["summary"]
+        self.assertEqual(s["so_hop_dong"], len(summary["contracts"]))
+        for field in ("so_nhat_ky", "so_buoi", "di_lai", "tien_cong", "tien_di_lai", "da_thanh_toan", "thieu_nhom", "trung_lich"):
+            self.assertEqual(s[field], summary[field], field)
+        self.assertEqual(s["tong_gross"], summary["tien_cong"] + summary["tien_di_lai"])
+        self.assertGreater(s["da_thanh_toan"], 0)
+
+    def test_contract_row_uses_group_of_earliest_journal(self):
+        self._scenario()
+        row = next(r for r in build_intervention_report(intervention_report_queryset())["contracts"]
+                   if r["so_hop_dong"] == "HD-B" and r["ky"] == 1)
+        # j5 (09-09, nhóm nguồn 12) sớm hơn j4 (09-10, nhóm hợp đồng 1).
+        self.assertEqual(row["nhom"], "12 - Nhóm 12")
+        self.assertEqual(row["so_nhat_ky"], 2)
+
+    def test_group_filter_follows_effective_group_priority(self):
+        self._scenario()
+        in_g12 = intervention_report_queryset(nhom_hd_id=self.g12.pk)
+        in_g1 = intervention_report_queryset(nhom_hd_id=self.g1.pk)
+        # j1-j3: hợp đồng nhóm 12 dù phân công nhóm 1; j5: nhóm nguồn 12; j4: hợp đồng nhóm 1.
+        self.assertEqual(set(in_g12.values_list("pk", flat=True)), {self.j1.pk, self.j2.pk, self.j3.pk, self.j5.pk})
+        self.assertEqual(set(in_g1.values_list("pk", flat=True)), {self.j4.pk})
+
+    def test_year_and_signing_cumulatives_are_computed(self):
+        self._scenario()
+        report = build_intervention_report(
+            intervention_report_queryset(nam=2026),
+            year_queryset=intervention_report_queryset(tu_ngay=date(2026, 1, 1), den_ngay=date(2026, 12, 31)),
+            since_signing_queryset=intervention_report_queryset().filter(ngay_thuc_hien__gte=F("hop_dong__ngay_ky")),
+            report_year=2026,
+        )
+        self.assertEqual(report["summary"]["so_nhat_ky"], 5)
+        self.assertEqual(report["year_cumulative"]["so_nhat_ky"], 5)
+        self.assertEqual(report["since_signing"]["so_nhat_ky"], 5)
+
+    def test_empty_report_is_well_formed(self):
+        report = build_intervention_report(intervention_report_queryset())
+        self.assertEqual(report["contracts"], [])
+        self.assertEqual(report["groups"], [])
+        self.assertEqual(report["children"], [])
+        self.assertEqual(report["summary"]["so_nhat_ky"], 0)
+        self.assertEqual(report["summary"]["tong_gross"], Decimal("0"))
+
+
+class ReportQueryCountTests(SettlementReportingTestBase):
+    """Số truy vấn không được tăng theo số nhật ký (không còn nạp từng nhật ký vào Python)."""
+
+    def _count(self, callable_):
+        with CaptureQueriesContext(connection) as ctx:
+            callable_()
+        return len(ctx)
+
+    def _add_many_journals(self, n=30):
+        for i in range(n):
+            contract = self._contract(f"HD-BULK-{i}", self.cb1 if i % 2 else self.cb2, self.g1 if i % 3 else self.g12)
+            assignment = self._assignment(self.alloc1 if i % 2 else self.alloc2, self.child1 if i % 2 else self.child2)
+            for day in range(1, 4):
+                self._journal(contract, assignment, date(2026, 9, day), ky=1 + i % 3, buoi=1 + day)
+
+    def test_report_builder_query_count_is_constant(self):
+        self._scenario()
+        build = lambda: build_intervention_report(
+            intervention_report_queryset(), year_queryset=intervention_report_queryset(),
+            since_signing_queryset=intervention_report_queryset(),
+        )
+        small = self._count(build)
+        self._add_many_journals()
+        large = self._count(build)
+        self.assertEqual(small, large)
+        self.assertLessEqual(large, 20)
+
+    def test_report_page_query_count_is_constant(self):
+        self._scenario()
+        self.client.force_login(self.admin)
+        url = reverse("bao_cao_tong_hop")
+        self.client.get(url)  # làm nóng cache nội bộ (content types, session...)
+        small = self._count(lambda: self.client.get(url))
+        self._add_many_journals()
+        large = self._count(lambda: self.client.get(url))
+        self.assertEqual(small, large)
+
+    def test_thanh_quyet_toan_query_count_is_constant(self):
+        self._scenario()
+        self.client.force_login(self.admin)
+        url = reverse("thanh_quyet_toan")
+        self.client.get(url)
+        small = self._count(lambda: self.client.get(url))
+        self._add_many_journals()
+        large = self._count(lambda: self.client.get(url))
+        self.assertEqual(small, large)
+
+
+class ThanhQuyetToanTests(SettlementReportingTestBase):
+    def _rows(self, **params):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("thanh_quyet_toan"), params)
+        self.assertEqual(response.status_code, 200)
+        return response.context["danh_sach"]
+
+    def test_group_filter_matches_report_page(self):
+        """Ca của review: hợp đồng nhóm 12, phân công nhóm 1 → TQT và Báo cáo phải cùng kết luận."""
+        self.a1 = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        contract = self._contract("HD-X", self.cb1, self.g12)
+        self._journal(contract, self.a1, date(2026, 9, 10), ky=1, buoi=2)
+        self.client.force_login(self.admin)
+        for group, expected in ((self.g1, 0), (self.g12, 1)):
+            with self.subTest(group=group.ma_nhom_hd):
+                tqt = self.client.get(reverse("thanh_quyet_toan"), {"nhom_hd": group.pk}).context["danh_sach"]
+                report = self.client.get(reverse("bao_cao_tong_hop"), {"nhom_hd": group.pk}).context["report"]
+                self.assertEqual(sum(r["journal_count"] for r in tqt), expected)
+                self.assertEqual(report["summary"]["so_nhat_ky"], expected)
+
+    def test_totals_match_model_based_reference(self):
+        self._scenario()
+        config = lay_cau_hinh_thue(timezone_localdate())
+        expected = {}
+        for j in self._all_journals():
+            group, staff = j.nhom_hd_hieu_luc, j.can_bo_hieu_luc
+            if not group or not staff:
+                continue
+            item = expected.setdefault((group.pk, j.ky_can_thiep), {"journals": 0, "hd": set(), "staff": {}, "so_buoi": 0, "di_lai": 0})
+            item["journals"] += 1
+            if j.hop_dong_id:
+                item["hd"].add(j.hop_dong_id)
+            item["so_buoi"] += j.so_buoi_thuc_hien
+            item["di_lai"] += j.so_luot_di_lai_cbct
+            amounts = item["staff"].setdefault(staff.pk, [Decimal("0"), Decimal("0")])
+            amounts[0] += Decimal(j.so_buoi_thuc_hien) * j.don_gia_cong
+            amounts[1] += Decimal(j.so_luot_di_lai_cbct) * j.dinh_muc_di_lai
+        rows = {(r["nhom"].pk, r["ky"]): r for r in self._rows()}
+        self.assertEqual(set(rows), set(expected))
+        for key, item in expected.items():
+            breakdowns = [calculate_payment_breakdown(c, t, config) for c, t in item["staff"].values()]
+            row = rows[key]
+            self.assertEqual(row["journal_count"], item["journals"])
+            self.assertEqual(row["hop_dong_count"], len(item["hd"]))
+            self.assertEqual(row["can_bo_count"], len(item["staff"]))
+            self.assertEqual(row["so_buoi"], item["so_buoi"])
+            self.assertEqual(row["di_lai"], item["di_lai"])
+            for field in ("tien_cong", "tien_di_lai", "tong_truoc_thue", "thue_tncn", "thuc_linh"):
+                self.assertEqual(row[field], sum((b[field] for b in breakdowns), Decimal("0")), f"{key} {field}")
+
+    def test_tax_follows_cau_hinh_thue_in_database(self):
+        self.a1 = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        contract = self._contract("HD-TAX", self.cb1, self.g1)
+        self._journal(contract, self.a1, date(2026, 9, 10), ky=1, buoi=130)  # 26.000.000 tiền công
+        # Không có cấu hình: dùng mặc định 5 triệu / 10%.
+        self.assertEqual(self._rows()[0]["thue_tncn"], Decimal("2600000"))
+        CauHinhThue.objects.create(tu_ngay=date(2020, 1, 1), nguong_thue=Decimal("20000000"), ty_le=Decimal("0.05"), can_cu_phap_ly="Test")
+        self.assertEqual(self._rows()[0]["thue_tncn"], Decimal("1300000"))
+        CauHinhThue.objects.create(tu_ngay=date(2021, 1, 1), nguong_thue=Decimal("30000000"), ty_le=Decimal("0.05"), can_cu_phap_ly="Test 2")
+        row = self._rows()[0]
+        self.assertEqual(row["thue_tncn"], Decimal("0"))
+        self.assertEqual(row["thuc_linh"], row["tong_truoc_thue"])
+
+    def test_single_contract_tax_matches_voucher(self):
+        self.a1 = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        contract = self._contract("HD-VOUCHER", self.cb1, self.g1)
+        self._journal(contract, self.a1, date(2026, 9, 10), ky=1, buoi=40, di_lai=3)
+        CauHinhThue.objects.create(tu_ngay=date(2020, 1, 1), nguong_thue=Decimal("1000000"), ty_le=Decimal("0.07"), can_cu_phap_ly="Test")
+        voucher = tao_phieu_thanh_toan(self.cb1, contract, 1)
+        row = self._rows()[0]
+        self.assertEqual(row["thue_tncn"], voucher.thue_tncn)
+        self.assertEqual(row["thuc_linh"], voucher.thuc_nhan)
+
+    def test_can_bo_filter_uses_contract_staff(self):
+        """CBCT hiệu lực = nguồn → hợp đồng → phân bổ; bộ lọc không được bỏ qua tầng hợp đồng."""
+        self.a1 = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        self.a1.can_bo_nguon = None
+        self.a1.save()
+        contract = self._contract("HD-STAFF", self.cb2, self.g1)  # hợp đồng của cb2, phân bổ của cb1
+        journal = self._journal(contract, self.a1, date(2026, 9, 10), ky=1, buoi=1)
+        self.assertEqual(journal.can_bo_hieu_luc, self.cb2)
+        self.assertEqual(sum(r["journal_count"] for r in self._rows(can_bo=self.cb2.pk)), 1)
+        self.assertEqual(sum(r["journal_count"] for r in self._rows(can_bo=self.cb1.pk)), 0)
+
+
+def timezone_localdate():
+    from django.utils import timezone
+    return timezone.localdate()
+
+
+class HuyPhieuTests(SettlementReportingTestBase):
+    def _two_vouchers(self):
+        self.a1 = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        contract = self._contract("HD-HUY", self.cb1, self.g1)
+        self._journal(contract, self.a1, date(2026, 9, 10), ky=1, buoi=2)
+        self._journal(contract, self.a1, date(2026, 9, 20), ky=2, buoi=3)
+        first = tao_phieu_thanh_toan(self.cb1, contract, 1)
+        second = tao_phieu_thanh_toan(self.cb1, contract, 2)
+        self.assertEqual((first.lan_thanh_toan, second.lan_thanh_toan), (1, 2))
+        return first, second
+
+    def test_cannot_cancel_older_voucher_while_newer_is_active(self):
+        first, second = self._two_vouchers()
+        with self.assertRaisesMessage(ValidationError, "mới nhất"):
+            huy_phieu(first, "Sai kỳ")
+        first.refresh_from_db()
+        self.assertEqual(first.trang_thai, "CHO_CHI")
+
+    def test_can_cancel_previous_voucher_after_newest_was_cancelled(self):
+        """Lỗi #5: phiếu đã hủy không được tính là 'lần mới nhất'."""
+        first, second = self._two_vouchers()
+        huy_phieu(second, "Hủy lần 2")
+        first.refresh_from_db()
+        huy_phieu(first, "Hủy lần 1")
+        first.refresh_from_db()
+        self.assertEqual(first.trang_thai, "HUY")
+        self.assertIsNone(first.hoat_dong)
+        self.assertFalse(first.chi_tiet.filter(hoat_dong=True).exists())
+
+    def test_cancel_requires_reason_and_pending_state(self):
+        first, second = self._two_vouchers()
+        with self.assertRaises(ValidationError):
+            huy_phieu(second, "   ")
+        xac_nhan_chi(second)
+        with self.assertRaises(ValidationError):
+            huy_phieu(second, "Đã chi rồi")
+
+
+class BadQueryParameterTests(SettlementReportingTestBase):
+    BAD_VALUES = ({"nam": "0"}, {"nam": "99999"}, {"nam": "²"}, {"ky": "²"}, {"ky": "0"}, {"thang": "²"}, {"thang": "13"},
+                  {"nhom_hd": "²"}, {"hop_dong": "²"}, {"can_bo": "²"}, {"nam": "9" * 40}, {"tu_ngay": "not-a-date"})
+
+    def test_pages_do_not_crash_on_malformed_filters(self):
+        self._scenario()
+        self.client.force_login(self.admin)
+        for name in ("bao_cao_tong_hop", "thanh_quyet_toan", "de_nghi_thanh_toan"):
+            for params in self.BAD_VALUES:
+                with self.subTest(view=name, params=params):
+                    self.assertEqual(self.client.get(reverse(name), params).status_code, 200)
+
+    def test_excel_export_survives_malformed_filters(self):
+        self._scenario()
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("bao_cao_tong_hop"), {"format": "xlsx", "nam": "²", "ky": "²"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_malformed_filter_is_ignored_not_applied(self):
+        self._scenario()
+        self.client.force_login(self.admin)
+        baseline = self.client.get(reverse("bao_cao_tong_hop")).context["report"]["summary"]["so_nhat_ky"]
+        got = self.client.get(reverse("bao_cao_tong_hop"), {"nam": "99999", "ky": "²"}).context["report"]["summary"]["so_nhat_ky"]
+        self.assertEqual(got, baseline)
+
+    def test_valid_filters_still_apply(self):
+        self._scenario()
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("bao_cao_tong_hop"), {"ky": "2", "nam": "2026"})
+        self.assertEqual(response.context["report"]["summary"]["so_nhat_ky"], 1)
+
+
+class ImportPhanBoSessionTests(SettlementReportingTestBase):
+    """Lỗi #7: preview lưu date/Decimal vào session JSON làm TypeError."""
+
+    def _upload(self, **overrides):
+        row = {"MaCBCT": "RPT0001", "NhomHD": "1", "SoTrePHCN": 2, "SoBuoiPHCN": 10, "SoTreCS": 1, "SoBuoiCS": 5,
+               "DMDL_PHCN": "2", "DMDL_CS": "1", "NgayLap": "2026-09-01"}
+        row.update(overrides)
+        stream = BytesIO()
+        pd.DataFrame([row]).to_excel(stream, index=False)
+        return SimpleUploadedFile("pb.xlsx", stream.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    def test_preview_then_confirm_creates_allocation(self):
+        self.client.force_login(self.admin)
+        before = PhanBoChiTieu.objects.count()
+        preview = self.client.post(reverse("import_phan_bo"), {"excel_file": self._upload()})
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.context["valid_count"], 1)
+        stored = self.client.session["import_phan_bo_valid_data"]
+        self.assertEqual(stored[0]["ngay_lap"], "2026-09-01")
+        confirm = self.client.post(reverse("confirm_import_phan_bo"))
+        self.assertEqual(confirm.status_code, 302)
+        self.assertEqual(PhanBoChiTieu.objects.count(), before + 1)
+        created = PhanBoChiTieu.objects.order_by("-pk").first()
+        self.assertEqual((created.can_bo_id, created.nhom_hd_id), (self.cb1.pk, self.g1.pk))
+        self.assertEqual(created.ngay_lap, date(2026, 9, 1))
+        self.assertEqual(created.dinh_muc_di_lai_phcn, Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM2)))
+        self.assertEqual(created.dinh_muc_di_lai_cs, Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)))
+
+    def test_invalid_rows_are_not_stored_for_confirmation(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("import_phan_bo"), {"excel_file": self._upload(MaCBCT="KHONG-CO")})
+        self.assertEqual(response.context["invalid_count"], 1)
+        self.assertEqual(self.client.session["import_phan_bo_valid_data"], [])
+        before = PhanBoChiTieu.objects.count()
+        self.client.post(reverse("confirm_import_phan_bo"))
+        self.assertEqual(PhanBoChiTieu.objects.count(), before)
+
+
+class PaymentExportQueryCountTests(SettlementReportingTestBase):
+    """Lỗi N+1 khi xuất DSTK/ĐNTT: số truy vấn không được tăng theo số nhật ký."""
+
+    def _vouchered_journals(self, n):
+        assignment = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        contract = self._contract(f"HD-N1-{n}-{NhatKyThucHien.objects.count()}", self.cb1, self.g1)
+        for day in range(1, n + 1):
+            self._journal(contract, assignment, date(2026, 9, day), ky=1, buoi=1)
+        tao_phieu_thanh_toan(self.cb1, contract, 1)
+        return list(NhatKyThucHien.objects.filter(hop_dong=contract).order_by("id"))
+
+    def _snapshot_queries(self, journals):
+        with CaptureQueriesContext(connection) as ctx:
+            rows = snapshot_journals(journals)
+            for row in rows:  # các thuộc tính mà exporter đọc
+                row.can_bo_hieu_luc, row.nhom_hd_hieu_luc, row.hop_dong_hieu_luc, row.phan_cong.tre
+        return len(ctx)
+
+    def test_snapshot_journals_query_count_is_constant(self):
+        few = self._vouchered_journals(3)
+        small = self._snapshot_queries(few)
+        many = self._vouchered_journals(25)
+        large = self._snapshot_queries(many)
+        self.assertEqual(small, large)
+        self.assertLessEqual(large, 3)
+
+    def test_creating_voucher_does_not_query_per_journal(self):
+        assignment = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        counts = []
+        for size in (2, 20):
+            contract = self._contract(f"HD-EX-{size}", self.cb1, self.g1)
+            for day in range(1, size + 1):
+                self._journal(contract, assignment, date(2026, 9, day), ky=1, buoi=1)
+            with CaptureQueriesContext(connection) as ctx:
+                tao_phieu_thanh_toan(self.cb1, contract, 1)
+            counts.append(len(ctx))
+        self.assertEqual(counts[0], counts[1])
