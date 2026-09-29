@@ -1,6 +1,6 @@
 from django.contrib.auth.decorators import user_passes_test
 
-from .permissions import is_admin_user
+from .permissions import is_admin_user, user_group_names
 
 
 def role_required(*roles):
@@ -12,9 +12,7 @@ def role_required(*roles):
         if is_admin_user(user):
             return True
 
-        return user.groups.filter(
-            name__in=roles
-        ).exists()
+        return bool(user_group_names(user).intersection(roles))
 
     return user_passes_test(
         check_role,

@@ -397,8 +397,14 @@ def bao_cao_tong_hop(request):
         )
         response["Content-Disposition"] = content_disposition_filename("Bao_cao_thanh_toan.xlsx")
         return response
+    # Bảng trẻ × dịch vụ có thể rất dài: chỉ hiển thị theo trang; file Excel vẫn xuất đầy đủ.
+    pagination_params = request.GET.copy()
+    pagination_params.pop("page", None)
+    children_page = Paginator(report["children"], 100).get_page(request.GET.get("page"))
     return render(request, "quanly/bao_cao_tong_hop.html", {
         "report": report,
+        "page_obj": children_page,
+        "pagination_query": pagination_params.urlencode(),
         "nhom_list": NhomHD.objects.filter(is_active=True).order_by("ma_nhom_hd"),
         "hop_dong_list": HopDong.objects.select_related("can_bo", "don_vi", "nhom_hd").order_by("-ngay_ky", "-id"),
         "ky_choices": range(1, 31),
@@ -3714,8 +3720,8 @@ def thanh_quyet_toan(request):
     """Tổng hợp và lập hồ sơ thanh toán theo Nhóm HĐ + Kỳ can thiệp.
 
     Toàn bộ số liệu được gom bằng GROUP BY ở CSDL (không nạp từng nhật ký vào Python).
-    Thuế TNCN lấy từ ``CauHinhThue`` đang hiệu lực, tính trên tổng tiền công của từng CBCT
-    trong mỗi (Nhóm HĐ, Kỳ).
+    Thuế TNCN lấy từ ``CauHinhThue`` đang hiệu lực, tính trên tiền công của từng CBCT theo
+    từng số HĐ trong mỗi (Nhóm HĐ, Kỳ) - cùng quy tắc với phiếu thanh toán.
     """
     qs, ky, thang, nam = _journal_export_queryset(request)
     query = request.GET.get("q", "").strip()
@@ -3728,7 +3734,9 @@ def thanh_quyet_toan(request):
             | Q(phan_cong__phan_bo__can_bo__ho_ten__icontains=query)
         )
     scope = qs.filter(nhom_hieu_luc_id__isnull=False, can_bo_hieu_luc_pk__isnull=False).order_by()
-    staff_rows = scope.values("nhom_hieu_luc_id", "ky_can_thiep", "can_bo_hieu_luc_pk").annotate(
+    # Thuế TNCN tính riêng cho từng (CBCT, số HĐ) trong mỗi (Nhóm, Kỳ), khớp với phiếu thanh toán:
+    # ngưỡng áp cho một lần thanh toán của một số HĐ, không cộng dồn qua các hợp đồng.
+    staff_rows = scope.values("nhom_hieu_luc_id", "ky_can_thiep", "can_bo_hieu_luc_pk", "hop_dong_id").annotate(
         journal_count=Count("pk"), so_buoi=Sum("so_buoi_thuc_hien"), di_lai=Sum("so_luot_di_lai_cbct"),
         tien_cong=Sum(labor_expression()), tien_di_lai=Sum(travel_expression()),
     )
@@ -3743,17 +3751,19 @@ def thanh_quyet_toan(request):
         key = (values["nhom_hieu_luc_id"], values["ky_can_thiep"])
         item = rows.setdefault(key, {
             "nhom": groups[key[0]], "ky": key[1], "hop_dong_count": contract_counts.get(key, 0), "can_bo_count": 0,
-            "journal_count": 0, "so_buoi": Decimal("0"), "di_lai": Decimal("0"),
+            "_staff": set(), "journal_count": 0, "so_buoi": Decimal("0"), "di_lai": Decimal("0"),
             "tien_cong": Decimal("0"), "tien_di_lai": Decimal("0"), "tong_truoc_thue": Decimal("0"),
             "thue_tncn": Decimal("0"), "thuc_linh": Decimal("0"),
         })
         breakdown = calculate_payment_breakdown(values["tien_cong"], values["tien_di_lai"], tax_config)
-        item["can_bo_count"] += 1
+        item["_staff"].add(values["can_bo_hieu_luc_pk"])
         item["journal_count"] += values["journal_count"]
         item["so_buoi"] += Decimal(values["so_buoi"] or 0)
         item["di_lai"] += Decimal(values["di_lai"] or 0)
         for name in ("tien_cong", "tien_di_lai", "tong_truoc_thue", "thue_tncn", "thuc_linh"):
             item[name] += breakdown[name]
+    for item in rows.values():
+        item["can_bo_count"] = len(item.pop("_staff"))
     danh_sach = sorted(rows.values(), key=lambda item: (item["nhom"].ma_nhom_hd, item["ky"]))
     return render(request, "quanly/thanh_quyet_toan.html", {
         "danh_sach": danh_sach,

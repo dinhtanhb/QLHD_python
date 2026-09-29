@@ -1,4 +1,4 @@
-from .permissions import is_admin_user
+from .permissions import is_admin_user, user_group_names
 
 
 def user_roles(request):
@@ -12,15 +12,10 @@ def user_roles(request):
             "is_ketoan": False,
         }
 
+    names = user_group_names(user)
     return {
         "is_admin": is_admin_user(user),
-        "is_dieuphoi": user.groups.filter(
-            name="DieuPhoiVien"
-        ).exists(),
-        "is_cbda": user.groups.filter(
-            name="CBDA"
-        ).exists(),
-        "is_ketoan": user.groups.filter(
-            name="KeToan"
-        ).exists(),
+        "is_dieuphoi": "DieuPhoiVien" in names,
+        "is_cbda": "CBDA" in names,
+        "is_ketoan": "KeToan" in names,
     }

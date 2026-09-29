@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportOptionalOperand=false, reportPossiblyUnboundVariable=false, reportUnboundVariable=false, reportFunctionMemberAccess=false, reportUnusedExpression=false
 from decimal import Decimal
 from datetime import date, time
 from io import BytesIO
@@ -1482,7 +1483,7 @@ class ThanhQuyetToanTests(SettlementReportingTestBase):
                 item["hd"].add(j.hop_dong_id)
             item["so_buoi"] += j.so_buoi_thuc_hien
             item["di_lai"] += j.so_luot_di_lai_cbct
-            amounts = item["staff"].setdefault(staff.pk, [Decimal("0"), Decimal("0")])
+            amounts = item["staff"].setdefault((staff.pk, j.hop_dong_id), [Decimal("0"), Decimal("0")])
             amounts[0] += Decimal(j.so_buoi_thuc_hien) * j.don_gia_cong
             amounts[1] += Decimal(j.so_luot_di_lai_cbct) * j.dinh_muc_di_lai
         rows = {(r["nhom"].pk, r["ky"]): r for r in self._rows()}
@@ -1492,7 +1493,7 @@ class ThanhQuyetToanTests(SettlementReportingTestBase):
             row = rows[key]
             self.assertEqual(row["journal_count"], item["journals"])
             self.assertEqual(row["hop_dong_count"], len(item["hd"]))
-            self.assertEqual(row["can_bo_count"], len(item["staff"]))
+            self.assertEqual(row["can_bo_count"], len({staff_pk for staff_pk, _ in item["staff"]}))
             self.assertEqual(row["so_buoi"], item["so_buoi"])
             self.assertEqual(row["di_lai"], item["di_lai"])
             for field in ("tien_cong", "tien_di_lai", "tong_truoc_thue", "thue_tncn", "thuc_linh"):
@@ -1520,6 +1521,27 @@ class ThanhQuyetToanTests(SettlementReportingTestBase):
         row = self._rows()[0]
         self.assertEqual(row["thue_tncn"], voucher.thue_tncn)
         self.assertEqual(row["thuc_linh"], voucher.thuc_nhan)
+
+    def test_tax_is_per_contract_not_accumulated_across_contracts(self):
+        """Quy tắc nghiệp vụ: ngưỡng TNCN áp cho từng lần thanh toán của một số HĐ."""
+        self.a1 = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        first = self._contract("HD-T1", self.cb1, self.g1)
+        second = self._contract("HD-T2", self.cb1, self.g1)
+        self._journal(first, self.a1, date(2026, 9, 10), ky=1, buoi=15)   # 3.000.000 < 5.000.000
+        self._journal(second, self.a1, date(2026, 9, 11), ky=1, buoi=15)  # 3.000.000 < 5.000.000
+        row = self._rows()[0]
+        self.assertEqual(row["hop_dong_count"], 2)
+        self.assertEqual(row["can_bo_count"], 1)
+        self.assertEqual(row["tien_cong"], Decimal("6000000"))
+        self.assertEqual(row["thue_tncn"], Decimal("0"))  # gộp theo CBCT sẽ ra 600.000 (sai)
+        v1 = tao_phieu_thanh_toan(self.cb1, first, 1)
+        v2 = tao_phieu_thanh_toan(self.cb1, second, 1)
+        self.assertEqual(row["thue_tncn"], v1.thue_tncn + v2.thue_tncn)
+        # Một hợp đồng vượt ngưỡng thì chỉ hợp đồng đó chịu thuế.
+        self._journal(first, self.a1, date(2026, 9, 12), ky=2, buoi=30)  # 6.000.000 >= 5.000.000
+        self._journal(second, self.a1, date(2026, 9, 13), ky=2, buoi=5)  # 1.000.000
+        ky2 = next(r for r in self._rows() if r["ky"] == 2)
+        self.assertEqual(ky2["thue_tncn"], Decimal("600000"))
 
     def test_can_bo_filter_uses_contract_staff(self):
         """CBCT hiệu lực = nguồn → hợp đồng → phân bổ; bộ lọc không được bỏ qua tầng hợp đồng."""
@@ -1683,3 +1705,106 @@ class PaymentExportQueryCountTests(SettlementReportingTestBase):
                 tao_phieu_thanh_toan(self.cb1, contract, 1)
             counts.append(len(ctx))
         self.assertEqual(counts[0], counts[1])
+
+
+
+class PhieuStaleStateTests(SettlementReportingTestBase):
+    """Hai kế toán thao tác cùng lúc: đối tượng cũ không được ghi đè trạng thái mới trong CSDL."""
+    def _two_vouchers(self):
+        self.a1 = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)
+        contract = self._contract("HD-HUY", self.cb1, self.g1)
+        self._journal(contract, self.a1, date(2026, 9, 10), ky=1, buoi=2)
+        self._journal(contract, self.a1, date(2026, 9, 20), ky=2, buoi=3)
+        first = tao_phieu_thanh_toan(self.cb1, contract, 1)
+        second = tao_phieu_thanh_toan(self.cb1, contract, 2)
+        self.assertEqual((first.lan_thanh_toan, second.lan_thanh_toan), (1, 2))
+        return first, second
+
+    def test_confirm_payment_with_stale_object_after_cancel_is_rejected(self):
+        first, second = self._two_vouchers()
+        stale = PhieuThanhToan.objects.get(pk=second.pk)
+        huy_phieu(second, "Hủy trước")
+        with self.assertRaises(ValidationError):
+            xac_nhan_chi(stale)
+        second.refresh_from_db()
+        self.assertEqual(second.trang_thai, "HUY")
+        self.assertIsNone(second.ngay_chi)
+        self.assertFalse(second.chi_tiet.filter(hoat_dong=True).exists())
+
+    def test_cancel_with_stale_object_after_payment_is_rejected(self):
+        first, second = self._two_vouchers()
+        stale = PhieuThanhToan.objects.get(pk=second.pk)
+        xac_nhan_chi(second)
+        with self.assertRaises(ValidationError):
+            huy_phieu(stale, "Muộn rồi")
+        second.refresh_from_db()
+        self.assertEqual(second.trang_thai, "DA_CHI")
+        self.assertTrue(second.chi_tiet.filter(hoat_dong=True).exists())
+
+    def test_instances_are_synced_after_success(self):
+        first, second = self._two_vouchers()
+        xac_nhan_chi(second, user=self.admin)
+        self.assertEqual((second.trang_thai, second.xac_nhan_chi_boi), ("DA_CHI", self.admin))
+        self.assertIsNotNone(second.ngay_chi)
+        first_again = PhieuThanhToan.objects.get(pk=first.pk)
+        with self.assertRaises(ValidationError):  # phiếu lần 2 đã chi, lần 1 không phải mới nhất
+            huy_phieu(first_again, "x")
+
+
+class PermissionQueryCountTests(SettlementReportingTestBase):
+    """Kiểm tra quyền (decorator + context processor) chỉ tốn một truy vấn nhóm cho mỗi request."""
+
+    def test_role_checks_use_single_group_query(self):
+        keto = User.objects.create_user(username="keto", password="secret")
+        keto.groups.add(Group.objects.create(name="KeToan"))
+        self.client.force_login(keto)
+        url = reverse("thanh_quyet_toan")
+        self.client.get(url)
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        group_queries = [q for q in ctx.captured_queries if "auth_group" in q["sql"]]
+        self.assertEqual(len(group_queries), 1, [q["sql"] for q in group_queries])
+
+    def test_role_flags_and_access_rules_unchanged(self):
+        keto = User.objects.create_user(username="keto2", password="secret")
+        keto.groups.add(Group.objects.create(name="KeToan"))
+        self.client.force_login(keto)
+        response = self.client.get(reverse("thanh_quyet_toan"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["is_ketoan"])
+        self.assertFalse(response.context["is_admin"])
+        self.assertFalse(response.context["is_cbda"])
+        nobody = User.objects.create_user(username="nobody", password="secret")
+        self.client.force_login(nobody)
+        self.assertEqual(self.client.get(reverse("thanh_quyet_toan")).status_code, 302)
+        self.client.force_login(self.admin)
+        self.assertTrue(self.client.get(reverse("thanh_quyet_toan")).context["is_admin"])
+
+
+class ReportChildrenPaginationTests(SettlementReportingTestBase):
+    def _many_children(self, count):
+        contract = self._contract("HD-PAGE", self.cb1, self.g1)
+        for i in range(count):
+            child = Tre.objects.create(ma_tre=f"PG{i:04d}", ho_ten=f"Trẻ {i}", ngay_sinh=date(2015, 1, 1), gioi_tinh="Nam")
+            assignment = self._assignment(self.alloc1, child, "VLTL", nhom=self.g1)
+            self._journal(contract, assignment, date(2026, 9, 1 + i % 25), ky=1, buoi=1)
+
+    def test_children_table_is_paginated_but_totals_and_excel_are_complete(self):
+        self._many_children(130)
+        self.client.force_login(self.admin)
+        url = reverse("bao_cao_tong_hop")
+        page1 = self.client.get(url, {"ky": "1"})
+        self.assertEqual(len(page1.context["page_obj"]), 100)
+        self.assertEqual(page1.context["page_obj"].paginator.count, 130)
+        self.assertEqual(page1.context["report"]["summary"]["so_nhat_ky"], 130)
+        self.assertContains(page1, "ky=1")  # bộ lọc được giữ khi sang trang
+        page2 = self.client.get(url, {"ky": "1", "page": "2"})
+        self.assertEqual(len(page2.context["page_obj"]), 30)
+        self.assertEqual(self.client.get(url, {"page": "abc"}).status_code, 200)
+        self.assertEqual(self.client.get(url, {"page": "9999"}).status_code, 200)
+        from openpyxl import load_workbook
+        export = self.client.get(url, {"format": "xlsx", "ky": "1"})
+        workbook = load_workbook(BytesIO(export.content), read_only=True)
+        self.assertEqual(sum(1 for _ in workbook["TheoTreDichVu"].iter_rows()) - 1, 130)
+        workbook.close()

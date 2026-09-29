@@ -223,32 +223,46 @@ def tao_phieu_thanh_toan(can_bo, hop_dong, ky_can_thiep, user=None):
         raise ValidationError("Đã có phiếu thanh toán cho kỳ hoặc lần thanh toán này.") from exc
 
 
+def _sync_instance(target, source, fields):
+    for name in fields:
+        setattr(target, name, getattr(source, name))
+
+
 def huy_phieu(phieu, ly_do, user=None):
-    if phieu.trang_thai == "DA_CHI":
-        raise ValidationError("Phiếu đã chi không thể hủy bằng luồng thông thường.")
-    if phieu.trang_thai != "CHO_CHI":
-        raise ValidationError("Chỉ phiếu chờ chi mới được hủy.")
-    if not ly_do or not str(ly_do).strip():
-        raise ValidationError("Bắt buộc nhập lý do hủy phiếu.")
-    latest = PhieuThanhToan.objects.filter(can_bo=phieu.can_bo, hop_dong=phieu.hop_dong, hoat_dong=True).aggregate(value=Max("lan_thanh_toan"))["value"]
-    if latest != phieu.lan_thanh_toan:
-        raise ValidationError("Chỉ được hủy phiếu có lần thanh toán mới nhất.")
+    """Hủy phiếu chờ chi. Trạng thái được đọc lại dưới khóa dòng để không dựa vào đối tượng cũ."""
+    updated_fields = ["trang_thai", "hoat_dong", "ly_do_huy", "huy_boi", "ngay_huy", "updated_at"]
     with transaction.atomic():
-        phieu.trang_thai = "HUY"
-        phieu.hoat_dong = None
-        phieu.ly_do_huy = str(ly_do).strip()
-        phieu.huy_boi = user
-        phieu.ngay_huy = timezone.localdate()
-        phieu.save(update_fields=["trang_thai", "hoat_dong", "ly_do_huy", "huy_boi", "ngay_huy", "updated_at"])
-        phieu.chi_tiet.update(hoat_dong=None)
+        locked = PhieuThanhToan.objects.select_for_update().get(pk=phieu.pk)
+        if locked.trang_thai == "DA_CHI":
+            raise ValidationError("Phiếu đã chi không thể hủy bằng luồng thông thường.")
+        if locked.trang_thai != "CHO_CHI":
+            raise ValidationError("Chỉ phiếu chờ chi mới được hủy.")
+        if not ly_do or not str(ly_do).strip():
+            raise ValidationError("Bắt buộc nhập lý do hủy phiếu.")
+        latest = PhieuThanhToan.objects.filter(can_bo=locked.can_bo, hop_dong=locked.hop_dong, hoat_dong=True).aggregate(value=Max("lan_thanh_toan"))["value"]
+        if latest != locked.lan_thanh_toan:
+            raise ValidationError("Chỉ được hủy phiếu có lần thanh toán mới nhất.")
+        locked.trang_thai = "HUY"
+        locked.hoat_dong = None
+        locked.ly_do_huy = str(ly_do).strip()
+        locked.huy_boi = user
+        locked.ngay_huy = timezone.localdate()
+        locked.save(update_fields=updated_fields)
+        locked.chi_tiet.update(hoat_dong=None)
+    _sync_instance(phieu, locked, updated_fields)
     return phieu
 
 
 def xac_nhan_chi(phieu, ngay_chi=None, user=None):
-    if phieu.trang_thai != "CHO_CHI":
-        raise ValidationError("Chỉ phiếu chờ chi mới được xác nhận.")
-    phieu.trang_thai = "DA_CHI"
-    phieu.ngay_chi = ngay_chi or timezone.localdate()
-    phieu.xac_nhan_chi_boi = user
-    phieu.save(update_fields=["trang_thai", "ngay_chi", "xac_nhan_chi_boi", "updated_at"])
+    """Xác nhận đã chi. Trạng thái được đọc lại dưới khóa dòng để không ghi đè phiếu vừa bị hủy."""
+    updated_fields = ["trang_thai", "ngay_chi", "xac_nhan_chi_boi", "updated_at"]
+    with transaction.atomic():
+        locked = PhieuThanhToan.objects.select_for_update().get(pk=phieu.pk)
+        if locked.trang_thai != "CHO_CHI":
+            raise ValidationError("Chỉ phiếu chờ chi mới được xác nhận.")
+        locked.trang_thai = "DA_CHI"
+        locked.ngay_chi = ngay_chi or timezone.localdate()
+        locked.xac_nhan_chi_boi = user
+        locked.save(update_fields=updated_fields)
+    _sync_instance(phieu, locked, updated_fields)
     return phieu

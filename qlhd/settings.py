@@ -135,6 +135,8 @@ else:
             "PASSWORD": config("DB_PASSWORD"),
             "HOST": config("DB_HOST", default="localhost"),
             "PORT": config("DB_PORT", default="3306"),
+            # Tái sử dụng kết nối (giây) để không mở kết nối MySQL mới cho mỗi request; 0 = tắt.
+            "CONN_MAX_AGE": int(config("DB_CONN_MAX_AGE", default="60") or 0),
             "OPTIONS": {
                 "charset": "utf8mb4",
                 "init_command": "SET sql_mode='STRICT_ALL_TABLES'",
