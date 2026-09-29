@@ -48,6 +48,32 @@ Chạy migration sau khi đã kiểm tra cấu hình và sao lưu dữ liệu (�
 
 Mở <http://127.0.0.1:8000/>. Xem [hướng dẫn quản trị](docs/ADMIN_MANUAL.md) và [hướng dẫn sử dụng](docs/USER_GUIDE.md) cho luồng hàng ngày.
 
+## Đồng bộ với GitHub trên máy của bạn (PowerShell)
+
+Mở PowerShell, dừng server đang chạy nếu chuẩn bị cập nhật mã rồi tải phiên bản mới nhất:
+
+```powershell
+cd D:\QLHD
+git status --short
+git branch --show-current
+git pull --ff-only origin main
+```
+
+Các lệnh trên dùng cho bản cài theo hướng dẫn này và nhánh `main`. `--ff-only` sẽ báo lỗi nếu lịch sử local và GitHub đã tách nhánh; hãy kiểm tra các commit trước khi hợp nhất. Nếu `git status --short` báo file bạn đang sửa, hãy hoàn tất hoặc cất các thay đổi đó trước khi pull. `.env` cục bộ không nằm trong Git. Sau khi pull, nếu `requirements.txt` đổi thì cài lại thư viện; nếu có migration mới, sao lưu và kiểm tra dữ liệu trước khi chạy `migrate` theo hướng dẫn quản trị.
+
+Khi **bạn đã sửa và kiểm tra** một tệp muốn đưa lên GitHub, ví dụ `README.md`:
+
+```powershell
+cd D:\QLHD
+git status --short
+git add README.md
+git commit -m "Cap nhat README"
+git pull --rebase origin main
+git push origin main
+```
+
+Thay `README.md` trong lệnh `git add` bằng đúng đường dẫn các tệp bạn muốn gửi; kiểm tra `git status --short` để tránh đưa dữ liệu thật lên GitHub. Nếu `git pull --rebase` báo xung đột, xử lý xung đột và chạy `git rebase --continue` trước khi push. GitHub có thể yêu cầu bạn đăng nhập qua trình quản lý thông tin xác thực Git; không dán token vào URL hoặc mã nguồn.
+
 ## Kiểm thử không cần MySQL
 
 Trên bản sao mã nguồn, dùng SQLite riêng và đặt `DEBUG=True` trong phiên PowerShell:
