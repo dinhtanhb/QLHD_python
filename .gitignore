@@ -25,6 +25,12 @@ logs/
 
 # Local review/full backup archives
 backups/
+.codex_tmp/
+_qa/lo_profile*/
+_qa/render/
+
+# Office temporary lock files
+~$*
 
 # Static build
 staticfiles/

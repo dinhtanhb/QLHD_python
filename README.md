@@ -1,174 +1,76 @@
-# 📋 Hệ Thống Quản Lý Phân Bổ Chỉ Tiêu & Hợp Đồng (QLHD)
+# QLHD — Quản lý phân bổ, hợp đồng và thanh toán can thiệp
 
-**Tên dự án:** Hệ thống Quản lý Phân bổ Chỉ tiêu & Hợp đồng Cán bộ can thiệp (CBCT)
-**Đơn vị chủ quản:** Trung tâm Phát triển Sức khỏe Bền vững (VietHealth)  
-**Đầu mối kỹ thuật/Phát triển:** Vũ Đình Tân  
-**Trạng thái:** Tạm dừng tính năng mới - Đóng băng & Tối ưu mã nguồn (Mốc 3)  
+Ứng dụng Django nội bộ của VietHealth quản lý cán bộ can thiệp (CBCT), trẻ, đơn vị, phân bổ chỉ tiêu, phân công, hợp đồng, nhật ký thực hiện và hồ sơ thanh toán cho hoạt động PHCN/CSXH.
 
----
+**Trạng thái 29/09/2026:** các luồng nghiệp vụ chính đã có trong mã nguồn. Tiếp tục rà soát dữ liệu lịch sử, kiểm thử MySQL trên bản sao dữ liệu và UAT trước khi áp dụng cho dữ liệu vận hành. Xem [tiến độ và rủi ro](docs/PROJECT_PROGRESS.md) để biết kết quả xác minh theo từng đợt; các kết quả cũ trong tài liệu là lịch sử, không phải kết quả kiểm thử hiện tại.
 
-## 📖 I. Tổng Quan Dự Án
+## Chức năng hiện có
 
-Hệ thống web nội bộ được xây dựng nhằm số hóa và tự động hóa quy trình quản lý phân bổ chỉ tiêu dịch vụ **Phục hồi chức năng (PHCN)** và **Chăm sóc xã hội (CSXH)** cho Cán bộ chuyên trách (CBCT) tại các địa bàn thuộc dự án của VietHealth.
+- Danh mục trẻ, CBCT, đơn vị, nhóm hợp đồng; nhập Excel phân bổ, phân công, hợp đồng và nhật ký.
+- Đề xuất, duyệt và quản lý hợp đồng/phụ lục gia hạn; xuất mẫu Word/PDF, nghiệm thu và thanh lý.
+- Nhật ký can thiệp, cảnh báo trùng lịch, tính đi lại; sổ phiếu thanh toán và xuất ĐNTT/DSTK/ĐNCK.
+- Báo cáo thanh toán theo số HĐ/kỳ, bộ lọc, KPI và xuất Excel; phân quyền theo nhóm tài khoản.
 
-Hệ thống giải quyết các bài toán cốt lõi:
-1. **Tự động hóa tính toán:** Tự động tính giá trị hợp đồng dự kiến dựa trên định mức công lao động (`DON_GIA_CONG`) và phí đi lại (`DMDL_DM1`, `DMDL_DM2`).
-2. **Xử lý dữ liệu lớn:** Nhập liệu an toàn từ file phân bổ Excel, tự động làm sạch và chuẩn hóa dữ liệu.
-3. **Số hóa quy trình:** Cho phép xem trước, điều chỉnh số buổi thực tế linh hoạt và phê duyệt khởi tạo hợp đồng chính thức (`Số HĐ`, `Ngày ký`, `Thời gian thực hiện`).
+Một CBCT và một số HĐ chỉ có một phiếu hiệu lực trong một kỳ. Thuế của phiếu được tính riêng cho lần thanh toán đó theo cấu hình hiệu lực. Các quyết định và tình huống điều chỉnh được ghi tại [hướng dẫn sử dụng](docs/USER_GUIDE.md).
 
----
+## Yêu cầu
 
-## 🛠️ II. Công Nghệ & Kiến Trúc Sử Dụng
+- Python **3.12+** với bộ phiên bản hiện tại trong `requirements.txt` (`numpy==2.5.2` yêu cầu Python ≥3.12).
+- MySQL 8+ (`utf8mb4`, `STRICT_ALL_TABLES`) cho môi trường vận hành. SQLite chỉ dùng cho kiểm thử qua `DB_ENGINE=sqlite`.
+- Git và môi trường ảo Python. Mẫu xuất nằm trong `quanly/document_templates/`.
 
-* **Backend:** Python 3.10+, Django Web Framework (Django ORM, Custom Views, Forms).
-* **Frontend:** HTML5, CSS3, JavaScript, Bootstrap 5 (Flex/Grid, Modals).
-* **Xử lý Dữ liệu:** Pandas, OpenPyXL.
-* **Cơ sở dữ liệu:** MySQL 8+ với `utf8mb4` và `STRICT_ALL_TABLES`. Có thể chạy test bằng SQLite qua `DB_ENGINE=sqlite`.
+## Cài đặt trên Windows (PowerShell)
 
----
+Nếu chưa có mã nguồn, clone repository vào thư mục bạn chọn:
 
-## 🚀 III. Lộ Trình Phát Triển (Milestones)
+```powershell
+git clone https://github.com/dinhtanhb/QLHD_python.git D:\QLHD
+cd D:\QLHD
+```
 
-Dự án đang được phát triển theo các vòng được ghi nhận tại [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md).
+Nếu đã có `D:\QLHD`, mở PowerShell tại thư mục đó và giữ nguyên `.env` hiện có. Với bản cài mới:
 
-- [x] **Mốc 1:** Cấu hình hệ thống, quản lý danh mục (Cán bộ, Định mức tài chính).
-- [x] **Mốc 2:** Module Import Excel (Chuẩn hóa chuỗi `\xa0`, làm sạch header, preview & lưu tập trung bằng `bulk_create`).
-- [x] **Mốc 3:** Quản lý đề xuất & tạo hợp đồng (Bảng 2 dòng song song, Modal Popup sửa số buổi, tự động tính lại kinh phí).
-- [ ] **Mốc 4:** Tổng kết, làm sạch dữ liệu rác & tối ưu hiệu năng (Đang thực hiện).
-- [ ] **Mốc 5:** Quản lý danh sách Hợp đồng chính thức, cảnh báo thời hạn & Xuất file Word/PDF hợp đồng.
-- [ ] **Mốc 6:** Cập nhật nhật ký thực hiện thực tế hàng tháng, đối chiếu chỉ tiêu & Lập bảng kê nghiệm thu.
-- [ ] **Mốc 7:** Báo cáo thống kê kinh phí/địa bàn, phân quyền (RBAC) và bàn giao UAT.
-
----
-
-## ⚙️ IV. Hướng Dẫn Cài Đặt & Chạy Môi Trường Local
-
-### 1. Yêu cầu hệ thống
-* Python 3.10+
-* Git (Tùy chọn)
-
-### 2. Các bước cài đặt
-
-**Bước 1: Clone mã nguồn về máy**
-```bash
-git clone <URL_REPOSITORY_CUA_BAN>
-cd QLHD
-
-
-## Vận hành trạng thái hợp đồng và sổ thanh toán
-
-- Khi chạy nội bộ bằng HTTP với `DEBUG=False`, đặt `SESSION_COOKIE_SECURE=False` và `CSRF_COOKIE_SECURE=False` trong `.env`; môi trường HTTPS nên để mặc định `True`.
-- Chạy `python manage.py sync_trang_thai_hop_dong --dry-run` hằng ngày để rà trạng thái hết hạn; chỉ dùng `--apply` sau khi kiểm tra danh sách thay đổi.
-- Trên Windows, `RotatingFileHandler` không nên được nhiều tiến trình cùng xoay file. Chạy một tiến trình worker/server hoặc cấu hình handler ghi log tập trung khi triển khai nhiều tiến trình.
-- Sổ thanh toán mới cần migration `0033`; hãy chạy trên bản sao MySQL trước khi áp dụng DB thật. Các lệnh báo cáo/chuyển sổ cũ mặc định chỉ dry-run.
-
-**Bước 2: Tạo và kích hoạt môi trường ảo (Virtual Environment)**
-* *Trên Windows (PowerShell/CMD):*
 ```powershell
 python -m venv venv
-.\venv\Scripts\Activate
-```
-* *Trên Linux / macOS:*
-```bash
-python3 -m venv venv
-source venv/bin/activate
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-**Bước 3: Cài đặt thư viện phụ thuộc**
-```bash
-pip install -r requirements.txt
-```
+Điền `SECRET_KEY`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` và các host/origin cần thiết trong `.env`. Dùng tài khoản MySQL riêng cho ứng dụng; không đưa `.env`, dữ liệu thật hoặc khóa API vào Git. Nếu chạy nội bộ bằng HTTP với `DEBUG=False`, đặt `SESSION_COOKIE_SECURE=False` và `CSRF_COOKIE_SECURE=False`; khi triển khai HTTPS, cấu hình cookie và SSL phù hợp.
 
-**Bước 4: Migrate CSDL & Tạo tài khoản Admin**
-```bash
-python manage.py migrate
-python manage.py createsuperuser
-```
-
-**Bước 5: Khởi động Server**
-```bash
-python manage.py runserver
-```
-Truy cập hệ thống tại: `http://127.0.0.1:8000/`
-
-## Quy trình phát triển và kiểm thử
-
-Mọi thay đổi mã nguồn, import/export hoặc thêm app phải tuân thủ [AGENTS.md](AGENTS.md), đọc [quy trình phát triển](docs/DEVELOPMENT_WORKFLOW.md) và cập nhật [tiến độ dự án](docs/PROJECT_PROGRESS.md). Các agent rà soát chuyên trách nằm trong `.cursor/agents/`; skill kiểm thử lặp lại nằm trong `.cursor/skills/qlhd-change-validation/`.
-
-## Cấu hình môi trường
-
-Sao chép `.env.example` thành `.env`, sau đó thay các giá trị mẫu bằng cấu hình local. Không commit `.env`, dữ liệu thật hoặc file Excel dữ liệu.
-
-Môi trường chạy thật dùng tài khoản MySQL riêng cho ứng dụng, không dùng `root`:
-
-```sql
-CREATE DATABASE qlhd CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'qlhd_app'@'localhost' IDENTIFIED BY 'mat-khau-rieng';
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
-  ON qlhd.* TO 'qlhd_app'@'localhost';
-FLUSH PRIVILEGES;
-```
-
-Các biến quan trọng gồm `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`. Danh sách host/origin phân tách bằng dấu phẩy. Khi `DEBUG=False`, cookie phiên/CSRF được bật Secure; redirect SSL và HSTS do các biến `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS` điều khiển.
-
-## Chạy ứng dụng và test
+Chạy migration sau khi đã kiểm tra cấu hình và sao lưu dữ liệu (đặc biệt migration `0033` của sổ phiếu):
 
 ```powershell
-python manage.py migrate
-python manage.py runserver
+.\venv\Scripts\python.exe manage.py migrate
+.\venv\Scripts\python.exe manage.py createsuperuser
+.\venv\Scripts\python.exe manage.py runserver
+```
 
-# Test không cần MySQL thật
+Mở <http://127.0.0.1:8000/>. Xem [hướng dẫn quản trị](docs/ADMIN_MANUAL.md) và [hướng dẫn sử dụng](docs/USER_GUIDE.md) cho luồng hàng ngày.
+
+## Kiểm thử không cần MySQL
+
+Trên bản sao mã nguồn, dùng SQLite riêng và đặt `DEBUG=True` trong phiên PowerShell:
+
+```powershell
 $env:DB_ENGINE = 'sqlite'
 $env:DEBUG = 'True'
-python manage.py check
-python manage.py makemigrations --check --dry-run
-python manage.py test quanly.tests
+.\venv\Scripts\python.exe manage.py check
+.\venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+.\venv\Scripts\python.exe manage.py test quanly.tests --noinput
 ```
 
-Log ứng dụng nằm trong `logs/app.log`, tự xoay vòng ở mức 5 MB, tối đa 5 file lưu trữ.
+Các lệnh trên không kiểm chứng tương thích MySQL hoặc số liệu trên dữ liệu thật. Hãy UAT trên bản sao MySQL trước khi triển khai. Để rà trạng thái hợp đồng, dùng `python manage.py sync_trang_thai_hop_dong --dry-run`; chỉ dùng `--apply` sau khi đối chiếu danh sách thay đổi. Các lệnh chuyển sổ cũ mặc định dry-run.
 
----
+## Cấu trúc và quy trình
 
-## 📁 V. Cấu Trúc Mã Nguồn
+| Đường dẫn | Vai trò |
+|---|---|
+| `qlhd/settings.py`, `qlhd/urls.py` | Cấu hình Django và routes |
+| `quanly/models.py`, `quanly/views.py`, `quanly/forms.py` | Dữ liệu, màn hình và form nghiệp vụ |
+| `quanly/services/`, `quanly/reporting.py`, `quanly/financial.py` | Trạng thái, sổ phiếu, báo cáo và tính tiền |
+| `quanly/assignment_import.py`, `quanly/document_export.py`, `quanly/payment_export.py` | Nhập/xuất dữ liệu và văn bản |
+| `quanly/templates/`, `quanly/document_templates/` | Giao diện và mẫu hồ sơ |
+| `quanly/tests.py`, `quanly/migrations/` | Kiểm thử và lịch sử schema |
 
-```text
-QLHD/
-│
-├── quanly/                   # App Django xử lý nghiệp vụ chính
-│   ├── models.py             # Cấu trúc DB (CanBo, FinancialConfig, PhanBo...)
-│   ├── views.py              # Logic (import_phan_bo, danh_sach_de_xuat...)
-│   ├── urls.py               # Routes của hệ thống
-│   └── templates/            # Giao diện HTML
-│
-├── manage.py                 # File thực thi hệ thống
-├── requirements.txt          # Danh sách packages
-├── .gitignore                # Bỏ qua file rác khi đẩy code
-└── README.md                 # Tài liệu dự án
-```
-
----
-
-## 🧹 VI. Lưu Ý Quản Lý & Tối Ưu Dung Lượng
-
-Để dự án luôn nhẹ (dưới 5MB) khi lưu trữ hoặc đẩy lên Git, **luôn cấu hình file `.gitignore`** tại thư mục gốc với nội dung:
-
-```text
-# Bỏ qua môi trường ảo (chiếm >200MB)
-venv/
-.venv/
-env/
-
-# Bỏ qua file biên dịch tạm của Python
-__pycache__/
-*.pyc
-
-# Bỏ qua CSDL nội bộ & file upload
-db.sqlite3
-media/
-*.xlsx
-```
-
-*Lưu ý:* Nếu muốn làm sạch máy local, chạy lệnh sau trong PowerShell để xóa toàn bộ file cache tạm:
-```powershell
-Get-ChildItem -Path . -Filter "__pycache__" -Recurse | Remove-Item -Recurse -Force
-```
+Trước mọi thay đổi, đọc [AGENTS.md](AGENTS.md), [quy trình phát triển](docs/DEVELOPMENT_WORKFLOW.md) và [tiến độ](docs/PROJECT_PROGRESS.md). Skill kiểm tra của dự án nằm trong `.cursor/skills/qlhd-change-validation/`, các agent review trong `.cursor/agents/`. `backups/` và `.codex_tmp/` là thư mục cục bộ, không đưa vào Git; `_qa/` còn giữ một số mẫu và script đối chứng cho UAT.

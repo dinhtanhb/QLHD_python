@@ -12,6 +12,7 @@
 - Chạy `check`, `makemigrations --check --dry-run` và bộ test hiện có.
 - Xác định dữ liệu đầu vào, khóa khớp, tác động tài chính và đầu ra người dùng.
 - Nếu liên quan import/export/thanh toán, dùng cả `qlhd-code-reviewer` và `qlhd-data-integrity-reviewer`.
+- Nếu dọn repository, đếm file theo `git ls-files`, tìm tham chiếu và xác định tệp tạm so với template, migration, script chạy tay và bằng chứng UAT. Không xóa dữ liệu chỉ dựa vào tên thư mục.
 
 ### 2. Sửa trong phạm vi nhỏ
 
@@ -45,6 +46,8 @@ Kiểm thử thêm theo loại thay đổi:
 
 Ghi vào `docs/PROJECT_PROGRESS.md`: ngày, thay đổi, file, kiểm thử, kết quả định lượng, rủi ro và bước tiếp theo.
 
+Đổi tính năng hoặc quy tắc nghiệp vụ phải được đề xuất để người dùng quyết định trước; đợt bảo trì chỉ sửa lỗi kỹ thuật đã xác minh.
+
 ### 5. Bàn giao mặc định sau mỗi đợt
 
 Theo ủy quyền thường trực của người dùng, sau mỗi đợt thay đổi phải:
@@ -52,6 +55,7 @@ Theo ủy quyền thường trực của người dùng, sau mỗi đợt thay �
 - Cập nhật hướng dẫn, tiến độ và tài liệu nghiệp vụ bị ảnh hưởng.
 - Rà lại skill dự án và chạy agent review phù hợp; thay đổi import/tài chính phải có cả code review và data-integrity review.
 - Tạo hai bản sao ZIP `review` và `full` trong `backups/`, loại trừ `.env`, database, dữ liệu thật, `venv`, log và file tạm.
+- Chọn file cho backup theo danh sách mã nguồn, tài liệu và template đã rà; loại `.codex_tmp/`, file xuất thử trong `_qa/`, profile LibreOffice và khóa Office `~$*`.
 - Stage có chọn lọc, commit và push lên GitHub sau khi kiểm thử đạt.
 - Báo cáo rõ commit, remote/nhánh, file backup, kiểm thử và mọi lỗi push còn tồn tại.
 

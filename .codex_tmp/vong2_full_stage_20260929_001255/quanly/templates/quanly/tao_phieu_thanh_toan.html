@@ -1,6 +1,0 @@
-{% extends 'quanly/base.html' %}
-{% block title %}Tạo phiếu thanh toán{% endblock %}
-{% block content %}
-<div class="container-fluid bg-white shadow p-4 rounded"><h2 class="text-primary">Tạo phiếu thanh toán CBCT</h2><div class="alert alert-info">Hệ thống tạo phiếu theo từng CBCT, hợp đồng và kỳ; nhật ký thiếu hợp đồng, đã thanh toán hoặc hợp đồng không hợp lệ sẽ bị loại và báo rõ.</div>
-<form method="post" class="row g-3 align-items-end">{% csrf_token %}<div class="col-md-5"><label class="form-label">Nhóm HĐ</label><select name="nhom_hd" class="form-select" required><option value="">Chọn nhóm</option>{% for item in nhom_list %}<option value="{{ item.pk }}" {% if nhom_id == item.pk|stringformat:'s' %}selected{% endif %}>{{ item.ma_nhom_hd }} - {{ item.ten_nhom_hd }}</option>{% endfor %}</select></div><div class="col-md-3"><label class="form-label">Kỳ can thiệp</label><select name="ky" class="form-select" required><option value="">Chọn kỳ</option>{% for item in ky_choices %}<option value="{{ item }}" {% if ky == item|stringformat:'s' %}selected{% endif %}>Kỳ {{ item }}</option>{% endfor %}</select></div><div class="col-md-4"><button class="btn btn-primary">Tạo phiếu hợp lệ</button> <a class="btn btn-outline-secondary" href="{% url 'danh_sach_phieu_thanh_toan' %}">Quay lại</a></div></form></div>
-{% endblock %}

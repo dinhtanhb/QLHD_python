@@ -3808,7 +3808,8 @@ def de_nghi_thanh_toan(request):
         "nam": nam,
         "journal_count": qs.count(),
         "so_buoi": qs.aggregate(total=Sum("so_buoi_thuc_hien"))["total"] or 0,
-        "can_bo_count": len({item.can_bo_hieu_luc_id for item in qs if item.can_bo_hieu_luc_id}),
+        "can_bo_count": qs.order_by().exclude(can_bo_hieu_luc_pk__isnull=True)
+        .values("can_bo_hieu_luc_pk").distinct().count(),
         "tu_ngay": tu_ngay,
         "den_ngay": den_ngay,
         "date_error": date_error,
@@ -3877,9 +3878,14 @@ def _journal_export_file_stem(qs, ky):
     first = qs.first()
     if not first:
         return "NTatCaK" + (ky or "TatCa")
-    group_codes = list({item.nhom_hd_hieu_luc.ma_nhom_hd for item in qs[:1000]})
-    group_code = group_codes[0] if len(group_codes) == 1 else "TatCa"
-    period = ky or (str(first.ky_can_thiep) if qs.values("ky_can_thiep").distinct().count() == 1 else "TatCa")
+    # Xét toàn bộ phạm vi bằng DISTINCT, không đoán nhóm từ 1.000 dòng đầu.
+    group_ids = list(qs.order_by().values_list("nhom_hieu_luc_id", flat=True).distinct()[:2])
+    group_code = (
+        NhomHD.objects.filter(pk=group_ids[0]).values_list("ma_nhom_hd", flat=True).first()
+        if len(group_ids) == 1 and group_ids[0] is not None else None
+    ) or "TatCa"
+    periods = list(qs.order_by().values_list("ky_can_thiep", flat=True).distinct()[:2]) if not ky else []
+    period = ky or (str(periods[0]) if len(periods) == 1 else "TatCa")
     return f"N{group_code}K{period}"
 
 

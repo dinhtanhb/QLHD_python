@@ -17,6 +17,7 @@ Tài liệu này là quy tắc bắt buộc cho mọi lần sửa mã nguồn, t
 
 4. Đọc các file liên quan và xác định tác động đến dữ liệu, tính tiền, import, export, template và URL.
 5. Với thay đổi nghiệp vụ hoặc import/export, phải thực hiện rà soát độc lập bằng các agent trong `.cursor/agents/`.
+6. Khi dọn repository, đối chiếu `git ls-files` với các tham chiếu trong mã nguồn và tài liệu. Giữ migration, template, fixture và script dữ liệu có thể còn được vận hành thủ công; không xóa chỉ vì không thấy import Python.
 
 ## Sau khi sửa
 
@@ -25,7 +26,7 @@ Tài liệu này là quy tắc bắt buộc cho mọi lần sửa mã nguồn, t
 3. Với HTML: mở trang và kiểm tra lỗi render, bộ lọc, phân trang và bố cục.
 4. Với DOCX/XLSX/PDF: mở bằng ứng dụng tương ứng hoặc công cụ kiểm tra định dạng, kiểm tra tên file, số liệu, công thức và nội dung hiển thị.
 5. Chạy `git diff --check`, cập nhật `docs/PROJECT_PROGRESS.md` và ghi rõ rủi ro dữ liệu còn lại.
-6. Không commit hoặc push nếu người dùng chưa yêu cầu rõ trong lượt đó.
+6. Chỉ commit/push theo ủy quyền của người dùng; áp dụng ủy quyền thường trực ở cuối tài liệu này cho các đợt sửa đã hoàn thành.
 
 ## Nguyên tắc dữ liệu nghiệp vụ
 
@@ -49,5 +50,7 @@ Theo ủy quyền thường trực của người dùng, sau mỗi đợt sửa 
 4. Chạy kiểm thử, kiểm tra định dạng và kiểm tra luồng thực tế theo phạm vi thay đổi.
 5. Tạo hai bản sao ZIP trong `backups/`: một bản `review` gọn để rà soát và một bản `full` gồm mã nguồn/tài liệu/template; không đưa `.env`, database, dữ liệu thật, `venv`, log hoặc file tạm vào bản sao.
 6. Stage đúng các file thuộc đợt thay đổi, tạo commit có mô tả rõ ràng và push lên remote GitHub của nhánh đang làm việc.
+
+Tệp QA có dữ liệu hoặc script chạy tay chỉ được dọn khi đã xác minh mục đích và tác động; `.codex_tmp/`, hồ sơ LibreOffice và tệp khóa `~$*` là tệp tạm, không đưa vào Git hoặc backup. Nếu phát hiện đề xuất đổi tính năng/quy tắc nghiệp vụ, trình người dùng quyết định trước khi triển khai.
 
 Nếu commit hoặc push bị chặn bởi lỗi môi trường/quyền truy cập, phải báo rõ nguyên nhân, commit đã tạo hay chưa và lệnh còn cần người dùng thực hiện; không được coi là hoàn tất khi chưa xác nhận trạng thái remote.

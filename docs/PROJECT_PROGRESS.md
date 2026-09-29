@@ -344,3 +344,12 @@ Nguồn: bản review `Review_QLHD_Claude.md`. Các bản vá ghi trong review c
 - Hai lượt review độc lập về code và toàn vẹn dữ liệu xác nhận vị trí kiểm tra sau bước lọc nhật ký; dùng từ “chưa được đưa vào phiếu” vì không suy đoán thời điểm nhập nhật ký.
 - Baseline SQLite trước sửa: `check`, `makemigrations --check --dry-run`, **96/96** test đạt. Sau sửa: hai lệnh kiểm tra đạt, test mục tiêu **4/4**, toàn bộ `quanly.tests` **100/100** đạt, `git diff --check` đạt.
 - Rủi ro còn lại: chưa chạy trên MySQL và dữ liệu vận hành; cần UAT trên bản sao MySQL trước khi áp dụng. Phiếu đã chi không hủy được qua luồng thông thường; xử lý điều chỉnh theo kế toán.
+
+## Rà soát mã nguồn, tài liệu và tệp tạm — 29/09/2026
+
+- `quanly/views.py`: KPI Số CBCT dùng `COUNT DISTINCT` trên cán bộ hiệu lực thay vì tải toàn bộ nhật ký; tên tệp xuất kiểm tra Nhóm HĐ/Kỳ trên toàn phạm vi thay vì chỉ 1.000 dòng đầu. Không đổi công thức tiền hoặc quy tắc tạo phiếu.
+- Bổ sung 2 test hồi quy cho nhật ký thứ 1.001 thuộc nhóm khác và số cán bộ hiệu lực trong trang thanh quyết toán. Cập nhật `README.md`, `AGENTS.md`, hướng dẫn phát triển/sử dụng và skill kiểm tra của dự án.
+- Xóa 2.885 tệp đã theo dõi: bản sao/đầu ra tạm ở `.codex_tmp/`, đầu ra render và hồ sơ LibreOffice dưới `_qa/`, bản `qlhd/manage.py` trùng với `manage.py` gốc, và tệp khóa Office `~$Mau_DNTT.xlsx`. Giữ 3 script kiểm tra và 3 bảng tính đối chứng trong `_qa/`, toàn bộ migration/mẫu tài liệu có ích và script nhập dữ liệu chạy tay `nhap_dulieu.py`. Thêm quy tắc `.gitignore` cho đầu ra tạm.
+- Hai lượt rà soát độc lập xác nhận không có migration, mẫu dùng để xuất, dữ liệu gốc hoặc script QA bị xóa; thứ tự xác định nhóm/cán bộ hiệu lực của dữ liệu lịch sử được giữ nguyên.
+- Trước sửa: SQLite `check`, `makemigrations --check --dry-run`, 100/100 test đạt. Sau sửa: hai lệnh kiểm tra đạt, 2/2 test mục tiêu và 102/102 test toàn bộ đạt; `git diff --check` đạt.
+- Giới hạn: chưa kiểm thử MySQL và dữ liệu vận hành trong đợt này; cần chạy UAT trên bản sao MySQL trước khi triển khai. Mọi đề xuất đổi tính năng hoặc nghiệp vụ sẽ trình người dùng trước khi thực hiện.

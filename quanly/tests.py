@@ -1865,3 +1865,32 @@ class OnePaymentPerPeriodTests(SettlementReportingTestBase):
         second = tao_phieu_thanh_toan(self.cb1, self.contract, 2)
         self.assertEqual((second.ky_can_thiep, second.lan_thanh_toan), (2, 2))
         self.assertEqual(PhieuThanhToan.objects.filter(hop_dong=self.contract, hoat_dong=True).count(), 2)
+
+
+class ExportScopeRegressionTests(SettlementReportingTestBase):
+    def test_filename_uses_all_groups_beyond_first_thousand_journals(self):
+        contract = self._contract("HD-MANY", self.cb1, self.g1)
+        assignment = self._assignment(self.alloc1, self.child1, nhom=self.g1)
+        NhatKyThucHien.objects.bulk_create([
+            NhatKyThucHien(
+                hop_dong=contract, phan_cong=assignment, ngay_thuc_hien=date(2026, 9, 10),
+                ky_can_thiep=1, so_buoi_thuc_hien=1, don_gia_cong=Decimal("200000"),
+                dinh_muc_di_lai=Decimal("50000"), du_lieu_lich_su=True,
+            ) for _ in range(1000)
+        ])
+        self._journal(contract, assignment, date(2026, 9, 11), ky=1, nhom_hd_nguon=self.g12)
+        request = RequestFactory().get("/de-nghi-thanh-toan/", {"ky": "1"})
+        queryset, ky, _, _ = views._journal_export_queryset(request)
+        self.assertEqual(views._journal_export_file_stem(queryset, ky), "NTatCaK1")
+
+    def test_payment_page_counts_effective_staff_without_loading_journals(self):
+        contract = self._contract("HD-STAFF", self.cb1, self.g1)
+        assignment = self._assignment(self.alloc1, self.child1, nhom=self.g1)
+        self._journal(contract, assignment, date(2026, 9, 10), ky=1)
+        self._journal(contract, assignment, date(2026, 9, 11), ky=1)
+        self._journal(contract, assignment, date(2026, 9, 12), ky=1, can_bo_nguon=self.cb2)
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("de_nghi_thanh_toan"), {"ky": "1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["journal_count"], 3)
+        self.assertEqual(response.context["can_bo_count"], 2)

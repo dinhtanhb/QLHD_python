@@ -1,6 +1,6 @@
 ---
 name: qlhd-change-validation
-description: Validate every QLHD Django code or app change with repository checks, data-integrity review, UI verification, and artifact export checks. Use before and after every change.
+description: Validate QLHD Django code, documentation, repository cleanup, imports and exports. Use before and after changes in the QLHD repository.
 ---
 
 # QLHD change validation
@@ -13,6 +13,7 @@ Apply this workflow to every change in `D:\QLHD`, including a new Django app, mo
 2. Record branch, status, latest commit, and baseline checks.
 3. Map affected models, views, forms, URLs, templates, import/export code, and tests.
 4. For data or financial changes, run the code and data-integrity reviewers.
+5. For cleanup, compare tracked files with runtime references. Keep migrations, templates, manual data scripts and QA evidence unless their role is understood; record exact deletion counts. Never stage credentials or real data.
 
 ## After implementation
 
@@ -29,3 +30,5 @@ git diff --check
 Then run targeted tests and a real-flow check. For Excel, validate the ZIP package, reload it with `openpyxl`, and open it with Excel when available. For Word/PDF, render and inspect pages. For HTML, load the affected route and verify filters, actions, tables, and responsive layout.
 
 Update `docs/PROJECT_PROGRESS.md` with verified results and residual risks. The user has granted standing authorization to commit and push after each completed change: create a review ZIP and a full source/template ZIP under `backups/`, stage only intended files, commit with a clear message, and push the active branch. Never include `.env`, databases, real input data, virtual environments, logs, or temporary files in commits or backups. If commit or push fails, report the exact state and blocker instead of claiming completion.
+
+Build backups from a reviewed source/document/template allowlist, not by zipping the working directory. Exclude `.codex_tmp/`, `_qa/` generated outputs, LibreOffice profiles, `~$*`, and local credentials. If a requested improvement changes business behavior, propose it to the user before implementation.
