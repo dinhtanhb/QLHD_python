@@ -352,6 +352,15 @@ class NhatKyCanThiepForm(BootstrapModelForm):
         return cleaned
 
 
+class NhatKyGhiChuForm(forms.Form):
+    """Chỉ ghi chú của nhật ký đã lập phiếu, không kiểm tra lại số liệu lịch sử."""
+
+    ghi_chu = forms.CharField(
+        label="Ghi chú", required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+    )
+
+
 class DotThanhToanForm(BootstrapModelForm):
     class Meta:
         model = DotThanhToan

@@ -353,3 +353,11 @@ Nguồn: bản review `Review_QLHD_Claude.md`. Các bản vá ghi trong review c
 - Hai lượt rà soát độc lập xác nhận không có migration, mẫu dùng để xuất, dữ liệu gốc hoặc script QA bị xóa; thứ tự xác định nhóm/cán bộ hiệu lực của dữ liệu lịch sử được giữ nguyên.
 - Trước sửa: SQLite `check`, `makemigrations --check --dry-run`, 100/100 test đạt. Sau sửa: hai lệnh kiểm tra đạt, 2/2 test mục tiêu và 102/102 test toàn bộ đạt; `git diff --check` đạt.
 - Giới hạn: chưa kiểm thử MySQL và dữ liệu vận hành trong đợt này; cần chạy UAT trên bản sao MySQL trước khi triển khai. Mọi đề xuất đổi tính năng hoặc nghiệp vụ sẽ trình người dùng trước khi thực hiện.
+
+## Hoàn thiện định dạng và thao tác nhật ký đã lập phiếu — 30/09/2026
+
+- Chuẩn hóa số ở thẻ phân công trang chủ và cột kỳ của bảng tóm tắt nhật ký; loại `quanly/report_pages.py` không còn tham chiếu, chứa cấu hình phân trang cũ.
+- Nhật ký trong phiếu hiệu lực dùng form ghi chú riêng và chỉ cập nhật cột `ghi_chu`/`updated_at`, không gọi tính lại tiền/đi lại. Danh sách ẩn nút Xóa và thông báo trạng thái; POST xóa trực tiếp trả thông báo thay vì lỗi máy chủ. Vai trò chỉ đọc và người không có quyền trên hợp đồng đã khóa không còn thấy nút sửa/xóa nhật ký.
+- Cập nhật README và hướng dẫn sử dụng. Thêm test hồi quy bảo vệ số buổi và snapshot phiếu trước POST thay đổi số liệu, kiểm tra GET và POST xóa.
+- Review code và toàn vẹn dữ liệu phát hiện nguy cơ `model.save()` ghi đè tiền/lượt đi lại lịch sử và số lần thanh toán đồng thời; đã chuyển sang cập nhật riêng ghi chú và thêm test có giờ, số tiền lịch sử và hợp đồng đã khóa.
+- Baseline trước sửa: SQLite 108/108 test, `check` và kiểm tra migration đạt. Sau sửa: SQLite 111/111 test, `check`, kiểm tra migration và `git diff --check` đạt. Chưa kiểm thử MySQL hoặc dữ liệu vận hành trong đợt này; người dùng sẽ UAT riêng.

@@ -1918,6 +1918,72 @@ class PaymentPageWorkflowTests(SettlementReportingTestBase):
         self.assertEqual(voucher.trang_thai, "CHO_CHI")
 
 
+class PaidJournalActionTests(SettlementReportingTestBase):
+    def test_paid_journal_can_only_edit_note_and_delete_returns_feedback(self):
+        assignment = self._assignment(self.alloc1, self.child1, nhom=self.g1)
+        contract = self._contract("HD-PAID-JOURNAL", self.cb1, self.g1)
+        journal = self._journal(contract, assignment, date(2026, 9, 10), ky=1, buoi=2)
+        voucher = tao_phieu_thanh_toan(self.cb1, contract, 1)
+        self.client.force_login(self.admin)
+        listing = self.client.get(reverse("nhat_ky_can_thiep"))
+        self.assertNotContains(listing, reverse("xoa_nhat_ky_can_thiep", args=[journal.pk]))
+        edit_url = reverse("sua_nhat_ky_can_thiep", args=[journal.pk])
+        edit = self.client.get(edit_url)
+        self.assertEqual(edit.status_code, 200)
+        self.assertEqual(list(edit.context["form"].fields), ["ghi_chu"])
+        response = self.client.post(edit_url, {"so_buoi_thuc_hien": "999", "ghi_chu": "Đã đối chiếu"})
+        self.assertEqual(response.status_code, 302)
+        journal.refresh_from_db()
+        self.assertEqual(journal.so_buoi_thuc_hien, 2)
+        self.assertEqual(journal.ghi_chu, "Đã đối chiếu")
+        self.assertEqual(voucher.chi_tiet.get().so_buoi, 2)
+        deleted = self.client.post(reverse("xoa_nhat_ky_can_thiep", args=[journal.pk]))
+        self.assertEqual(deleted.status_code, 302)
+        self.assertTrue(NhatKyThucHien.objects.filter(pk=journal.pk).exists())
+        self.assertIn("Không thể xóa", " ".join(str(msg) for msg in get_messages(deleted.wsgi_request)))
+
+    def test_paid_scheduled_historical_note_does_not_recalculate_or_overwrite_round(self):
+        assignment = self._assignment(self.alloc1, self.child1, nhom=self.g1)
+        contract = self._contract("HD-PAID-HISTORY", self.cb1, self.g1)
+        journal = self._journal(
+            contract, assignment, date(2026, 9, 10), buoi=2,
+            gio_bat_dau=time(8), gio_ket_thuc=time(9),
+        )
+        voucher = tao_phieu_thanh_toan(self.cb1, contract, 1)
+        # Mô phỏng số liệu lịch sử đã chốt và lần thanh toán đổi sau lúc mở form.
+        NhatKyThucHien.objects.filter(pk=journal.pk).update(
+            ngay_thuc_hien=date(2026, 7, 10), so_luot_di_lai_cbct=7,
+            thanh_tien=Decimal("750000"), lan_thanh_toan=3,
+        )
+        self.client.force_login(self.admin)
+        edit_url = reverse("sua_nhat_ky_can_thiep", args=[journal.pk])
+        self.assertEqual(self.client.get(edit_url).status_code, 200)
+        response = self.client.post(edit_url, {"ghi_chu": "Đã đối chiếu", "so_buoi_thuc_hien": "999"})
+        self.assertEqual(response.status_code, 302)
+        journal.refresh_from_db()
+        self.assertEqual(journal.ghi_chu, "Đã đối chiếu")
+        self.assertEqual((journal.so_buoi_thuc_hien, journal.so_luot_di_lai_cbct, journal.thanh_tien, journal.lan_thanh_toan),
+                         (2, 7, Decimal("750000"), 3))
+        self.assertEqual(voucher.chi_tiet.get().so_buoi, 2)
+
+    def test_locked_paid_journal_action_matches_access_rights(self):
+        assignment = self._assignment(self.alloc1, self.child1, nhom=self.g1)
+        contract = self._contract("HD-PAID-LOCKED", self.cb1, self.g1)
+        journal = self._journal(contract, assignment, date(2026, 9, 10))
+        tao_phieu_thanh_toan(self.cb1, contract, 1)
+        contract.is_locked = True
+        contract.save(update_fields=["is_locked"])
+        cbda = User.objects.create_user(username="cbda-locked-journal", password="secret")
+        cbda.groups.add(Group.objects.create(name="CBDA"))
+        self.client.force_login(cbda)
+        listing = self.client.get(reverse("nhat_ky_can_thiep"))
+        self.assertEqual(listing.status_code, 200)
+        self.assertNotContains(listing, reverse("sua_nhat_ky_can_thiep", args=[journal.pk]))
+        self.assertEqual(self.client.get(reverse("sua_nhat_ky_can_thiep", args=[journal.pk])).status_code, 302)
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("nhat_ky_can_thiep")), reverse("sua_nhat_ky_can_thiep", args=[journal.pk]))
+
+
 class OnePaymentPerPeriodTests(SettlementReportingTestBase):
     """Một CBCT chỉ có một phiếu hiệu lực cho mỗi hợp đồng và kỳ."""
 

@@ -41,6 +41,6 @@ Thuế TNCN được tính riêng trên tiền công của từng lần thanh to
 ## 5. Luu y
 
 - Canh bao import khong dong nghia voi bo qua; xem tong `them`, `cap nhat`, `bo qua`, `canh bao`.
-- Khong sua nhat ky da nam trong phieu thanh toan, tru khi Admin xu ly theo quy trinh dieu chinh.
+- Nhật ký đã nằm trong phiếu thanh toán hiệu lực chỉ cho sửa ghi chú; các trường số liệu bị khóa và danh sách không hiện nút Xóa. Nếu cần điều chỉnh số liệu, xử lý phiếu theo quy trình thanh toán trước.
 - Khong tu y xoa hop dong/phu luc da phat sinh nghiem thu, thanh ly hoac thanh toan.
 - Khi gap loi file Excel, luu lai thong bao repair cua Excel va gui kem ten file, bo loc, Nhom HD, Ky.

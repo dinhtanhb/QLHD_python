@@ -60,6 +60,7 @@ from .forms import (
     NhomHDForm,
     NhatKyThucHienForm,
     NhatKyCanThiepForm,
+    NhatKyGhiChuForm,
     NghiemThuForm,
     PhanBoChiTieuForm,
     PhanCongTreForm,
@@ -2415,34 +2416,46 @@ def sua_nhat_ky_can_thiep(request, pk):
     if item.hop_dong_id and _is_operationally_locked(item.hop_dong) and not is_admin_user(request.user):
         messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được sửa nhật ký.")
         return redirect("nhat_ky_can_thiep")
-    form = NhatKyCanThiepForm(
-        request.POST or None,
-        instance=item,
-        require_contract=False,
-    )
+    in_payment = ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=item.pk, hoat_dong=True).exists()
+    if in_payment:
+        form = NhatKyGhiChuForm(request.POST or None, initial={"ghi_chu": item.ghi_chu})
+    else:
+        form = NhatKyCanThiepForm(request.POST or None, instance=item, require_contract=False)
     if request.method == "POST" and form.is_valid():
-        updated = form.save(commit=False)
-        updated.dia_diem_ct = updated.dia_diem_ct or updated.phan_cong.dia_diem_ct
-        if updated.hop_dong_id:
-            if updated.hop_dong.la_hop_dong_don_vi:
-                updated.don_gia_cong = Decimal("0")
-                updated.dinh_muc_di_lai = Decimal("0")
-            else:
-                updated.don_gia_cong = updated.hop_dong.don_gia_cong
-                updated.dinh_muc_di_lai = (
-                    updated.hop_dong.dinh_muc_di_lai_cs
-                    if PhanCongTre.service_group(updated.phan_cong.loai_dich_vu) == "CS"
-                    else updated.hop_dong.dinh_muc_di_lai_phcn
-                )
-        updated.save()
-        if updated.canh_bao_trung:
-            messages.warning(request, f"Đã lưu nhưng phát hiện trùng lịch: {updated.chi_tiet_trung}. Bản ghi đã chuyển vào Danh sách trùng.")
-        messages.success(request, "Đã cập nhật nhật ký can thiệp.")
-        return redirect("nhat_ky_can_thiep")
+        if in_payment:
+            # Không gọi model.save(): lịch sử có thể có số đi lại/tiền đã chốt,
+            # và một bản ghi đồng thời có thể vừa được gán lần thanh toán mới.
+            NhatKyThucHien.objects.filter(pk=item.pk).update(
+                ghi_chu=form.cleaned_data["ghi_chu"], updated_at=timezone.now(),
+            )
+        else:
+            updated = form.save(commit=False)
+            try:
+                updated.dia_diem_ct = updated.dia_diem_ct or updated.phan_cong.dia_diem_ct
+                if updated.hop_dong_id:
+                    if updated.hop_dong.la_hop_dong_don_vi:
+                        updated.don_gia_cong = Decimal("0")
+                        updated.dinh_muc_di_lai = Decimal("0")
+                    else:
+                        updated.don_gia_cong = updated.hop_dong.don_gia_cong
+                        updated.dinh_muc_di_lai = (
+                            updated.hop_dong.dinh_muc_di_lai_cs
+                            if PhanCongTre.service_group(updated.phan_cong.loai_dich_vu) == "CS"
+                            else updated.hop_dong.dinh_muc_di_lai_phcn
+                        )
+                updated.save()
+            except ValidationError as exc:
+                form.add_error(None, exc)
+        if not form.non_field_errors():
+            if not in_payment and updated.canh_bao_trung:
+                messages.warning(request, f"Đã lưu nhưng phát hiện trùng lịch: {updated.chi_tiet_trung}. Bản ghi đã chuyển vào Danh sách trùng.")
+            messages.success(request, "Đã cập nhật nhật ký can thiệp.")
+            return redirect("nhat_ky_can_thiep")
     return render(request, "quanly/them_nhat_ky_can_thiep.html", {
         "form": form,
         "page_title": "Sửa nhật ký can thiệp",
         "submit_label": "Lưu thay đổi",
+        "in_payment": in_payment,
     })
 
 
@@ -2457,7 +2470,7 @@ def xoa_nhat_ky_can_thiep(request, pk):
     try:
         item.delete()
         messages.success(request, "Đã xóa nhật ký can thiệp.")
-    except ProtectedError:
+    except (ProtectedError, ValidationError):
         messages.error(request, "Không thể xóa nhật ký đã được sử dụng trong hồ sơ thanh toán.")
     return redirect("nhat_ky_can_thiep")
 
@@ -3538,6 +3551,9 @@ def nhat_ky_can_thiep(request):
     if _is_id(nam, min_value=1900, max_value=2100): qs = qs.filter(ngay_thuc_hien__year=int(nam))
     if only_conflicts:
         qs = qs.filter(canh_bao_trung=True)
+    qs = qs.annotate(is_in_active_payment=Exists(
+        ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=OuterRef("pk"), hoat_dong=True)
+    ))
     page_obj = Paginator(qs, 25).get_page(request.GET.get("page"))
     total_records = qs.count()
     phcn_records = qs.filter(phan_cong__loai_dich_vu__in=PhanCongTre.PHCN_SERVICE_CODES).count()

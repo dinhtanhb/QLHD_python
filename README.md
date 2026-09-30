@@ -54,6 +54,7 @@ Mở <http://127.0.0.1:8000/>. Xem [hướng dẫn quản trị](docs/ADMIN_MANU
 - Trong bảng tổng hợp theo Số HĐ, Admin có thể mở trang Sửa HĐ hoặc trang chi tiết để xem trước và xác nhận Xóa HĐ. Kế toán/Admin dùng **Lập TT** để mở màn hình tạo phiếu với sẵn hợp đồng, Nhóm HĐ và Kỳ; màn hình này chỉ tạo phiếu cho hợp đồng đã chọn.
 - Sau khi tiền đã chuyển, Kế toán/Admin nhập **Ngày thanh toán** rồi bấm **Đã chi** trên sổ phiếu. Ngày hợp lệ được lưu tại phiếu và hiển thị ở cột Ngày thanh toán; phiếu chờ chi hoặc hủy hiển thị dấu gạch ngang. Không có migration mới cho trường này.
 - Các cột số căn phải, dùng dấu chấm phân tách hàng nghìn và không lặp ký hiệu tiền ở từng ô. Mã Nhóm HĐ được hiển thị gọn bằng số.
+- Nhật ký đã nằm trong phiếu thanh toán hiệu lực chỉ cho sửa ghi chú. Danh sách ẩn nút Xóa đối với nhật ký này; muốn điều chỉnh số liệu cần xử lý phiếu theo quy trình thanh toán.
 
 ## Đồng bộ với GitHub trên máy của bạn (PowerShell)
 
