@@ -1194,7 +1194,7 @@ from django.db.models import F
 from django.test.utils import CaptureQueriesContext
 
 from .parsing import parse_get_int
-from .reporting import build_intervention_report, intervention_report_queryset
+from .reporting import build_intervention_report, export_intervention_report_xlsx, intervention_report_queryset
 from .services.payment_ledger import lay_cau_hinh_thue
 
 
@@ -1282,7 +1282,8 @@ class SettlementReportingTestBase(TestCase):
     def _paid(journal):
         total = Decimal("0")
         for detail in journal.chi_tiet_phieu_thanh_toan.filter(hoat_dong=True):
-            total += detail.tien_cong + detail.tien_di_lai
+            if detail.phieu.trang_thai == "DA_CHI":
+                total += detail.tien_cong + detail.tien_di_lai
         return total
 
 
@@ -1333,7 +1334,7 @@ class InterventionReportEquivalenceTests(SettlementReportingTestBase):
     def test_report_matches_model_based_reference_at_every_level(self):
         self._scenario()
         # Lập phiếu cho HD-A kỳ 1 để có số "đã thanh toán".
-        tao_phieu_thanh_toan(self.cb1, self.cA, 1)
+        xac_nhan_chi(tao_phieu_thanh_toan(self.cb1, self.cA, 1), date(2026, 9, 30))
         contracts, groups, children, summary = self._reference()
 
         report = build_intervention_report(intervention_report_queryset())
@@ -1475,7 +1476,7 @@ class ThanhQuyetToanTests(SettlementReportingTestBase):
         expected = {}
         for j in self._all_journals():
             group, staff = j.nhom_hd_hieu_luc, j.can_bo_hieu_luc
-            if not group or not staff:
+            if not group or not staff or not j.hop_dong_id:
                 continue
             item = expected.setdefault((group.pk, j.ky_can_thiep), {"journals": 0, "hd": set(), "staff": {}, "so_buoi": 0, "di_lai": 0})
             item["journals"] += 1
@@ -1498,6 +1499,69 @@ class ThanhQuyetToanTests(SettlementReportingTestBase):
             self.assertEqual(row["di_lai"], item["di_lai"])
             for field in ("tien_cong", "tien_di_lai", "tong_truoc_thue", "thue_tncn", "thuc_linh"):
                 self.assertEqual(row[field], sum((b[field] for b in breakdowns), Decimal("0")), f"{key} {field}")
+
+    def test_contractless_history_is_reported_separately_not_in_payable_rows(self):
+        self._scenario()
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("thanh_quyet_toan"))
+        rows = response.context["danh_sach"]
+        history = response.context["unlinked_history"]
+        payable_journal_count = NhatKyThucHien.objects.filter(hop_dong__isnull=False).count()
+        self.assertEqual(sum(row["journal_count"] for row in rows), payable_journal_count, rows)
+        self.assertEqual(history["journal_count"], 1)
+        self.assertEqual(history["sessions"], 5)
+        self.assertEqual(history["amount"], Decimal("1000000"))
+        self.assertContains(response, "chưa liên kết hợp đồng")
+
+    def test_contractless_history_missing_cbct_is_still_counted_in_warning(self):
+        allocation = PhanBoChiTieu.objects.create(can_bo=None, nhom_hd=self.g1, so_tre_phcn=1, so_buoi_phcn=10)
+        assignment = self._assignment(allocation, self.child1, nhom=self.g1)
+        assignment.can_bo_nguon = None
+        assignment.save()
+        self._journal(None, assignment, date(2026, 9, 10), ky=1)
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("thanh_quyet_toan"))
+        history = response.context["unlinked_history"]
+        self.assertEqual(history["journal_count"], 1)
+        self.assertEqual(history["missing_staff"], 1)
+        self.assertEqual(response.context["danh_sach"], [])
+        self.assertContains(response, "thiếu CBCT hiệu lực")
+
+    def test_search_matches_effective_contract_staff_and_preserves_action_scope(self):
+        self._scenario()
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("thanh_quyet_toan"), {"q": "RPT0002"})
+        self.assertEqual(sum(row["journal_count"] for row in response.context["danh_sach"]), 2)
+        self.assertEqual(response.context["unlinked_history"]["journal_count"], 1)
+        self.assertContains(response, "q=RPT0002")
+        self.assertContains(response, "Xóa lọc CBCT/tìm kiếm")
+        self.assertNotContains(response, reverse("tao_dot_thanh_toan_di_lai_phu_huynh_theo_nhom"))
+        full_scope = self.client.get(reverse("thanh_quyet_toan"), {"nhom_hd": self.g12.pk, "ky": 1})
+        self.assertContains(full_scope, reverse("tao_dot_thanh_toan_di_lai_phu_huynh_theo_nhom"))
+
+    def test_report_counts_only_confirmed_paid_vouchers_as_paid(self):
+        assignment = self._assignment(self.alloc1, self.child1, nhom=self.g1)
+        pending_contract = self._contract("HD-PENDING", self.cb1, self.g1)
+        paid_contract = self._contract("HD-PAID", self.cb2, self.g12)
+        self._journal(pending_contract, assignment, date(2026, 9, 10), ky=1)
+        self._journal(paid_contract, assignment, date(2026, 9, 11), ky=1, buoi=2)
+        pending = tao_phieu_thanh_toan(self.cb1, pending_contract, 1)
+        paid = tao_phieu_thanh_toan(self.cb2, paid_contract, 1)
+        xac_nhan_chi(paid, date(2026, 9, 30))
+        report = build_intervention_report(intervention_report_queryset())
+        by_contract = {row["so_hop_dong"]: row["da_thanh_toan"] for row in report["contracts"]}
+        self.assertEqual(pending.trang_thai, "CHO_CHI")
+        self.assertEqual(by_contract, {"HD-PENDING": Decimal("0"), "HD-PAID": Decimal("400000")})
+        self.assertEqual(report["summary"]["da_thanh_toan"], Decimal("400000"))
+        from openpyxl import load_workbook
+        workbook = export_intervention_report_xlsx(report)
+        output = BytesIO()
+        workbook.save(output)
+        reopened = load_workbook(BytesIO(output.getvalue()), read_only=True, data_only=True)
+        paid_row = next(row for row in reopened["TongHop"].iter_rows(values_only=True) if row[0] == "Đã thanh toán")
+        self.assertEqual(paid_row[1], 400000)
+        self.assertEqual({row[0]: row[10] for row in reopened["TheoNhomKy"].iter_rows(min_row=2, values_only=True)}, {"HD-PAID": 400000, "HD-PENDING": 0})
+        reopened.close()
 
     def test_tax_follows_cau_hinh_thue_in_database(self):
         self.a1 = self._assignment(self.alloc1, self.child1, "VLTL", nhom=self.g1)

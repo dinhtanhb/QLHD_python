@@ -12,7 +12,7 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
-from django.db.models import Count, Exists, F, IntegerField, Max, Min, OuterRef, Q, Sum
+from django.db.models import Count, Exists, F, IntegerField, Max, Min, OuterRef, Q, Subquery, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -44,7 +44,7 @@ from .payment_export import (
 from .financial import FinancialConfig, calculate_payment_breakdown, normalize_travel_location
 from .parsing import parse_decimal as parse_decimal_legacy, parse_get_int
 from .reporting import (
-    build_intervention_report, effective_group_id_expression, effective_staff_id_expression,
+    build_intervention_report, build_intervention_report_page, effective_group_id_expression, effective_staff_id_expression,
     export_intervention_report_xlsx, intervention_report_queryset, labor_expression, travel_expression,
 )
 from .services.contract_status import is_het_han, sync_trang_thai_hop_dong, validate_status_transition
@@ -382,13 +382,13 @@ def bao_cao_tong_hop(request):
         ky=ky_filter,
         den_ngay=den_ngay or timezone.localdate(),
     ).filter(ngay_thuc_hien__gte=F("hop_dong__ngay_ky"))
-    report = build_intervention_report(
-        queryset,
-        year_queryset=annual_queryset if not date_error else None,
-        since_signing_queryset=signing_queryset if not date_error else None,
-        report_year=report_year,
-    )
     if request.GET.get("format") == "xlsx":
+        report = build_intervention_report(
+            queryset,
+            year_queryset=annual_queryset if not date_error else None,
+            since_signing_queryset=signing_queryset if not date_error else None,
+            report_year=report_year,
+        )
         workbook = export_intervention_report_xlsx(report)
         output = BytesIO()
         workbook.save(output)
@@ -398,19 +398,25 @@ def bao_cao_tong_hop(request):
         )
         response["Content-Disposition"] = content_disposition_filename("Bao_cao_thanh_toan.xlsx")
         return response
-    # Hai bảng có trang riêng; KPI và file Excel vẫn dùng toàn bộ phạm vi lọc.
+    # Chỉ đọc 15 dòng mỗi bảng chi tiết; KPI và Excel vẫn dùng toàn bộ bộ lọc.
     pagination_params = request.GET.copy()
     pagination_params.pop("page", None)
     pagination_params.pop("format", None)
     contract_params = request.GET.copy()
     contract_params.pop("contract_page", None)
     contract_params.pop("format", None)
-    contracts_page = Paginator(report["contracts"], 15).get_page(request.GET.get("contract_page"))
-    children_page = Paginator(report["children"], 15).get_page(request.GET.get("page"))
+    report = build_intervention_report_page(
+        queryset,
+        contract_page=request.GET.get("contract_page"),
+        child_page=request.GET.get("page"),
+        year_queryset=annual_queryset if not date_error else None,
+        since_signing_queryset=signing_queryset if not date_error else None,
+        report_year=report_year,
+    )
     return render(request, "quanly/bao_cao_tong_hop.html", {
         "report": report,
-        "page_obj": children_page,
-        "contracts_page": contracts_page,
+        "page_obj": report["children_page"],
+        "contracts_page": report["contracts_page"],
         "pagination_query": pagination_params.urlencode(),
         "contract_pagination_query": contract_params.urlencode(),
         "nhom_list": NhomHD.objects.filter(is_active=True).order_by("ma_nhom_hd"),
@@ -3772,53 +3778,82 @@ def thanh_quyet_toan(request):
     """
     qs, ky, thang, nam = _journal_export_queryset(request)
     query = request.GET.get("q", "").strip()
-    if query:
-        qs = qs.filter(
-            Q(phan_cong__tre__ma_tre__icontains=query)
-            | Q(phan_cong__tre__ho_ten__icontains=query)
-            | Q(hop_dong__so_hop_dong__icontains=query)
-            | Q(can_bo_nguon__ho_ten__icontains=query)
-            | Q(phan_cong__phan_bo__can_bo__ho_ten__icontains=query)
-        )
-    scope = qs.filter(nhom_hieu_luc_id__isnull=False, can_bo_hieu_luc_pk__isnull=False).order_by()
-    # Thuế TNCN tính riêng cho từng (CBCT, số HĐ) trong mỗi (Nhóm, Kỳ), khớp với phiếu thanh toán:
-    # ngưỡng áp cho một lần thanh toán của một số HĐ, không cộng dồn qua các hợp đồng.
-    staff_rows = scope.values("nhom_hieu_luc_id", "ky_can_thiep", "can_bo_hieu_luc_pk", "hop_dong_id").annotate(
-        journal_count=Count("pk"), so_buoi=Sum("so_buoi_thuc_hien"), di_lai=Sum("so_luot_di_lai_cbct"),
-        tien_cong=Sum(labor_expression()), tien_di_lai=Sum(travel_expression()),
+    scope = qs.filter(
+        nhom_hieu_luc_id__isnull=False,
+        can_bo_hieu_luc_pk__isnull=False,
+        hop_dong__isnull=False,
+    ).order_by()
+    unlinked_history = qs.filter(hop_dong__isnull=True).aggregate(
+        journal_count=Count("pk"),
+        sessions=Sum("so_buoi_thuc_hien"),
+        labor=Sum(labor_expression()),
+        travel=Sum(travel_expression()),
+        missing_group=Count("pk", filter=Q(nhom_hieu_luc_id__isnull=True)),
+        missing_staff=Count("pk", filter=Q(can_bo_hieu_luc_pk__isnull=True)),
     )
-    contract_counts = {
-        (row["nhom_hieu_luc_id"], row["ky_can_thiep"]): row["so_hd"]
-        for row in scope.values("nhom_hieu_luc_id", "ky_can_thiep").annotate(so_hd=Count("hop_dong_id", distinct=True))
+    unlinked_history = {
+        "journal_count": unlinked_history["journal_count"] or 0,
+        "sessions": unlinked_history["sessions"] or 0,
+        "amount": (unlinked_history["labor"] or Decimal("0")) + (unlinked_history["travel"] or Decimal("0")),
+        "missing_group": unlinked_history["missing_group"] or 0,
+        "missing_staff": unlinked_history["missing_staff"] or 0,
     }
-    groups = {group.pk: group for group in NhomHD.objects.filter(pk__in={group_id for group_id, _ in contract_counts})}
-    tax_config = lay_cau_hinh_thue(timezone.localdate())
+    # Chọn trang Nhóm×Kỳ trước; chỉ lấy các tổng và CBCT/HĐ thuộc 15 dòng này.
+    group_keys = scope.values("nhom_hieu_luc_id", "ky_can_thiep").annotate(
+        journal_count=Count("pk"),  # ép GROUP BY để paginator không tạo một hàng cho mỗi nhật ký
+        group_code=Subquery(
+            NhomHD.objects.filter(pk=OuterRef("nhom_hieu_luc_id")).values("ma_nhom_hd")[:1]
+        ),
+    ).order_by("group_code", "ky_can_thiep")
+    page_obj = Paginator(group_keys, 15).get_page(request.GET.get("page"))
+    page_keys = list(page_obj.object_list)
+    page_filter = Q(pk__in=[])
+    for values in page_keys:
+        page_filter |= Q(nhom_hieu_luc_id=values["nhom_hieu_luc_id"], ky_can_thiep=values["ky_can_thiep"])
+    groups = {
+        group.pk: group
+        for group in NhomHD.objects.filter(pk__in={row["nhom_hieu_luc_id"] for row in page_keys})
+    }
     rows = {}
-    for values in staff_rows:
-        key = (values["nhom_hieu_luc_id"], values["ky_can_thiep"])
-        item = rows.setdefault(key, {
-            "nhom": groups[key[0]], "ky": key[1], "hop_dong_count": contract_counts.get(key, 0), "can_bo_count": 0,
-            "_staff": set(), "journal_count": 0, "so_buoi": Decimal("0"), "di_lai": Decimal("0"),
-            "tien_cong": Decimal("0"), "tien_di_lai": Decimal("0"), "tong_truoc_thue": Decimal("0"),
-            "thue_tncn": Decimal("0"), "thuc_linh": Decimal("0"),
-        })
-        breakdown = calculate_payment_breakdown(values["tien_cong"], values["tien_di_lai"], tax_config)
-        item["_staff"].add(values["can_bo_hieu_luc_pk"])
-        item["journal_count"] += values["journal_count"]
-        item["so_buoi"] += Decimal(values["so_buoi"] or 0)
-        item["di_lai"] += Decimal(values["di_lai"] or 0)
-        for name in ("tien_cong", "tien_di_lai", "tong_truoc_thue", "thue_tncn", "thuc_linh"):
-            item[name] += breakdown[name]
-    for item in rows.values():
-        item["can_bo_count"] = len(item.pop("_staff"))
-    danh_sach = sorted(rows.values(), key=lambda item: (item["nhom"].ma_nhom_hd, item["ky"]))
+    if page_keys:
+        totals = scope.filter(page_filter).values("nhom_hieu_luc_id", "ky_can_thiep").annotate(
+            hop_dong_count=Count("hop_dong_id", distinct=True),
+            can_bo_count=Count("can_bo_hieu_luc_pk", distinct=True),
+            journal_count=Count("pk"),
+            so_buoi=Sum("so_buoi_thuc_hien"),
+            di_lai=Sum("so_luot_di_lai_cbct"),
+        )
+        for values in totals:
+            key = (values["nhom_hieu_luc_id"], values["ky_can_thiep"])
+            rows[key] = {
+                "nhom": groups[key[0]], "ky": key[1],
+                "hop_dong_count": values["hop_dong_count"], "can_bo_count": values["can_bo_count"],
+                "journal_count": values["journal_count"], "so_buoi": Decimal(values["so_buoi"] or 0),
+                "di_lai": Decimal(values["di_lai"] or 0), "tien_cong": Decimal("0"),
+                "tien_di_lai": Decimal("0"), "tong_truoc_thue": Decimal("0"),
+                "thue_tncn": Decimal("0"), "thuc_linh": Decimal("0"),
+            }
+        # Thuế vẫn tính đúng trên từng CBCT + HĐ + Nhóm + Kỳ; phần dữ liệu này
+        # chỉ gồm các hàng của trang hiện tại.
+        staff_rows = scope.filter(page_filter).values(
+            "nhom_hieu_luc_id", "ky_can_thiep", "can_bo_hieu_luc_pk", "hop_dong_id",
+        ).annotate(
+            tien_cong=Sum(labor_expression()), tien_di_lai=Sum(travel_expression()),
+        )
+        tax_config = lay_cau_hinh_thue(timezone.localdate())
+        for values in staff_rows:
+            item = rows[(values["nhom_hieu_luc_id"], values["ky_can_thiep"])]
+            breakdown = calculate_payment_breakdown(values["tien_cong"], values["tien_di_lai"], tax_config)
+            for name in ("tien_cong", "tien_di_lai", "tong_truoc_thue", "thue_tncn", "thuc_linh"):
+                item[name] += breakdown[name]
+    danh_sach = [rows[(entry["nhom_hieu_luc_id"], entry["ky_can_thiep"])] for entry in page_keys]
     pagination_params = request.GET.copy()
     pagination_params.pop("page", None)
-    page_obj = Paginator(danh_sach, 15).get_page(request.GET.get("page"))
     return render(request, "quanly/thanh_quyet_toan.html", {
-        "danh_sach": page_obj,
+        "danh_sach": danh_sach,
         "page_obj": page_obj,
         "pagination_query": pagination_params.urlencode(),
+        "unlinked_history": unlinked_history,
         "query": query,
         "can_bo_list": CanBo.objects.filter(is_active=True),
         "nhom_list": NhomHD.objects.filter(is_active=True),
@@ -3918,6 +3953,19 @@ def _journal_export_queryset(request):
         qs = qs.filter(ngay_thuc_hien__month=thang)
     if nam:
         qs = qs.filter(ngay_thuc_hien__year=nam)
+    query = request.GET.get("q", "").strip()
+    if query:
+        qs = qs.filter(
+            Q(phan_cong__tre__ma_tre__icontains=query)
+            | Q(phan_cong__tre__ho_ten__icontains=query)
+            | Q(hop_dong__so_hop_dong__icontains=query)
+            | Q(can_bo_nguon__ma_can_bo__icontains=query)
+            | Q(can_bo_nguon__ho_ten__icontains=query)
+            | Q(hop_dong__can_bo__ma_can_bo__icontains=query)
+            | Q(hop_dong__can_bo__ho_ten__icontains=query)
+            | Q(phan_cong__phan_bo__can_bo__ma_can_bo__icontains=query)
+            | Q(phan_cong__phan_bo__can_bo__ho_ten__icontains=query)
+        )
     return qs, str(ky or ""), str(thang or ""), str(nam or "")
 
 

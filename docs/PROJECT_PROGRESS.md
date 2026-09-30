@@ -308,7 +308,7 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - Bổ sung KPI `Lũy kế năm` và `Lũy kế từ ngày ký hợp đồng`, đồng thời cập nhật xuất Excel theo Số HĐ và hai mốc lũy kế.
 - `_journal_export_queryset` của Thanh quyết toán bỏ `prefetch_related` cho FK đơn trị, nạp quan hệ bằng `select_related` và duyệt theo batch để hạn chế N+1 và bộ nhớ.
 - Đã bổ sung test lọc theo Số HĐ, tổng lũy kế và route mới; SQLite đạt 63/63 và MySQL UAT sạch `qlhd_codex_uat_20260929_c` đạt 63/63. Lần chạy MySQL đầu phát hiện lỗi alias Subquery không tương thích, đã sửa bằng biểu thức subquery trực tiếp và chạy lại đạt.
-- Rủi ro còn lại: màn hình vẫn hiển thị toàn bộ dòng chi tiết trẻ/dịch vụ của phạm vi lọc; nếu dữ liệu tăng rất lớn cần bổ sung phân trang hoặc endpoint tải chi tiết riêng.
+- Ghi chú tại thời điểm 29/09: khi đó màn hình còn hiển thị toàn bộ dòng chi tiết trẻ/dịch vụ; đã được xử lý ở đợt tối ưu ngày 30/09 phía dưới.
 
 
 ## Rà soát hiệu năng/số liệu Báo cáo – Thanh quyết toán – Phiếu (29/09/2026)
@@ -361,3 +361,16 @@ Nguồn: bản review `Review_QLHD_Claude.md`. Các bản vá ghi trong review c
 - Cập nhật README và hướng dẫn sử dụng. Thêm test hồi quy bảo vệ số buổi và snapshot phiếu trước POST thay đổi số liệu, kiểm tra GET và POST xóa.
 - Review code và toàn vẹn dữ liệu phát hiện nguy cơ `model.save()` ghi đè tiền/lượt đi lại lịch sử và số lần thanh toán đồng thời; đã chuyển sang cập nhật riêng ghi chú và thêm test có giờ, số tiền lịch sử và hợp đồng đã khóa.
 - Baseline trước sửa: SQLite 108/108 test, `check` và kiểm tra migration đạt. Sau sửa: SQLite 111/111 test, `check`, kiểm tra migration và `git diff --check` đạt. Chưa kiểm thử MySQL hoặc dữ liệu vận hành trong đợt này; người dùng sẽ UAT riêng.
+
+## Tiếp tục review hiệu năng Báo cáo thanh toán và Thanh quyết toán — 30/09/2026
+
+- Review nhánh `main` sau phiên ChatGPT mobile: xác nhận các phần nghiệp vụ trọng tâm trong kế hoạch đã có; việc tồn rõ nhất là trang Báo cáo/TQT vẫn dựng toàn bộ chi tiết rồi mới phân trang, cùng các rủi ro lọc và phân loại nhật ký chưa có hợp đồng.
+- Báo cáo thanh toán: HTML đếm và lấy 15 dòng hợp đồng×kỳ, trẻ×dịch vụ trực tiếp bằng paginator SQL; chỉ nạp đối tượng liên quan của trang hiện tại. KPI/tóm tắt vẫn tính toàn bộ bộ lọc; xuất Excel vẫn bao gồm toàn bộ dữ liệu. Tối ưu đường xuất để chỉ thực thi truy vấn nhóm một lần.
+- Thanh quyết toán: phân trang Nhóm HĐ×Kỳ trong CSDL rồi chỉ tổng hợp tiền/thuế cho trang hiện tại. Sửa GROUP BY để mỗi khóa Nhóm×Kỳ chỉ xuất hiện một lần; tìm kiếm nhận cả mã/tên CBCT hiệu lực từ hợp đồng. Bộ lọc tìm kiếm được chuyển tiếp sang hồ sơ ĐNTT.
+- Mọi nhật ký thiếu HĐ được giữ nguyên và tính vào cảnh báo (kể cả dòng thiếu CBCT/Nhóm hiệu lực); không đưa vào bảng số phải lập phiếu. Cảnh báo nêu riêng số dòng thiếu CBCT/Nhóm để xử lý, không làm rơi lịch sử.
+- Báo cáo “Đã thanh toán” chỉ cộng chi tiết phiếu còn hiệu lực có phiếu cha `Đã chi`, không nhầm khoản đang `Chờ chi` thành tiền đã trả. Thao tác tạo TQT đi lại PH bị ẩn khi CBCT/tìm kiếm thu hẹp dữ liệu nhưng quy trình tạo batch chỉ nhận phạm vi Nhóm×Kỳ; giao diện hướng dẫn bỏ lọc để tạo đủ đợt.
+- Thêm test đối chiếu nhật ký có/không HĐ, dòng thiếu CBCT, tiền đã chi so với chờ chi (cả số liệu HTML và workbook Excel), tìm theo CBCT hợp đồng, giữ phạm vi tìm kiếm khi mở hồ sơ và phân trang. Cập nhật README/hướng dẫn vận hành để mô tả đúng cách đếm/cắt trang và cảnh báo lịch sử.
+- Kiểm thử trước khi sửa trong phiên này: `check`, kiểm tra migration đạt; SQLite 111/111 và MySQL UAT clone `qlhd_codex_uat_20260929_c` 111/111. Sau sửa: SQLite **115/115** và MySQL UAT **115/115**; test bổ sung đọc lại workbook đạt **1/1** trên cả hai backend. `check`, `makemigrations --check --dry-run`, `git diff --check` đạt.
+- Review độc lập: code reviewer xác nhận cách phân trang và kiểm thử hành động TQT PH; data-integrity reviewer xác nhận chỉ phiếu `DA_CHI` được tính là đã thanh toán, cảnh báo chứa mọi dòng thiếu HĐ, và scope action không bị mở rộng ngầm. Không còn finding chưa xử lý.
+- Giới hạn xác minh thực tế: đã chạy toàn bộ test trên MySQL UAT clone và kiểm tra route/template bằng Django client; chưa ghi/chạy nghiệp vụ trên DB vận hành vì không đưa dữ liệu thật vào thử nghiệm. Trước khi release lên dữ liệu thật, cần người dùng UAT nghiệp vụ đối chiếu số liệu thực tế; bản phát hành sao lưu và commit/push sẽ ghi bên dưới.
+- Rủi ro: dữ liệu vận hành chưa được dùng cho kiểm thử ghi; chỉ chạy thử trên UAT clone. Nhật ký chưa có HĐ cần được xử lý bằng liên kết nghiệp vụ, không tự tạo HĐ hoặc thay đổi dữ liệu thật.

@@ -28,6 +28,8 @@ Mo `http://127.0.0.1:8000/` va dang nhap bang tai khoan duoc cap.
 
 Mở menu `Báo cáo thanh toán`, lọc theo `Số hợp đồng` (khóa chính nghiệp vụ), Nhóm HĐ, Kỳ, Năm hoặc khoảng ngày nếu cần. Báo cáo gom theo Số HĐ + Kỳ, gồm KPI nhật ký, buổi, tiền công, đi lại, số đã thanh toán và cảnh báo trùng lịch. `Lũy kế năm` tính từ 01/01 của năm chọn đến ngày kết thúc bộ lọc hoặc ngày hiện tại; `Lũy kế từ ngày ký hợp đồng` tính từ ngày ký của từng hợp đồng đến cùng mốc kết thúc. Nút Excel tạo ba sheet, trong đó sheet tổng hợp và sheet chi tiết đều dùng Số HĐ.
 
+Hai bảng chi tiết Báo cáo thanh toán và danh sách Nhóm HĐ × Kỳ trong Thanh quyết toán đều phân trang 15 dòng bằng truy vấn CSDL; các KPI vẫn tính trên toàn bộ bộ lọc. Thanh quyết toán không gộp nhật ký chưa có số hợp đồng vào số phải lập phiếu; hệ thống vẫn giữ chúng và hiện cảnh báo riêng số nhật ký, số buổi, giá trị cần rà soát/liên kết trước khi thanh toán. TQT đi lại PH gom theo đủ Nhóm×Kỳ và tháng/năm; nếu lọc CBCT hoặc tìm kiếm, nút tạo đợt sẽ ẩn để tránh tạo batch rộng hơn phần đang xem.
+
 ## 4. Ho so thanh toan
 
 Truoc khi xuat ho so, chon CBDA la nguoi de nghi va chon day du khoang ngay. DNTT/DSTK/DNCK chi lay phieu dang hieu luc. Neu file co so lieu khac man hinh, dung bao cao va chi tiet phieu de truy nguyen truoc khi gui.

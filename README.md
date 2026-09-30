@@ -50,7 +50,7 @@ Mở <http://127.0.0.1:8000/>. Xem [hướng dẫn quản trị](docs/ADMIN_MANU
 
 ### Báo cáo và ngày thanh toán
 
-- Báo cáo thanh toán có hai bảng phân trang độc lập, mỗi bảng 15 dòng; Thanh quyết toán và Sổ thanh toán CBCT cũng hiển thị 15 dòng/trang. Bộ lọc được giữ khi chuyển trang, còn KPI và Excel dùng toàn bộ dữ liệu phù hợp.
+- Báo cáo thanh toán có hai bảng phân trang độc lập, mỗi bảng 15 dòng; dữ liệu chi tiết được đếm/cắt trang trong CSDL. Thanh quyết toán cũng phân trang Nhóm HĐ × Kỳ trực tiếp trong CSDL; KPI và Excel vẫn dùng toàn bộ phạm vi phù hợp.
 - Trong bảng tổng hợp theo Số HĐ, Admin có thể mở trang Sửa HĐ hoặc trang chi tiết để xem trước và xác nhận Xóa HĐ. Kế toán/Admin dùng **Lập TT** để mở màn hình tạo phiếu với sẵn hợp đồng, Nhóm HĐ và Kỳ; màn hình này chỉ tạo phiếu cho hợp đồng đã chọn.
 - Sau khi tiền đã chuyển, Kế toán/Admin nhập **Ngày thanh toán** rồi bấm **Đã chi** trên sổ phiếu. Ngày hợp lệ được lưu tại phiếu và hiển thị ở cột Ngày thanh toán; phiếu chờ chi hoặc hủy hiển thị dấu gạch ngang. Không có migration mới cho trường này.
 - Các cột số căn phải, dùng dấu chấm phân tách hàng nghìn và không lặp ký hiệu tiền ở từng ô. Mã Nhóm HĐ được hiển thị gọn bằng số.

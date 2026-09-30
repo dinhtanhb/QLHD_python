@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.core.paginator import Paginator
 from django.db.models import Case, Count, DecimalField, ExpressionWrapper, F, IntegerField, Min, OuterRef, Q, Subquery, Sum, Value, When
 
 from .models import ChiTietPhieuThanhToan, HopDong, NhatKyThucHien, NhomHD, PhanCongTre, Tre
@@ -10,7 +11,11 @@ _MONEY = DecimalField(max_digits=18, decimal_places=0)
 
 def _paid_subquery(field):
     return Subquery(
-        ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=OuterRef("pk"), hoat_dong=True)
+        ChiTietPhieuThanhToan.objects.filter(
+            nhat_ky_id=OuterRef("pk"),
+            hoat_dong=True,
+            phieu__trang_thai="DA_CHI",
+        )
         .values("nhat_ky_id").annotate(total=Sum(field)).values("total")[:1],
         output_field=_MONEY,
     )
@@ -137,6 +142,8 @@ def _contract_rows(queryset, groups):
     rows = queryset.order_by().values("hop_dong_id", "ky_can_thiep", "nhom_hieu_luc_id").annotate(
         first_date=Min("ngay_thuc_hien"), first_id=Min("pk"), **_sum_measures(with_paid=True),
     )
+    # Exports need every grouped row, but evaluate the grouped SQL only once.
+    rows = list(rows)
     contracts = {c.pk: c for c in HopDong.objects.filter(pk__in={r["hop_dong_id"] for r in rows}).select_related("can_bo", "don_vi")}
     merged = {}
     for values in rows:
@@ -218,6 +225,109 @@ def build_intervention_report(queryset, *, year_queryset=None, since_signing_que
         "groups": group_rows,
         "children": _child_rows(queryset, groups),
         "summary": summary, "year_cumulative": year_metrics, "since_signing": signing_metrics, "report_year": report_year,
+    }
+
+
+def build_intervention_report_page(
+    queryset, *, contract_page=1, child_page=1, year_queryset=None,
+    since_signing_queryset=None, report_year=None, per_page=15,
+):
+    """Build an HTML report without loading every grouped contract/child row.
+
+    Financial totals and the compact group/period summary cover the full filter.
+    The two potentially large detail tables are counted and sliced by SQL.
+    Excel export continues to use ``build_intervention_report`` for full detail.
+    """
+    queryset = queryset.order_by()
+    group_ids = set(queryset.values_list("nhom_hieu_luc_id", flat=True).distinct())
+    groups = {group.pk: group for group in NhomHD.objects.filter(pk__in={value for value in group_ids if value})}
+    group_rows, missing_group, conflict_count = _group_rows(queryset, groups)
+    summary = _metrics(queryset)
+    summary.update({"thieu_nhom": missing_group, "trung_lich": conflict_count})
+    year_metrics = _metrics(year_queryset) if year_queryset is not None else summary.copy()
+    signing_metrics = _metrics(since_signing_queryset) if since_signing_queryset is not None else summary.copy()
+
+    first_group_id = Subquery(
+        queryset.filter(
+            hop_dong_id=OuterRef("hop_dong_id"),
+            ky_can_thiep=OuterRef("ky_can_thiep"),
+        ).order_by("ngay_thuc_hien", "pk").values("nhom_hieu_luc_id")[:1],
+        output_field=IntegerField(),
+    )
+    contract_groups = queryset.values("hop_dong_id", "ky_can_thiep").annotate(
+        nhom_hieu_luc_id=first_group_id,
+        **_sum_measures(with_paid=True),
+    ).order_by("hop_dong__so_hop_dong", "ky_can_thiep")
+    contracts_page = Paginator(contract_groups, per_page).get_page(contract_page)
+    contract_values = list(contracts_page.object_list)
+    contract_ids = {row["hop_dong_id"] for row in contract_values}
+    contracts = {
+        contract.pk: contract
+        for contract in HopDong.objects.filter(pk__in=contract_ids).select_related("can_bo", "don_vi")
+    }
+    contract_rows = []
+    for values in contract_values:
+        contract = contracts[values["hop_dong_id"]]
+        group = groups.get(values["nhom_hieu_luc_id"])
+        row = {
+            "hop_dong_id": contract.pk,
+            "nhom_hd_id": contract.nhom_hd_id,
+            "so_hop_dong": contract.so_hop_dong,
+            "doi_tac": _partner_label(contract),
+            "ngay_ky": contract.ngay_ky,
+            "ky": values["ky_can_thiep"],
+            "nhom": _group_label(group),
+            "nhom_ma": group.ma_nhom_hd if group else UNKNOWN_GROUP_LABEL,
+            "co_the_lap_tt": bool(contract.can_bo_id) and contract.trang_thai not in {"DU_THAO", "HUY", "THANH_LY"},
+            **_base_row(values),
+            "da_thanh_toan": _amount(values["paid_cong"]) + _amount(values["paid_di_lai"]),
+        }
+        contract_rows.append(row)
+    contracts_page.object_list = contract_rows
+
+    child_groups = queryset.values(
+        "phan_cong__tre_id", "phan_cong__loai_dich_vu", "nhom_hieu_luc_id", "ky_can_thiep",
+    ).annotate(
+        so_buoi=Sum("so_buoi_thuc_hien"),
+        di_lai=Sum("so_luot_di_lai_cbct"),
+        tien_cong=Sum("tien_cong_tinh"),
+        tien_di_lai=Sum("tien_di_lai_tinh"),
+    ).order_by(
+        "nhom_hieu_luc_id", "ky_can_thiep", "phan_cong__tre__ma_tre", "phan_cong__loai_dich_vu",
+    )
+    children_page = Paginator(child_groups, per_page).get_page(child_page)
+    child_values = list(children_page.object_list)
+    tre_ids = {row["phan_cong__tre_id"] for row in child_values}
+    children = {child.pk: child for child in Tre.objects.filter(pk__in=tre_ids)}
+    service_names = dict(PhanCongTre._meta.get_field("loai_dich_vu").flatchoices)
+    child_rows = []
+    for values in child_values:
+        child = children[values["phan_cong__tre_id"]]
+        group = groups.get(values["nhom_hieu_luc_id"])
+        service = values["phan_cong__loai_dich_vu"]
+        child_rows.append({
+            "ma_tre": child.ma_tre,
+            "ho_ten": child.ho_ten,
+            "dich_vu": service_names.get(service, service),
+            "nhom": _group_label(group),
+            "nhom_ma": group.ma_nhom_hd if group else UNKNOWN_GROUP_LABEL,
+            "ky": values["ky_can_thiep"],
+            "so_buoi": values["so_buoi"] or 0,
+            "di_lai": values["di_lai"] or 0,
+            "tien_cong": _amount(values["tien_cong"]),
+            "tien_di_lai": _amount(values["tien_di_lai"]),
+        })
+    children_page.object_list = child_rows
+    return {
+        "contracts": contract_rows,
+        "groups": group_rows,
+        "children": child_rows,
+        "summary": summary,
+        "year_cumulative": year_metrics,
+        "since_signing": signing_metrics,
+        "report_year": report_year,
+        "contracts_page": contracts_page,
+        "children_page": children_page,
     }
 
 
