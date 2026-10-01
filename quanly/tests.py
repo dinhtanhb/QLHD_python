@@ -1195,7 +1195,7 @@ from django.db.models import F
 from django.test.utils import CaptureQueriesContext
 
 from .parsing import parse_get_int
-from .reporting import build_intervention_report, export_intervention_report_xlsx, intervention_report_queryset
+from .reporting import build_intervention_report, build_intervention_report_page, export_intervention_report_xlsx, intervention_report_queryset
 from .services.payment_ledger import lay_cau_hinh_thue
 
 
@@ -1368,11 +1368,25 @@ class InterventionReportEquivalenceTests(SettlementReportingTestBase):
 
     def test_contract_row_uses_group_of_earliest_journal(self):
         self._scenario()
+        same_day_contract = self._contract("HD-SAME-DAY", self.cb1, self.g1)
+        self._journal(same_day_contract, self.a1, date(2026, 9, 12), nhom_hd_nguon=self.g1)
+        self._journal(same_day_contract, self.a1, date(2026, 9, 10), nhom_hd_nguon=self.g12)
+        self._journal(same_day_contract, self.a1, date(2026, 9, 10), nhom_hd_nguon=self.g1)
         row = next(r for r in build_intervention_report(intervention_report_queryset())["contracts"]
                    if r["so_hop_dong"] == "HD-B" and r["ky"] == 1)
+        page_row = next(r for r in build_intervention_report_page(intervention_report_queryset())["contracts"]
+                        if r["so_hop_dong"] == "HD-B" and r["ky"] == 1)
+        same_day_full = next(r for r in build_intervention_report(intervention_report_queryset())["contracts"]
+                             if r["so_hop_dong"] == "HD-SAME-DAY" and r["ky"] == 1)
+        same_day_page = next(r for r in build_intervention_report_page(intervention_report_queryset())["contracts"]
+                             if r["so_hop_dong"] == "HD-SAME-DAY" and r["ky"] == 1)
         # j5 (09-09, nhóm nguồn 12) sớm hơn j4 (09-10, nhóm hợp đồng 1).
         self.assertEqual(row["nhom"], "12 - Nhóm 12")
+        self.assertEqual(page_row["nhom"], row["nhom"])
         self.assertEqual(row["so_nhat_ky"], 2)
+        # The lower id belongs to a later date; earliest-date tie breaks by id.
+        self.assertEqual(same_day_full["nhom"], "12 - Nhóm 12")
+        self.assertEqual(same_day_page["nhom"], same_day_full["nhom"])
 
     def test_group_filter_follows_effective_group_priority(self):
         self._scenario()
@@ -1548,12 +1562,26 @@ class ThanhQuyetToanTests(SettlementReportingTestBase):
         self._journal(paid_contract, assignment, date(2026, 9, 11), ky=1, buoi=2)
         pending = tao_phieu_thanh_toan(self.cb1, pending_contract, 1)
         paid = tao_phieu_thanh_toan(self.cb2, paid_contract, 1)
+        huy_phieu(paid, "Gộp lại nhật ký đủ điều kiện")
+        paid = tao_phieu_thanh_toan(self.cb2, paid_contract, 1)
         xac_nhan_chi(paid, date(2026, 9, 30))
         report = build_intervention_report(intervention_report_queryset())
         by_contract = {row["so_hop_dong"]: row["da_thanh_toan"] for row in report["contracts"]}
         self.assertEqual(pending.trang_thai, "CHO_CHI")
         self.assertEqual(by_contract, {"HD-PENDING": Decimal("0"), "HD-PAID": Decimal("400000")})
+        self.assertEqual(report["summary"]["so_nhat_ky"], 2)
+        self.assertEqual(report["summary"]["tien_cong"], Decimal("600000"))
         self.assertEqual(report["summary"]["da_thanh_toan"], Decimal("400000"))
+        page_report = build_intervention_report_page(intervention_report_queryset())
+        self.assertEqual(page_report["summary"]["da_thanh_toan"], Decimal("400000"))
+        self.assertEqual(
+            {row["so_hop_dong"]: row["da_thanh_toan"] for row in page_report["contracts"]},
+            {"HD-PENDING": Decimal("0"), "HD-PAID": Decimal("400000")},
+        )
+        self.assertEqual(
+            sum((row["da_thanh_toan"] for row in page_report["groups"]), Decimal("0")),
+            Decimal("400000"),
+        )
         from openpyxl import load_workbook
         workbook = export_intervention_report_xlsx(report)
         output = BytesIO()

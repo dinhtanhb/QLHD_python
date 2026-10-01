@@ -7,6 +7,16 @@
 
 **Cập nhật mới nhất:** đã sửa luồng xuất ĐNTT/ĐNCK, chưa commit/push.
 
+## Tối ưu Báo cáo thanh toán — 01/10/2026
+
+- Theo commit `23d0290`, truy vấn HTML còn chậm do correlated subquery tìm Nhóm HĐ đầu tiên chạy phụ thuộc từng hợp đồng-kỳ. Đã thay bằng một truy vấn nhật ký có thứ tự, giới hạn theo 15 khóa đang phân trang; cùng thứ tự ngày hợp lệ trước, ngày, ID được dùng cho báo cáo đầy đủ và trang HTML.
+- Tách phép cộng tiền đã thanh toán khỏi aggregate nhật ký. Chỉ chi tiết `hoat_dong=True` của phiếu `DA_CHI` được tính; việc hủy rồi lập lại phiếu không nhân số nhật ký/tiền công.
+- Thêm hồi quy cho hủy/lập lại phiếu, tổng đã chi ở summary/nhóm/hợp đồng và workbook; thêm đối chiếu nhóm được chọn theo journal sớm nhất kể cả tie ngày/ID.
+- Benchmark builder HTML trên DB local: **1,783 giây** cho **37.547 nhật ký**, giữ summary `37.547` dòng và số đã chi **33.750.000**; cả hai bảng hiển thị 15 dòng/trang.
+- Xác minh: `manage.py check`, `makemigrations --check --dry-run`, `manage.py test quanly --noinput` **164/164**, `git diff --check`; code reviewer và data-integrity reviewer không ghi nhận lỗi chức năng còn lại.
+- Rủi ro còn lại: chưa chạy runtime trên MySQL riêng; review đề nghị có thể bổ sung test scope phân trang rỗng và ngày thực hiện NULL. Không thay đổi schema hay dữ liệu nghiệp vụ.
+- File: `quanly/reporting.py`, `quanly/tests.py`, `docs/PROJECT_PROGRESS.md`. Backup, commit và push sẽ ghi nhận sau khi hoàn tất trong lượt bàn giao này.
+
 ## Chuẩn hóa quy trình bàn giao — 28/09/2026
 
 - Người dùng đã ủy quyền mặc định: sau mỗi đợt sửa code/thêm app phải cập nhật hướng dẫn, tiến độ, docs liên quan, skill và agent review phù hợp; chạy kiểm thử; tạo hai bản sao `review`/`full`; sau đó commit và push GitHub.

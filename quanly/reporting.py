@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.core.paginator import Paginator
-from django.db.models import Case, Count, DecimalField, ExpressionWrapper, F, IntegerField, Min, OuterRef, Q, Subquery, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, ExpressionWrapper, F, IntegerField, Q, Sum, Value, When
 
 from .models import ChiTietPhieuThanhToan, HopDong, NhatKyThucHien, NhomHD, PhanCongTre, Tre
 
@@ -9,16 +9,34 @@ UNKNOWN_GROUP_LABEL = "Chưa xác định"
 _MONEY = DecimalField(max_digits=18, decimal_places=0)
 
 
-def _paid_subquery(field):
-    return Subquery(
-        ChiTietPhieuThanhToan.objects.filter(
-            nhat_ky_id=OuterRef("pk"),
-            hoat_dong=True,
-            phieu__trang_thai="DA_CHI",
-        )
-        .values("nhat_ky_id").annotate(total=Sum(field)).values("total")[:1],
-        output_field=_MONEY,
+def _paid_queryset(queryset):
+    return ChiTietPhieuThanhToan.objects.filter(
+        nhat_ky_id__in=queryset.order_by().values("pk").distinct(),
+        hoat_dong=True,
+        phieu__trang_thai="DA_CHI",
     )
+
+
+def _paid_grouped(queryset, group_fields, **annotations):
+    values = _paid_queryset(queryset).annotate(**annotations).values(*group_fields).annotate(
+        paid_cong=Sum("tien_cong", output_field=_MONEY),
+        paid_di_lai=Sum("tien_di_lai", output_field=_MONEY),
+    )
+    return {tuple(row[field] for field in group_fields): row for row in values}
+
+
+def _first_group_by_contract_period(queryset):
+    first_groups = {}
+    journals = queryset.order_by(
+        "hop_dong_id",
+        "ky_can_thiep",
+        Case(When(ngay_thuc_hien__isnull=True, then=Value(1)), default=Value(0)),
+        "ngay_thuc_hien",
+        "pk",
+    ).values_list("hop_dong_id", "ky_can_thiep", "nhom_hieu_luc_id")
+    for contract_id, period, group_id in journals.iterator(chunk_size=1000):
+        first_groups.setdefault((contract_id, period), group_id)
+    return first_groups
 
 
 def effective_group_id_expression(prefix=""):
@@ -92,21 +110,21 @@ def _metrics(queryset):
     values = queryset.order_by().aggregate(
         so_hop_dong=Count("hop_dong_id", distinct=True), so_nhat_ky=Count("pk"), so_buoi=Sum("so_buoi_thuc_hien"), di_lai=Sum("so_luot_di_lai_cbct"),
         tien_cong=Sum("tien_cong_tinh"), tien_di_lai=Sum("tien_di_lai_tinh"),
-        # MySQL không cho tham chiếu alias của một Subquery trong SUM bên ngoài;
-        # truyền biểu thức trực tiếp để tương thích cả SQLite và MySQL.
-        paid_tien_cong=Sum(_paid_subquery("tien_cong")),
-        paid_tien_di_lai=Sum(_paid_subquery("tien_di_lai")),
+    )
+    paid = _paid_queryset(queryset).aggregate(
+        tien_cong=Sum("tien_cong", output_field=_MONEY),
+        tien_di_lai=Sum("tien_di_lai", output_field=_MONEY),
     )
     tien_cong, tien_di_lai = _amount(values["tien_cong"]), _amount(values["tien_di_lai"])
     return {
         "so_hop_dong": values["so_hop_dong"] or 0, "so_nhat_ky": values["so_nhat_ky"] or 0, "so_buoi": values["so_buoi"] or 0,
         "di_lai": values["di_lai"] or 0, "tien_cong": tien_cong, "tien_di_lai": tien_di_lai,
         "tong_gross": tien_cong + tien_di_lai,
-        "da_thanh_toan": _amount(values["paid_tien_cong"]) + _amount(values["paid_tien_di_lai"]),
+        "da_thanh_toan": _amount(paid["tien_cong"]) + _amount(paid["tien_di_lai"]),
     }
 
 
-def _sum_measures(with_paid=False, with_conflict=False):
+def _sum_measures(with_conflict=False):
     measures = {
         "so_nhat_ky": Count("pk"),
         "so_buoi": Sum("so_buoi_thuc_hien"),
@@ -114,9 +132,6 @@ def _sum_measures(with_paid=False, with_conflict=False):
         "tien_cong": Sum("tien_cong_tinh"),
         "tien_di_lai": Sum("tien_di_lai_tinh"),
     }
-    if with_paid:
-        measures["paid_cong"] = Sum(_paid_subquery("tien_cong"))
-        measures["paid_di_lai"] = Sum(_paid_subquery("tien_di_lai"))
     if with_conflict:
         measures["trung_lich"] = Count("pk", filter=Q(canh_bao_trung=True))
     return measures
@@ -139,8 +154,13 @@ def _partner_label(contract):
 
 
 def _contract_rows(queryset, groups):
+    first_groups = _first_group_by_contract_period(queryset)
+    paid_by_contract = _paid_grouped(
+        queryset,
+        ("nhat_ky__hop_dong_id", "nhat_ky__ky_can_thiep"),
+    )
     rows = queryset.order_by().values("hop_dong_id", "ky_can_thiep", "nhom_hieu_luc_id").annotate(
-        first_date=Min("ngay_thuc_hien"), first_id=Min("pk"), **_sum_measures(with_paid=True),
+        **_sum_measures(),
     )
     # Exports need every grouped row, but evaluate the grouped SQL only once.
     rows = list(rows)
@@ -148,40 +168,41 @@ def _contract_rows(queryset, groups):
     merged = {}
     for values in rows:
         key = (values["hop_dong_id"], values["ky_can_thiep"])
-        first_key = (values["first_date"] is not None, values["first_date"], values["first_id"])
         entry = merged.get(key)
         if entry is None:
             contract = contracts[values["hop_dong_id"]]
+            group = groups.get(first_groups.get(key))
             entry = merged[key] = {
                 "hop_dong_id": contract.pk, "nhom_hd_id": contract.nhom_hd_id,
                 "so_hop_dong": contract.so_hop_dong, "doi_tac": _partner_label(contract),
-                "ngay_ky": contract.ngay_ky, "ky": values["ky_can_thiep"], "nhom": None, "nhom_ma": None,
+                "ngay_ky": contract.ngay_ky, "ky": values["ky_can_thiep"], "nhom": _group_label(group),
+                "nhom_ma": group.ma_nhom_hd if group else UNKNOWN_GROUP_LABEL,
                 "co_the_lap_tt": bool(contract.can_bo_id) and contract.trang_thai not in {"DU_THAO", "HUY", "THANH_LY"},
-                "_first": None,
                 "so_nhat_ky": 0, "so_buoi": 0, "di_lai": 0,
                 "tien_cong": Decimal("0"), "tien_di_lai": Decimal("0"), "da_thanh_toan": Decimal("0"),
             }
-        # Nhóm hiển thị của dòng hợp đồng × kỳ = nhóm của nhật ký sớm nhất (ngày, id).
-        if entry["_first"] is None or first_key < entry["_first"]:
-            group = groups.get(values["nhom_hieu_luc_id"])
-            entry["_first"], entry["nhom"] = first_key, _group_label(group)
-            entry["nhom_ma"] = group.ma_nhom_hd if group else UNKNOWN_GROUP_LABEL
         base = _base_row(values)
         for name in ("so_nhat_ky", "so_buoi", "di_lai", "tien_cong", "tien_di_lai"):
             entry[name] += base[name]
-        entry["da_thanh_toan"] += _amount(values["paid_cong"]) + _amount(values["paid_di_lai"])
-    for entry in merged.values():
-        entry.pop("_first")
+    for (contract_id, period), entry in merged.items():
+        paid = paid_by_contract.get((contract_id, period), {})
+        entry["da_thanh_toan"] = _amount(paid.get("paid_cong")) + _amount(paid.get("paid_di_lai"))
     return sorted(merged.values(), key=lambda row: (row["so_hop_dong"], row["ky"]))
 
 
 def _group_rows(queryset, groups):
-    rows = queryset.order_by().values("nhom_hieu_luc_id", "ky_can_thiep").annotate(**_sum_measures(with_paid=True, with_conflict=True))
+    paid_by_group = _paid_grouped(
+        queryset,
+        ("nhom_hieu_luc_id", "nhat_ky__ky_can_thiep"),
+        nhom_hieu_luc_id=effective_group_id_expression("nhat_ky__"),
+    )
+    rows = queryset.order_by().values("nhom_hieu_luc_id", "ky_can_thiep").annotate(**_sum_measures(with_conflict=True))
     result, missing_group, conflict_count = [], 0, 0
     for values in rows:
         group = groups.get(values["nhom_hieu_luc_id"])
         row = {"nhom": _group_label(group), "ky": values["ky_can_thiep"], **_base_row(values)}
-        row["da_thanh_toan"] = _amount(values["paid_cong"]) + _amount(values["paid_di_lai"])
+        paid = paid_by_group.get((values["nhom_hieu_luc_id"], values["ky_can_thiep"]), {})
+        row["da_thanh_toan"] = _amount(paid.get("paid_cong")) + _amount(paid.get("paid_di_lai"))
         result.append(row)
         conflict_count += values["trung_lich"] or 0
         if group is None:
@@ -247,20 +268,20 @@ def build_intervention_report_page(
     year_metrics = _metrics(year_queryset) if year_queryset is not None else summary.copy()
     signing_metrics = _metrics(since_signing_queryset) if since_signing_queryset is not None else summary.copy()
 
-    first_group_id = Subquery(
-        queryset.filter(
-            hop_dong_id=OuterRef("hop_dong_id"),
-            ky_can_thiep=OuterRef("ky_can_thiep"),
-        ).order_by("ngay_thuc_hien", "pk").values("nhom_hieu_luc_id")[:1],
-        output_field=IntegerField(),
-    )
     contract_groups = queryset.values("hop_dong_id", "ky_can_thiep").annotate(
-        nhom_hieu_luc_id=first_group_id,
-        **_sum_measures(with_paid=True),
+        **_sum_measures(),
     ).order_by("hop_dong__so_hop_dong", "ky_can_thiep")
     contracts_page = Paginator(contract_groups, per_page).get_page(contract_page)
     contract_values = list(contracts_page.object_list)
     contract_ids = {row["hop_dong_id"] for row in contract_values}
+    contract_scope = Q(pk__in=[])
+    for row in contract_values:
+        contract_scope |= Q(hop_dong_id=row["hop_dong_id"], ky_can_thiep=row["ky_can_thiep"])
+    first_groups = _first_group_by_contract_period(queryset.filter(contract_scope)) if contract_values else {}
+    paid_by_contract = _paid_grouped(
+        queryset.filter(hop_dong_id__in=contract_ids),
+        ("nhat_ky__hop_dong_id", "nhat_ky__ky_can_thiep"),
+    ) if contract_ids else {}
     contracts = {
         contract.pk: contract
         for contract in HopDong.objects.filter(pk__in=contract_ids).select_related("can_bo", "don_vi")
@@ -268,7 +289,7 @@ def build_intervention_report_page(
     contract_rows = []
     for values in contract_values:
         contract = contracts[values["hop_dong_id"]]
-        group = groups.get(values["nhom_hieu_luc_id"])
+        group = groups.get(first_groups.get((values["hop_dong_id"], values["ky_can_thiep"])))
         row = {
             "hop_dong_id": contract.pk,
             "nhom_hd_id": contract.nhom_hd_id,
@@ -280,7 +301,8 @@ def build_intervention_report_page(
             "nhom_ma": group.ma_nhom_hd if group else UNKNOWN_GROUP_LABEL,
             "co_the_lap_tt": bool(contract.can_bo_id) and contract.trang_thai not in {"DU_THAO", "HUY", "THANH_LY"},
             **_base_row(values),
-            "da_thanh_toan": _amount(values["paid_cong"]) + _amount(values["paid_di_lai"]),
+            "da_thanh_toan": _amount(paid_by_contract.get((values["hop_dong_id"], values["ky_can_thiep"]), {}).get("paid_cong"))
+            + _amount(paid_by_contract.get((values["hop_dong_id"], values["ky_can_thiep"]), {}).get("paid_di_lai")),
         }
         contract_rows.append(row)
     contracts_page.object_list = contract_rows
