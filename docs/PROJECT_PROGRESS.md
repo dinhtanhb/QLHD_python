@@ -1,5 +1,36 @@
 # Tiến độ dự án QLHD
 
+## Sửa 14 vấn đề sau rà soát toàn dự án — 01/10/2026
+
+Đợt sửa trên `main`, xuất phát từ `b5ce4138`. Giữ nguyên file `CLAUDE.md` chưa được theo dõi của người dùng. Không thay schema, không chạy backfill hay chỉnh dữ liệu vận hành.
+
+1. Xuất ĐNTT Word/XLSX, DSTK và ĐNCK dùng tổng tiền, thuế và thực nhận đã chốt của phiếu; bỏ nhãn thuế 10% cố định trong mẫu xuất.
+2. Cộng kết quả từng phiếu/hợp đồng/kỳ, không tính lại ngưỡng thuế trên tổng của một CBCT. Bộ lọc chọn thiếu nhật ký của phiếu sẽ được báo lỗi, không tự mở rộng phạm vi.
+3. Import HĐ bảo vệ đối tác và nhóm; HĐ đã có hồ sơ tài chính, khối lượng chốt, phụ lục ký hoặc khóa/thanh lý được giữ nguyên, có bộ đếm riêng và cảnh báo. Không cập nhật hàng loạt tiền của nhật ký đã có thanh toán.
+4. Phân công đã có nhật ký thanh toán không được đổi trẻ, dịch vụ, CBCT, nhóm, phân bổ, đợt/kỳ, địa điểm hay các trường tính tiền; ghi chú vẫn sửa được. Form hiển thị lỗi bảo vệ rõ ràng.
+5. Chặn lập phiếu CBCT trùng sổ thanh toán cũ và chặn chiều ngược lại. Hạn mức HĐ bao gồm tiền sổ cũ chưa chuyển, không cộng đôi sổ đã chuyển.
+6. Nhật ký có chi tiết đi lại phụ huynh được bảo vệ. Rebuild giữ số lượt đã chốt của từng kênh CBCT/PH riêng.
+7. Hai luồng nhập nhật ký thủ công lấy đơn giá và định mức từ HĐ; HĐ đơn vị giữ cơ chế tiền công/đi lại CBCT bằng 0.
+8. Ca bổ sung sớm hơn/nối tiếp không tạo thêm lượt đã được thanh toán trong cùng cụm. Mốc lượt CBCT và PH độc lập; dòng đã chốt 0 lượt không trở thành mốc lượt.
+9. Gom đi lại PH dùng nhóm hiệu lực theo thứ tự nguồn → HĐ → phân công → phân bổ; lỗi validation rollback đợt và trả lại form, không gây HTTP 500.
+10. Phụ lục chưa ký không thay đổi baseline ngày, giá trị hoặc khối lượng hiện hành.
+11. Gia hạn khối lượng đã ký cập nhật cả ngày hết hạn; sửa, bỏ ký hoặc xóa đồng bộ từ phụ lục ký còn lại hoặc snapshot cũ, không lấy giá trị của bản nháp.
+12. Import phân công thiếu CBCT xử lý phân bổ dự kiến dạng dict và lấy đúng định mức mặc định của model.
+13. Import nhật ký thường của HĐ đơn vị tìm phân công đúng trẻ, dịch vụ, nhóm hiệu lực, CBCT và đơn vị.
+14. Mỗi dòng import nhật ký có transaction riêng; dòng lỗi rollback cả phân công kỹ thuật/thay đổi hình thức, khôi phục occurrence và không tạo nhật ký trùng khi dòng tiếp theo hợp lệ.
+
+**File thay đổi:** `quanly/assignment_import.py`, `document_export.py`, `financial.py`, `forms.py`, `models.py`, `payment_export.py`, `services/payment_ledger.py`, `views.py`; `test_review_fixes.py`, `test_review_ledger.py`; hai template sửa phân công/nhật ký; hướng dẫn sử dụng, quy trình và hai bản skill validation.
+
+**Kiểm chứng:** baseline 115 test gốc đạt; `check` và `makemigrations --check --dry-run` đạt; toàn bộ MySQL **183/183**, gồm **19 test mới** và **3 test khóa dòng đồng thời**; SQLite **19/19** test mới. Bốn gói xuất fixture mở lại hợp lệ; thuế **300.000**, thực nhận **5.700.000** khớp phiếu cấu hình 5% ngay cả sau khi cấu hình đổi. Cả ba XLSX mở bằng Excel COM và xuất PDF được; Word render được và đã xem các trang. Bốn route HTML HTTP 200, đã xem ảnh Chrome. `git diff --check` đạt.
+
+**Review:** code reviewer và data-integrity reviewer đã rà độc lập trước/sau sửa. Các phát hiện về thứ tự khóa import, đồng bộ bản nháp và bộ đếm giữ nguyên đã được xử lý. Data reviewer cuối không còn finding chặn; lượt code reviewer cuối dừng bởi hạn mức dịch vụ, root tiếp tục rà diff và kiểm thử.
+
+**Giới hạn:** không tự sửa số liệu sai đã chốt từ trước; cần đối chiếu riêng trước khi điều chỉnh hồ sơ lịch sử. Re-import HĐ đã chốt giữ nguyên toàn dòng, không tự liên kết thêm nhật ký chưa có HĐ; nhật ký vẫn được bảo toàn. Mẫu Word hiện hữu có một trang trắng khi render LibreOffice giữa ĐNTT và bảng kê, số liệu/nội dung hai trang có nội dung đã kiểm tra. Bản sao `review` và `full` tạo từ allowlist trong `backups/`; commit/push thực hiện theo quy trình bàn giao sau khi kiểm tra đạt.
+
+## Ghi nhận bàn giao cũ ngày 28/09/2026
+
+Các trạng thái/commit dưới đây là ghi nhận lịch sử, không thay thế kết quả đợt sửa 14 vấn đề ở trên.
+
 **Ngày rà soát:** 28/09/2026
 **Nhánh:** `main`
 **Commit gần nhất:** `a44b66e` – sửa import phân công/hợp đồng/nhật ký và kiểm thử xuất ĐNTT Word ZIP; Excel còn tiếp tục hoàn thiện.

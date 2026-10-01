@@ -114,9 +114,7 @@ def calculate_travel_flags(current, previous_records):
     current_id = getattr(current, "record_id", None)
     ordered = [x for x in previous_records if getattr(x, "date", None) == date_value]
 
-    current_order = (start, end, current_id or 0)
-    cbct_repeat = False
-    parent_repeat = False
+    candidates = []
     for other in ordered:
         other_start, other_end = getattr(other, "start", None), getattr(other, "end", None)
         if not all((date_value, start, end, other_start, other_end)):
@@ -132,12 +130,31 @@ def calculate_travel_flags(current, previous_records):
         other_ace = (getattr(other, "ace", None) or "").strip()
         same_parent = same_child or (ace and ace == other_ace)
         cbct_scope = same_cb and (location == "khac" or same_child or (ace and ace == other_ace))
-        other_order = (other_start, other_end, getattr(other, "record_id", None) or 0)
-        is_previous_session = other_order < current_order
-        if cbct_scope and is_previous_session and sessions_join(start, end, other_start, other_end):
-            cbct_repeat = True
-        if same_parent and is_previous_session and sessions_join(start, end, other_start, other_end):
-            parent_repeat = True
+        candidates.append((other, cbct_scope, same_parent))
+
+    def repeats(channel, claimed):
+        # Follow the whole connected cluster, including sessions inserted before
+        # an already claimed trip and sessions bridging two earlier clusters.
+        connected = []
+        pending = [item for item, cb_scope, ph_scope in candidates if (cb_scope if channel == "cbct" else ph_scope)]
+        intervals = [(start, end)]
+        while pending:
+            found = [item for item in pending if any(sessions_join(a, b, item.start, item.end) for a, b in intervals)]
+            if not found:
+                break
+            for item in found:
+                pending.remove(item)
+                connected.append(item)
+                intervals.append((item.start, item.end))
+        if any(getattr(item, claimed, False) for item in connected):
+            return True
+        current_order = (start, end, current_id or 0)
+        frozen = "cbct_frozen" if channel == "cbct" else "parent_frozen"
+        return any(not getattr(item, frozen, False) and
+                   (item.start, item.end, getattr(item, "record_id", None) or 0) < current_order for item in connected)
+
+    cbct_repeat = repeats("cbct", "cbct_trip_claimed") if start and end else False
+    parent_repeat = repeats("parent", "parent_trip_claimed") if start and end else False
 
     cbct_trip = 1 if location in {"nha", "khac"} and not cbct_repeat else 0
     parent_trip = 1 if location in {"truong", "khac"} and not parent_repeat else 0

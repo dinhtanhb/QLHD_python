@@ -71,7 +71,7 @@ class LegacyLedgerReviewTests(SettlementReportingTestBase):
 
     def test_partly_converted_group_does_not_silently_skip_remaining_rows(self):
         self._legacy()
-        tao_phieu_thanh_toan(self.cb1, self.contract, 1)
+        self._convert(force=True)
         self._legacy()
         output = self._convert()
         self.assertIn("skipped 0 details, conflicted 2 details", output)
@@ -132,7 +132,8 @@ class LegacyLedgerReviewTests(SettlementReportingTestBase):
 
     def test_cancellation_reads_parent_contract_before_mutating_voucher(self):
         self._legacy()
-        voucher = tao_phieu_thanh_toan(self.cb1, self.contract, 1)
+        self._convert(force=True)
+        voucher = PhieuThanhToan.objects.get()
         with CaptureQueriesContext(connection) as queries:
             huy_phieu(voucher, "Review cancellation")
         sql = [query["sql"] for query in queries]
@@ -145,8 +146,10 @@ class LegacyLedgerReviewTests(SettlementReportingTestBase):
 
     def test_voucher_uses_only_the_batchs_prelocked_journals(self):
         first = self._legacy()
+        first.delete()  # Ordinary voucher creation requires unclaimed journals.
         locked_ids = [first.nhat_ky_id]
         later = self._legacy()
+        later.delete()
         voucher = tao_phieu_thanh_toan(self.cb1, self.contract, 1, locked_journal_ids=locked_ids)
         self.assertEqual(list(voucher.chi_tiet.values_list("nhat_ky_id", flat=True)), locked_ids)
         self.assertFalse(later.nhat_ky.chi_tiet_phieu_thanh_toan.exists())
@@ -154,6 +157,7 @@ class LegacyLedgerReviewTests(SettlementReportingTestBase):
     def test_rebuild_is_deferred_until_the_enclosing_transaction_commits(self):
         detail = self._legacy()
         row = detail.nhat_ky
+        detail.delete()  # This test exercises rebuilds of editable journals.
         with patch.object(NhatKyThucHien, "recalculate_day") as rebuild:
             with self.captureOnCommitCallbacks(execute=True) as callbacks:
                 row.ghi_chu = "Deferred rebuild"

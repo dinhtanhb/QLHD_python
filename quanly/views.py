@@ -1069,11 +1069,14 @@ def sua_phan_cong(request, pk):
         affected_dates = set(
             NhatKyThucHien.objects.filter(phan_cong=item).values_list("ngay_thuc_hien", flat=True)
         )
-        form.save()
-        for date_value in sorted(value for value in affected_dates if value):
-            NhatKyThucHien.recalculate_day(date_value)
-        messages.success(request, "Đã cập nhật phân công trẻ.")
-        return redirect("danh_sach_phan_cong")
+        try:
+            form.save()
+            for date_value in sorted(value for value in affected_dates if value):
+                NhatKyThucHien.recalculate_day(date_value)
+            messages.success(request, "Đã cập nhật phân công trẻ.")
+            return redirect("danh_sach_phan_cong")
+        except ValidationError as exc:
+            form.add_error(None, exc)
     return render(request, "quanly/sua_phan_cong.html", {"form": form, "item": item})
 
 
@@ -1113,14 +1116,17 @@ def dieu_chuyen_phan_cong(request, pk):
             item.phan_bo = target
             is_cs = PhanCongTre.service_group(item.loai_dich_vu) == "CS"
             item.dinh_muc_di_lai = target.dinh_muc_di_lai_cs if is_cs else target.dinh_muc_di_lai_phcn
-            item.full_clean()
-            with transaction.atomic():
-                item.save(update_fields=["phan_bo", "dinh_muc_di_lai", "updated_at"])
-                LichSuDieuChuyenPhanCong.objects.create(phan_cong=item, phan_bo_cu=old, phan_bo_moi=target, nguoi_thuc_hien=request.user.get_username(), ly_do=form.cleaned_data.get("ly_do"))
-            for date_value in sorted(value for value in affected_dates if value):
-                NhatKyThucHien.recalculate_day(date_value)
-            messages.success(request, "Đã điều chuyển phân công và ghi nhận lịch sử.")
-            return redirect("danh_sach_phan_cong")
+            try:
+                item.full_clean()
+                with transaction.atomic():
+                    item.save(update_fields=["phan_bo", "dinh_muc_di_lai", "updated_at"])
+                    LichSuDieuChuyenPhanCong.objects.create(phan_cong=item, phan_bo_cu=old, phan_bo_moi=target, nguoi_thuc_hien=request.user.get_username(), ly_do=form.cleaned_data.get("ly_do"))
+                for date_value in sorted(value for value in affected_dates if value):
+                    NhatKyThucHien.recalculate_day(date_value)
+                messages.success(request, "Đã điều chuyển phân công và ghi nhận lịch sử.")
+                return redirect("danh_sach_phan_cong")
+            except ValidationError as exc:
+                form.add_error(None, exc)
     else:
         form = DieuChuyenPhanCongForm()
         form.fields["phan_bo"].queryset = queryset
@@ -1155,306 +1161,321 @@ def import_nhat_ky_can_thiep(request):
 
     for row_no, (_, row) in enumerate(df.iterrows(), start=2):
         row_warnings = []
+        occurrences_before = dict(identity_occurrences)
         try:
-            ma_cb = clean_empty_excel_value(get_excel_value(row, "MaCBCT", "Mã CBCT"))
-            ma_tre = clean_empty_excel_value(get_excel_value(row, "MaTre", "Mã trẻ", "IDChild"))
-            ngay = parse_date(get_excel_value(row, "NgayCanThiep", "Ngày can thiệp"))
-            if not ma_cb or not ma_tre:
-                raise ValueError("Thiếu mã CBCT hoặc mã trẻ")
-            if not ngay:
-                if historical_mode:
-                    row_warnings.append("thiếu ngày can thiệp; bản ghi vẫn được lưu để bảo toàn dữ liệu nguồn")
-                else:
-                    raise ValueError("Thiếu ngày can thiệp")
-            can_bo = CanBo.objects.filter(ma_can_bo=ma_cb).first()
-            tre = Tre.objects.filter(ma_tre=ma_tre).first()
-            if not can_bo:
-                raise ValueError(f"Không tìm thấy CBCT {ma_cb}")
-            if not tre:
-                raise ValueError(f"Không tìm thấy trẻ {ma_tre}")
+            with transaction.atomic():
+                ma_cb = clean_empty_excel_value(get_excel_value(row, "MaCBCT", "Mã CBCT"))
+                ma_tre = clean_empty_excel_value(get_excel_value(row, "MaTre", "Mã trẻ", "IDChild"))
+                ngay = parse_date(get_excel_value(row, "NgayCanThiep", "Ngày can thiệp"))
+                if not ma_cb or not ma_tre:
+                    raise ValueError("Thiếu mã CBCT hoặc mã trẻ")
+                if not ngay:
+                    if historical_mode:
+                        row_warnings.append("thiếu ngày can thiệp; bản ghi vẫn được lưu để bảo toàn dữ liệu nguồn")
+                    else:
+                        raise ValueError("Thiếu ngày can thiệp")
+                can_bo = CanBo.objects.filter(ma_can_bo=ma_cb).first()
+                tre = Tre.objects.filter(ma_tre=ma_tre).first()
+                if not can_bo:
+                    raise ValueError(f"Không tìm thấy CBCT {ma_cb}")
+                if not tre:
+                    raise ValueError(f"Không tìm thấy trẻ {ma_tre}")
 
-            nhom_value = clean_empty_excel_value(get_excel_value(row, "NhomHD", "Nhóm HĐ"))
-            source_group = None
-            if nhom_value:
-                source_group = resolve_contract_group(nhom_value)
-                if not source_group and not historical_mode:
-                    raise ValueError(f"Không tìm thấy Nhóm HĐ {nhom_value}")
-                if not source_group:
-                    row_warnings.append(f"không tìm thấy danh mục Nhóm HĐ {nhom_value}")
+                nhom_value = clean_empty_excel_value(get_excel_value(row, "NhomHD", "Nhóm HĐ"))
+                source_group = None
+                if nhom_value:
+                    source_group = resolve_contract_group(nhom_value)
+                    if not source_group and not historical_mode:
+                        raise ValueError(f"Không tìm thấy Nhóm HĐ {nhom_value}")
+                    if not source_group:
+                        row_warnings.append(f"không tìm thấy danh mục Nhóm HĐ {nhom_value}")
 
-            contracts = HopDong.objects.none()
-            if ngay:
-                contracts = HopDong.objects.filter(
-                    can_bo=can_bo, tu_ngay__lte=ngay, den_ngay__gte=ngay
-                ).select_related("nhom_hd", "de_xuat__phan_bo", "don_vi")
-            if source_group:
-                contracts = contracts.filter(nhom_hd=source_group)
-            hop_dong = contracts.order_by("-ngay_ky", "-id").first()
-
-            # Nếu CBCT làm việc trong nhóm ký HĐ với đơn vị, liên kết nhật ký với HĐ đơn vị
-            # để tiếp tục thanh toán đi lại PH; tiền công CBCT của HĐ này được giữ bằng 0.
-            if not hop_dong and source_group:
-                unit_contracts = HopDong.objects.filter(
-                    can_bo__isnull=True,
-                    don_vi__isnull=False,
-                    nhom_hd=source_group,
-                ).select_related("nhom_hd", "don_vi")
+                contracts = HopDong.objects.none()
                 if ngay:
-                    unit_contracts = unit_contracts.filter(tu_ngay__lte=ngay, den_ngay__gte=ngay)
-                hop_dong = unit_contracts.order_by("-ngay_ky", "-id").first()
-
-            if not hop_dong and historical_mode:
-                fallback = HopDong.objects.filter(can_bo=can_bo).select_related("nhom_hd", "de_xuat__phan_bo")
+                    contracts = HopDong.objects.filter(
+                        can_bo=can_bo, tu_ngay__lte=ngay, den_ngay__gte=ngay
+                    ).select_related("nhom_hd", "de_xuat__phan_bo", "don_vi")
                 if source_group:
-                    hop_dong = fallback.filter(nhom_hd=source_group).order_by("-ngay_ky", "-id").first()
+                    contracts = contracts.filter(nhom_hd=source_group)
+                hop_dong = contracts.order_by("-ngay_ky", "-id").first()
+
+                # Nếu CBCT làm việc trong nhóm ký HĐ với đơn vị, liên kết nhật ký với HĐ đơn vị
+                # để tiếp tục thanh toán đi lại PH; tiền công CBCT của HĐ này được giữ bằng 0.
+                if not hop_dong and source_group:
+                    unit_contracts = HopDong.objects.filter(
+                        can_bo__isnull=True,
+                        don_vi__isnull=False,
+                        nhom_hd=source_group,
+                    ).select_related("nhom_hd", "don_vi")
+                    if not historical_mode:
+                        unit_contracts = unit_contracts.filter(don_vi_id=can_bo.don_vi_id)
+                    if ngay:
+                        unit_contracts = unit_contracts.filter(tu_ngay__lte=ngay, den_ngay__gte=ngay)
+                    hop_dong = unit_contracts.order_by("-ngay_ky", "-id").first()
+
+                if not hop_dong and historical_mode:
+                    fallback = HopDong.objects.filter(can_bo=can_bo).select_related("nhom_hd", "de_xuat__phan_bo")
+                    if source_group:
+                        hop_dong = fallback.filter(nhom_hd=source_group).order_by("-ngay_ky", "-id").first()
+                    if not hop_dong:
+                        hop_dong = fallback.order_by("-ngay_ky", "-id").first()
+                    if hop_dong:
+                        row_warnings.append(
+                            f"dùng HĐ {hop_dong.so_hop_dong} làm liên kết kỹ thuật vì không có HĐ bao phủ ngày/nhóm nguồn"
+                        )
+                if not hop_dong and historical_mode and source_group:
+                    hop_dong = HopDong.objects.filter(
+                        can_bo__isnull=True,
+                        don_vi__isnull=False,
+                        nhom_hd=source_group,
+                    ).select_related("nhom_hd", "don_vi").order_by("-ngay_ky", "-id").first()
+                    if hop_dong:
+                        row_warnings.append(
+                            f"dùng HĐ đơn vị {hop_dong.so_hop_dong} làm liên kết kỹ thuật theo Nhóm HĐ"
+                        )
+                if not hop_dong and not historical_mode:
+                    raise ValueError(
+                        f"Không có hợp đồng bao phủ ngày {ngay:%d/%m/%Y} cho CBCT {ma_cb}, Nhóm HĐ {nhom_value or 'chưa có'}"
+                    )
                 if not hop_dong:
-                    hop_dong = fallback.order_by("-ngay_ky", "-id").first()
-                if hop_dong:
-                    row_warnings.append(
-                        f"dùng HĐ {hop_dong.so_hop_dong} làm liên kết kỹ thuật vì không có HĐ bao phủ ngày/nhóm nguồn"
-                    )
-            if not hop_dong and historical_mode and source_group:
-                hop_dong = HopDong.objects.filter(
-                    can_bo__isnull=True,
-                    don_vi__isnull=False,
-                    nhom_hd=source_group,
-                ).select_related("nhom_hd", "don_vi").order_by("-ngay_ky", "-id").first()
-                if hop_dong:
-                    row_warnings.append(
-                        f"dùng HĐ đơn vị {hop_dong.so_hop_dong} làm liên kết kỹ thuật theo Nhóm HĐ"
-                    )
-            if not hop_dong and not historical_mode:
-                raise ValueError(
-                    f"Không có hợp đồng bao phủ ngày {ngay:%d/%m/%Y} cho CBCT {ma_cb}, Nhóm HĐ {nhom_value or 'chưa có'}"
-                )
-            if not hop_dong:
-                row_warnings.append("chưa có hợp đồng; nhật ký được lưu độc lập theo phân công")
+                    row_warnings.append("chưa có hợp đồng; nhật ký được lưu độc lập theo phân công")
 
-            raw_service = (clean_empty_excel_value(get_excel_value(row, "MaLoaiDichVu", "Loại dịch vụ")) or "PHCN").upper()
-            exact_service = normalize_service_code(raw_service)
-            service_group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} or exact_service in PhanCongTre.CS_SERVICE_CODES else "PHCN"
-            service_filter = Q(loai_dich_vu=exact_service) if exact_service else Q(loai_dich_vu__in=service_codes[service_group])
-            ky_can_thiep = parse_int(get_excel_value(row, "KyCanThiep", "Kỳ can thiệp"), 0)
-            if not 1 <= ky_can_thiep <= 30:
-                raise ValueError("Kỳ can thiệp phải từ 1 đến 30")
-            sessions = parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0)
-            if sessions <= 0:
-                raise ValueError("Số buổi thực tế phải lớn hơn 0")
-            source_location = clean_empty_excel_value(get_excel_value(row, "DiaDiem", "Địa điểm"))
-            source_hinh_thuc_ct = clean_empty_excel_value(get_excel_value(row, "Hình thức CT", "HinhThucCT"))
+                raw_service = (clean_empty_excel_value(get_excel_value(row, "MaLoaiDichVu", "Loại dịch vụ")) or "PHCN").upper()
+                exact_service = normalize_service_code(raw_service)
+                service_group = "CS" if raw_service in {"CS", "CSXH", "CSYT"} or exact_service in PhanCongTre.CS_SERVICE_CODES else "PHCN"
+                service_filter = Q(loai_dich_vu=exact_service) if exact_service else Q(loai_dich_vu__in=service_codes[service_group])
+                ky_can_thiep = parse_int(get_excel_value(row, "KyCanThiep", "Kỳ can thiệp"), 0)
+                if not 1 <= ky_can_thiep <= 30:
+                    raise ValueError("Kỳ can thiệp phải từ 1 đến 30")
+                sessions = parse_int(get_excel_value(row, "SoBuoiThucTe", "Số buổi thực tế"), 0)
+                if sessions <= 0:
+                    raise ValueError("Số buổi thực tế phải lớn hơn 0")
+                source_location = clean_empty_excel_value(get_excel_value(row, "DiaDiem", "Địa điểm"))
+                source_hinh_thuc_ct = clean_empty_excel_value(get_excel_value(row, "Hình thức CT", "HinhThucCT"))
 
-            def choose_assignment(queryset):
-                candidates = queryset.order_by("id")
-                if not source_hinh_thuc_ct:
-                    return candidates.first()
-                source_method = normalize_intervention_method(source_hinh_thuc_ct)
-                return next(
-                    (
-                        candidate for candidate in candidates
-                        if normalize_intervention_method(candidate.hinh_thuc_ct) == source_method
-                    ),
-                    None,
-                )
-
-            assignment = None
-            if hop_dong and hop_dong.de_xuat_id:
-                assignment = choose_assignment(PhanCongTre.objects.filter(
-                    Q(phan_bo=hop_dong.de_xuat.phan_bo), Q(tre=tre), service_filter
-                ))
-            if not assignment and historical_mode:
-                fallback_assignments = PhanCongTre.objects.filter(Q(tre=tre), service_filter)
-                same_cb = fallback_assignments.filter(Q(phan_bo__can_bo=can_bo) | Q(can_bo_nguon=can_bo))
-                if source_group:
-                    assignment = choose_assignment(same_cb.filter(Q(nhom_hd=source_group) | Q(phan_bo__nhom_hd=source_group)))
-                if not assignment:
-                    assignment = choose_assignment(same_cb)
-                if not assignment and source_group:
-                    assignment = choose_assignment(fallback_assignments.filter(phan_bo__isnull=True, nhom_hd=source_group))
-                if assignment:
-                    row_warnings.append("phân công không cùng phân bổ với HĐ liên kết")
-            if not assignment and historical_mode and exact_service:
-                template_assignments = PhanCongTre.objects.filter(
-                    Q(tre=tre), Q(phan_bo__can_bo=can_bo) | Q(can_bo_nguon=can_bo)
-                )
-                if source_group:
-                    grouped_templates = template_assignments.filter(
-                        Q(nhom_hd=source_group) | Q(phan_bo__nhom_hd=source_group)
-                    )
-                    if grouped_templates.exists():
-                        template_assignments = grouped_templates
-                same_service_group = [
-                    item for item in template_assignments.select_related("phan_bo", "nhom_hd")
-                    if PhanCongTre.service_group(item.loai_dich_vu) == service_group
-                ]
-                template_candidates = same_service_group or list(template_assignments)
-                if source_hinh_thuc_ct:
+                def choose_assignment(queryset):
+                    candidates = queryset.order_by("id")
+                    if not source_hinh_thuc_ct:
+                        return candidates.first()
                     source_method = normalize_intervention_method(source_hinh_thuc_ct)
-                    template_assignment = next(
+                    return next(
                         (
-                            candidate for candidate in template_candidates
+                            candidate for candidate in candidates
                             if normalize_intervention_method(candidate.hinh_thuc_ct) == source_method
                         ),
                         None,
                     )
-                else:
-                    template_assignment = template_candidates[0] if template_candidates else None
-                if template_assignment:
+
+                assignment = None
+                if hop_dong and hop_dong.de_xuat_id:
+                    assignment = choose_assignment(PhanCongTre.objects.filter(
+                        Q(phan_bo=hop_dong.de_xuat.phan_bo), Q(tre=tre), service_filter
+                    ))
+                if not assignment and hop_dong and hop_dong.don_vi_id:
+                    unit_assignments = PhanCongTre.objects.filter(Q(tre=tre), service_filter).filter(
+                        Q(can_bo_nguon=can_bo) | Q(can_bo_nguon__isnull=True, phan_bo__can_bo=can_bo),
+                    ).filter(
+                        Q(nhom_hd=hop_dong.nhom_hd) | Q(nhom_hd__isnull=True, phan_bo__nhom_hd=hop_dong.nhom_hd),
+                    )
+                    if can_bo.don_vi_id == hop_dong.don_vi_id:
+                        assignment = choose_assignment(unit_assignments)
+                if not assignment and historical_mode:
+                    fallback_assignments = PhanCongTre.objects.filter(Q(tre=tre), service_filter)
+                    same_cb = fallback_assignments.filter(Q(phan_bo__can_bo=can_bo) | Q(can_bo_nguon=can_bo))
+                    if source_group:
+                        assignment = choose_assignment(same_cb.filter(Q(nhom_hd=source_group) | Q(phan_bo__nhom_hd=source_group)))
+                    if not assignment:
+                        assignment = choose_assignment(same_cb)
+                    if not assignment and source_group:
+                        assignment = choose_assignment(fallback_assignments.filter(phan_bo__isnull=True, nhom_hd=source_group))
+                    if assignment:
+                        row_warnings.append("phân công không cùng phân bổ với HĐ liên kết")
+                if not assignment and historical_mode and exact_service:
+                    template_assignments = PhanCongTre.objects.filter(
+                        Q(tre=tre), Q(phan_bo__can_bo=can_bo) | Q(can_bo_nguon=can_bo)
+                    )
+                    if source_group:
+                        grouped_templates = template_assignments.filter(
+                            Q(nhom_hd=source_group) | Q(phan_bo__nhom_hd=source_group)
+                        )
+                        if grouped_templates.exists():
+                            template_assignments = grouped_templates
+                    same_service_group = [
+                        item for item in template_assignments.select_related("phan_bo", "nhom_hd")
+                        if PhanCongTre.service_group(item.loai_dich_vu) == service_group
+                    ]
+                    template_candidates = same_service_group or list(template_assignments)
+                    if source_hinh_thuc_ct:
+                        source_method = normalize_intervention_method(source_hinh_thuc_ct)
+                        template_assignment = next(
+                            (
+                                candidate for candidate in template_candidates
+                                if normalize_intervention_method(candidate.hinh_thuc_ct) == source_method
+                            ),
+                            None,
+                        )
+                    else:
+                        template_assignment = template_candidates[0] if template_candidates else None
+                    if template_assignment:
+                        assignment = PhanCongTre.objects.create(
+                            phan_bo=template_assignment.phan_bo,
+                            can_bo_nguon=can_bo,
+                            cbda_quan_ly=template_assignment.cbda_quan_ly,
+                            nhom_hd=source_group or template_assignment.nhom_hd,
+                            tre=tre,
+                            loai_dich_vu=exact_service,
+                            so_buoi_du_kien=max(sessions, 1),
+                            dinh_muc_di_lai=Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)),
+                            dia_diem_ct=source_location or template_assignment.dia_diem_ct,
+                            hinh_thuc_ct=source_hinh_thuc_ct or template_assignment.hinh_thuc_ct,
+                            dot_phan_cong=template_assignment.dot_phan_cong,
+                            ky_phan_cong=template_assignment.ky_phan_cong,
+                            ngay_phan_cong=template_assignment.ngay_phan_cong,
+                            trang_thai=template_assignment.trang_thai,
+                            ghi_chu="Tự tạo từ import nhật ký lịch sử do thiếu phân công đúng dịch vụ.",
+                            tu_dong_tu_nhat_ky=True,
+                        )
+                        row_warnings.append(f"đã tạo phân công lịch sử cho dịch vụ {exact_service}")
+                if not assignment and historical_mode and exact_service:
                     assignment = PhanCongTre.objects.create(
-                        phan_bo=template_assignment.phan_bo,
+                        phan_bo=None,
                         can_bo_nguon=can_bo,
-                        cbda_quan_ly=template_assignment.cbda_quan_ly,
-                        nhom_hd=source_group or template_assignment.nhom_hd,
+                        nhom_hd=source_group,
                         tre=tre,
                         loai_dich_vu=exact_service,
                         so_buoi_du_kien=max(sessions, 1),
                         dinh_muc_di_lai=Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)),
-                        dia_diem_ct=source_location or template_assignment.dia_diem_ct,
-                        hinh_thuc_ct=source_hinh_thuc_ct or template_assignment.hinh_thuc_ct,
-                        dot_phan_cong=template_assignment.dot_phan_cong,
-                        ky_phan_cong=template_assignment.ky_phan_cong,
-                        ngay_phan_cong=template_assignment.ngay_phan_cong,
-                        trang_thai=template_assignment.trang_thai,
-                        ghi_chu="Tự tạo từ import nhật ký lịch sử do thiếu phân công đúng dịch vụ.",
+                        dia_diem_ct=source_location,
+                        hinh_thuc_ct=source_hinh_thuc_ct,
+                        dot_phan_cong=1,
+                        ky_phan_cong=ky_can_thiep if 1 <= ky_can_thiep <= 30 else 1,
+                        ngay_phan_cong=ngay,
+                        trang_thai="DA_HOAN_THANH",
+                        ghi_chu="Tự tạo từ import nhật ký lịch sử do chưa có dữ liệu phân công nguồn.",
                         tu_dong_tu_nhat_ky=True,
                     )
-                    row_warnings.append(f"đã tạo phân công lịch sử cho dịch vụ {exact_service}")
-            if not assignment and historical_mode and exact_service:
-                assignment = PhanCongTre.objects.create(
-                    phan_bo=None,
-                    can_bo_nguon=can_bo,
-                    nhom_hd=source_group,
-                    tre=tre,
-                    loai_dich_vu=exact_service,
-                    so_buoi_du_kien=max(sessions, 1),
-                    dinh_muc_di_lai=Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1)),
-                    dia_diem_ct=source_location,
-                    hinh_thuc_ct=source_hinh_thuc_ct,
-                    dot_phan_cong=1,
-                    ky_phan_cong=ky_can_thiep if 1 <= ky_can_thiep <= 30 else 1,
-                    ngay_phan_cong=ngay,
-                    trang_thai="DA_HOAN_THANH",
-                    ghi_chu="Tự tạo từ import nhật ký lịch sử do chưa có dữ liệu phân công nguồn.",
-                    tu_dong_tu_nhat_ky=True,
+                    row_warnings.append(f"đã tạo phân công kỹ thuật độc lập cho dịch vụ {exact_service}")
+                if not assignment:
+                    raise ValueError(f"Không tìm thấy phân công của trẻ {ma_tre} cho CBCT {ma_cb} và dịch vụ {raw_service}")
+                if source_hinh_thuc_ct and not assignment.hinh_thuc_ct:
+                    assignment.hinh_thuc_ct = source_hinh_thuc_ct
+                    assignment.save(update_fields=["hinh_thuc_ct", "updated_at"])
+
+                gio_bat_dau = parse_time(get_excel_value(row, "GioBatDau", "Giờ bắt đầu"))
+                gio_ket_thuc = parse_time(get_excel_value(row, "GioKetThuc", "Giờ kết thúc"))
+                if (gio_bat_dau is None) != (gio_ket_thuc is None) or (
+                    gio_bat_dau and gio_ket_thuc and gio_ket_thuc <= gio_bat_dau
+                ):
+                    if historical_mode:
+                        gio_bat_dau = gio_ket_thuc = None
+                        row_warnings.append("giờ không đủ/không hợp lệ nên lưu trống")
+                    else:
+                        raise ValueError("Giờ bắt đầu/kết thúc phải đủ cặp và giờ kết thúc phải lớn hơn giờ bắt đầu")
+                elif historical_mode and not gio_bat_dau:
+                    row_warnings.append("thiếu giờ bắt đầu/kết thúc")
+
+                dia_diem_ct = source_location or assignment.dia_diem_ct
+                cbct_travel_raw = get_excel_value(row, "SoLuotDiLaiCBCT", "Số lượt đi lại CBCT")
+                cbct_travel = parse_int(cbct_travel_raw, -1)
+                if cbct_travel < 0:
+                    location = (dia_diem_ct or "").strip().lower()
+                    cbct_travel = sessions if location in {"nhà", "nha", "khác", "khac"} else 0
+                    if historical_mode and not gio_bat_dau:
+                        row_warnings.append("lượt đi lại CBCT được suy ra theo địa điểm và số buổi")
+
+                is_cs = PhanCongTre.service_group(assignment.loai_dich_vu) == "CS"
+                note = clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú")) or ""
+                if row_warnings:
+                    history_note = "Dữ liệu lịch sử: " + "; ".join(row_warnings)
+                    note = f"{note}\n{history_note}".strip()
+                defaults = {
+                    "nhom_hd_nguon": source_group,
+                    "can_bo_nguon": can_bo,
+                    "du_lieu_lich_su": historical_mode,
+                    "so_buoi_thuc_hien": sessions,
+                    "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0),
+                    "so_luot_di_lai_cbct": cbct_travel,
+                    "ky_can_thiep": ky_can_thiep,
+                    "lan_thanh_toan": next_payment_round(can_bo, ky_can_thiep),
+                    "dia_diem_ct": dia_diem_ct,
+                    "don_gia_cong": (
+                        Decimal("0") if hop_dong and hop_dong.la_hop_dong_don_vi
+                        else hop_dong.don_gia_cong if hop_dong
+                        else Decimal(str(FinancialConfig.DON_GIA_CONG))
+                    ),
+                    "dinh_muc_di_lai": (
+                        Decimal("0") if hop_dong and hop_dong.la_hop_dong_don_vi
+                        else (hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn)
+                        if hop_dong else Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1))
+                    ),
+                    "ghi_chu": note,
+                }
+                identity_key = journal_import_identity_key(
+                    can_bo.pk,
+                    tre.pk,
+                    exact_service,
+                    source_group.pk if source_group else None,
+                    ky_can_thiep,
+                    ngay,
+                    gio_bat_dau,
+                    gio_ket_thuc,
+                    dia_diem_ct,
                 )
-                row_warnings.append(f"đã tạo phân công kỹ thuật độc lập cho dịch vụ {exact_service}")
-            if not assignment:
-                raise ValueError(f"Không tìm thấy phân công của trẻ {ma_tre} cho CBCT {ma_cb} và dịch vụ {raw_service}")
-            if source_hinh_thuc_ct and not assignment.hinh_thuc_ct:
-                assignment.hinh_thuc_ct = source_hinh_thuc_ct
-                assignment.save(update_fields=["hinh_thuc_ct", "updated_at"])
 
-            gio_bat_dau = parse_time(get_excel_value(row, "GioBatDau", "Giờ bắt đầu"))
-            gio_ket_thuc = parse_time(get_excel_value(row, "GioKetThuc", "Giờ kết thúc"))
-            if (gio_bat_dau is None) != (gio_ket_thuc is None) or (
-                gio_bat_dau and gio_ket_thuc and gio_ket_thuc <= gio_bat_dau
-            ):
-                if historical_mode:
-                    gio_bat_dau = gio_ket_thuc = None
-                    row_warnings.append("giờ không đủ/không hợp lệ nên lưu trống")
+                def load_existing_journals():
+                    candidates = NhatKyThucHien.objects.filter(
+                        can_bo_nguon=can_bo,
+                        phan_cong__tre=tre,
+                        phan_cong__loai_dich_vu=exact_service,
+                        ky_can_thiep=ky_can_thiep,
+                        ngay_thuc_hien=ngay,
+                        gio_bat_dau=gio_bat_dau,
+                        gio_ket_thuc=gio_ket_thuc,
+                    )
+                    if source_group:
+                        candidates = candidates.filter(nhom_hd_nguon=source_group)
+                    else:
+                        candidates = candidates.filter(nhom_hd_nguon__isnull=True)
+                    normalized_location = normalize_travel_location(dia_diem_ct)
+                    return [
+                        item for item in candidates.order_by("id")
+                        if normalize_travel_location(item.dia_diem_ct) == normalized_location
+                    ]
+
+                identity, _ = take_import_occurrence(
+                    identity_cache,
+                    identity_occurrences,
+                    identity_key,
+                    load_existing_journals,
+                )
+
+                if identity:
+                    identity.hop_dong = hop_dong
+                    identity.phan_cong = assignment
+                    identity.ngay_thuc_hien = ngay
+                    identity.gio_bat_dau = gio_bat_dau
+                    identity.gio_ket_thuc = gio_ket_thuc
+                    for field, value in defaults.items():
+                        setattr(identity, field, value)
+                    identity.save(recalculate_travel=False)
+                    is_created = False
                 else:
-                    raise ValueError("Giờ bắt đầu/kết thúc phải đủ cặp và giờ kết thúc phải lớn hơn giờ bắt đầu")
-            elif historical_mode and not gio_bat_dau:
-                row_warnings.append("thiếu giờ bắt đầu/kết thúc")
-
-            dia_diem_ct = source_location or assignment.dia_diem_ct
-            cbct_travel_raw = get_excel_value(row, "SoLuotDiLaiCBCT", "Số lượt đi lại CBCT")
-            cbct_travel = parse_int(cbct_travel_raw, -1)
-            if cbct_travel < 0:
-                location = (dia_diem_ct or "").strip().lower()
-                cbct_travel = sessions if location in {"nhà", "nha", "khác", "khac"} else 0
-                if historical_mode and not gio_bat_dau:
-                    row_warnings.append("lượt đi lại CBCT được suy ra theo địa điểm và số buổi")
-
-            is_cs = PhanCongTre.service_group(assignment.loai_dich_vu) == "CS"
-            note = clean_empty_excel_value(get_excel_value(row, "GhiChu", "Ghi chú")) or ""
-            if row_warnings:
-                history_note = "Dữ liệu lịch sử: " + "; ".join(row_warnings)
-                note = f"{note}\n{history_note}".strip()
+                    journal = NhatKyThucHien(
+                        hop_dong=hop_dong, phan_cong=assignment, ngay_thuc_hien=ngay,
+                        gio_bat_dau=gio_bat_dau, gio_ket_thuc=gio_ket_thuc, **defaults,
+                    )
+                    journal.save(recalculate_travel=False)
+                    is_created = True
             if ngay:
                 affected_dates.add(ngay)
-            defaults = {
-                "nhom_hd_nguon": source_group,
-                "can_bo_nguon": can_bo,
-                "du_lieu_lich_su": historical_mode,
-                "so_buoi_thuc_hien": sessions,
-                "so_luot_di_lai": parse_int(get_excel_value(row, "SoLuotDiLaiPH", "Số lượt đi lại PH"), 0),
-                "so_luot_di_lai_cbct": cbct_travel,
-                "ky_can_thiep": ky_can_thiep,
-                "lan_thanh_toan": next_payment_round(can_bo, ky_can_thiep),
-                "dia_diem_ct": dia_diem_ct,
-                "don_gia_cong": (
-                    Decimal("0") if hop_dong and hop_dong.la_hop_dong_don_vi
-                    else hop_dong.don_gia_cong if hop_dong
-                    else Decimal(str(FinancialConfig.DON_GIA_CONG))
-                ),
-                "dinh_muc_di_lai": (
-                    Decimal("0") if hop_dong and hop_dong.la_hop_dong_don_vi
-                    else (hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn)
-                    if hop_dong else Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1))
-                ),
-                "ghi_chu": note,
-            }
-            identity_key = journal_import_identity_key(
-                can_bo.pk,
-                tre.pk,
-                exact_service,
-                source_group.pk if source_group else None,
-                ky_can_thiep,
-                ngay,
-                gio_bat_dau,
-                gio_ket_thuc,
-                dia_diem_ct,
-            )
-
-            def load_existing_journals():
-                candidates = NhatKyThucHien.objects.filter(
-                    can_bo_nguon=can_bo,
-                    phan_cong__tre=tre,
-                    phan_cong__loai_dich_vu=exact_service,
-                    ky_can_thiep=ky_can_thiep,
-                    ngay_thuc_hien=ngay,
-                    gio_bat_dau=gio_bat_dau,
-                    gio_ket_thuc=gio_ket_thuc,
-                )
-                if source_group:
-                    candidates = candidates.filter(nhom_hd_nguon=source_group)
-                else:
-                    candidates = candidates.filter(nhom_hd_nguon__isnull=True)
-                normalized_location = normalize_travel_location(dia_diem_ct)
-                return [
-                    item for item in candidates.order_by("id")
-                    if normalize_travel_location(item.dia_diem_ct) == normalized_location
-                ]
-
-            identity, _ = take_import_occurrence(
-                identity_cache,
-                identity_occurrences,
-                identity_key,
-                load_existing_journals,
-            )
-
-            if identity:
-                identity.hop_dong = hop_dong
-                identity.phan_cong = assignment
-                identity.ngay_thuc_hien = ngay
-                identity.gio_bat_dau = gio_bat_dau
-                identity.gio_ket_thuc = gio_ket_thuc
-                for field, value in defaults.items():
-                    setattr(identity, field, value)
-                identity.save(recalculate_travel=False)
-                is_created = False
-            else:
-                journal = NhatKyThucHien(
-                    hop_dong=hop_dong, phan_cong=assignment, ngay_thuc_hien=ngay,
-                    gio_bat_dau=gio_bat_dau, gio_ket_thuc=gio_ket_thuc, **defaults,
-                )
-                journal.save(recalculate_travel=False)
-                is_created = True
             created += int(is_created)
             updated += int(not is_created)
             if row_warnings:
                 warnings.append(f"Dòng {row_no}: " + "; ".join(row_warnings))
         except Exception as exc:
+            identity_cache.clear()
+            identity_occurrences.clear()
+            identity_occurrences.update(occurrences_before)
             skipped += 1
             errors.append(f"Dòng {row_no}: {exc}")
 
@@ -2049,7 +2070,7 @@ def import_hop_dong(request):
     except Exception as exc:
         messages.error(request, f"Không đọc được file Excel: {exc}")
         return render(request, "quanly/import_hop_dong.html")
-    created = updated = skipped = linked_journals = 0
+    created = updated = skipped = linked_journals = unchanged = 0
     errors = []
     for row_no, (_, row) in enumerate(df.iterrows(), start=2):
         try:
@@ -2096,6 +2117,33 @@ def import_hop_dong(request):
             if den_ngay < tu_ngay:
                 raise ValueError("Đến ngày không được trước Từ ngày")
             with transaction.atomic():
+                existing = HopDong.objects.filter(so_hop_dong=so_hd).first()
+                import_scope = NhatKyThucHien.objects.annotate(_import_group_id=effective_group_id_expression()).filter(
+                    _import_group_id=nhom_hd.pk, ngay_thuc_hien__gte=tu_ngay, ngay_thuc_hien__lte=den_ngay,
+                ).filter(Q(hop_dong__isnull=True) | Q(hop_dong=existing) if existing else Q(hop_dong__isnull=True))
+                scope_ids = list(import_scope.values_list("pk", flat=True))
+                locked_ids = list(NhatKyThucHien.objects.filter(
+                    Q(pk__in=scope_ids) | Q(hop_dong=existing) if existing else Q(pk__in=scope_ids),
+                ).order_by("pk").select_for_update().values_list("pk", flat=True))
+                protected_ids = NhatKyThucHien.payment_protected_ids(locked_ids)
+                if existing:
+                    existing = HopDong.objects.select_for_update().get(pk=existing.pk)
+                    if (existing.can_bo_id, existing.don_vi_id, existing.nhom_hd_id) != (
+                        can_bo.pk if can_bo else None, don_vi.pk if don_vi else None, nhom_hd.pk,
+                    ):
+                        raise ValidationError("Số hợp đồng đã tồn tại với đối tác hoặc Nhóm HĐ khác; không được đổi định danh bằng import.")
+                frozen = existing and (
+                    NhatKyThucHien.objects.filter(pk__in=protected_ids, hop_dong=existing).exists()
+                    or _is_operationally_locked(existing)
+                    or existing.phu_luc.filter(is_signed=True).exists()
+                    or existing.chi_tiet_khoi_luong.exists()
+                )
+                if frozen:
+                    # An identical reimport is a no-op for the finalized contract.
+                    # In particular it must not reopen liquidation or reset rates.
+                    unchanged += 1
+                    errors.append(f"Dòng {row_no}: giữ nguyên hợp đồng {so_hd} đã chốt; không ghi đè ngày, trạng thái, đơn giá hoặc giá trị.")
+                    continue
                 proposal = None
                 if phan_bo:
                     proposal = phan_bo.de_xuat_hop_dong.order_by("-lan_de_xuat", "-id").first()
@@ -2139,22 +2187,18 @@ def import_hop_dong(request):
                     so_hop_dong=so_hd,
                     defaults=defaults,
                 )
-                journal_group_filter = (
-                    Q(nhom_hd_nguon=nhom_hd)
-                    | Q(phan_cong__nhom_hd=nhom_hd)
-                    | Q(phan_cong__phan_bo__nhom_hd=nhom_hd)
-                )
-                journal_candidates = NhatKyThucHien.objects.filter(
-                    journal_group_filter,
+                journal_candidates = NhatKyThucHien.objects.annotate(
+                    _import_group_id=effective_group_id_expression(),
+                    _import_staff_id=effective_staff_id_expression(),
+                ).filter(
+                    pk__in=locked_ids,
+                    _import_group_id=nhom_hd.pk,
                     ngay_thuc_hien__gte=tu_ngay,
                     ngay_thuc_hien__lte=den_ngay,
                 ).filter(Q(hop_dong__isnull=True) | Q(hop_dong=contract))
+                journal_candidates = journal_candidates.exclude(pk__in=protected_ids)
                 if can_bo:
-                    journal_candidates = journal_candidates.filter(
-                        Q(can_bo_nguon=can_bo)
-                        | Q(phan_cong__can_bo_nguon=can_bo)
-                        | Q(phan_cong__phan_bo__can_bo=can_bo)
-                    )
+                    journal_candidates = journal_candidates.filter(_import_staff_id=can_bo.pk)
                     linked_journals += journal_candidates.filter(hop_dong__isnull=True).count()
                     journal_candidates.update(hop_dong=contract)
                 else:
@@ -2174,7 +2218,7 @@ def import_hop_dong(request):
             skipped += 1
             errors.append(f"Dòng {row_no}: {exc}")
     msg = (
-        f"Import hợp đồng hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}; "
+        f"Import hợp đồng hoàn tất: thêm {created}, cập nhật {updated}, bỏ qua {skipped}, giữ nguyên {unchanged}; "
         f"liên kết thêm {linked_journals} nhật ký."
     )
     if errors:
@@ -2394,9 +2438,8 @@ def them_nhat_ky_thuc_hien(request, hop_dong_id):
             item.don_gia_cong = Decimal("0")
             item.dinh_muc_di_lai = Decimal("0")
         else:
-            item.don_gia_cong = FinancialConfig.DON_GIA_CONG
-            allocation = hop_dong.de_xuat.phan_bo
-            item.dinh_muc_di_lai = allocation.dinh_muc_di_lai_cs if is_cs else allocation.dinh_muc_di_lai_phcn
+            item.don_gia_cong = hop_dong.don_gia_cong
+            item.dinh_muc_di_lai = hop_dong.dinh_muc_di_lai_cs if is_cs else hop_dong.dinh_muc_di_lai_phcn
         item.save()
         if item.canh_bao_trung:
             messages.warning(request, f"Đã lưu nhưng phát hiện trùng lịch: {item.chi_tiet_trung}. Bản ghi đã chuyển vào Danh sách trùng.")
@@ -2421,7 +2464,7 @@ def them_nhat_ky_can_thiep(request):
             item.don_gia_cong = Decimal("0")
             item.dinh_muc_di_lai = Decimal("0")
         else:
-            item.don_gia_cong = FinancialConfig.DON_GIA_CONG
+            item.don_gia_cong = item.hop_dong.don_gia_cong
             item.dinh_muc_di_lai = item.hop_dong.dinh_muc_di_lai_cs if PhanCongTre.service_group(item.phan_cong.loai_dich_vu) == "CS" else item.hop_dong.dinh_muc_di_lai_phcn
         item.save()
         if item.canh_bao_trung:
@@ -2440,7 +2483,7 @@ def sua_nhat_ky_can_thiep(request, pk):
     if item.hop_dong_id and _is_operationally_locked(item.hop_dong) and not is_admin_user(request.user):
         messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được sửa nhật ký.")
         return redirect("nhat_ky_can_thiep")
-    in_payment = ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=item.pk, hoat_dong=True).exists()
+    in_payment = bool(NhatKyThucHien.payment_protected_ids([item.pk]))
     if in_payment:
         form = NhatKyGhiChuForm(request.POST or None, initial={"ghi_chu": item.ghi_chu})
     else:
@@ -2750,13 +2793,8 @@ def tao_dot_thanh_toan_phu_huynh(request, hop_dong_id):
 
 
 def _parent_travel_group_journals(nhom_hd, ky_can_thiep, nam, thang, include_locked=True):
-    group_filter = (
-        Q(nhom_hd_nguon=nhom_hd)
-        | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd=nhom_hd)
-        | Q(nhom_hd_nguon__isnull=True, phan_cong__nhom_hd__isnull=True, phan_cong__phan_bo__nhom_hd=nhom_hd)
-    )
-    queryset = NhatKyThucHien.objects.filter(
-        group_filter,
+    queryset = NhatKyThucHien.objects.annotate(_parent_group_id=effective_group_id_expression()).filter(
+        _parent_group_id=nhom_hd.pk,
         ky_can_thiep=ky_can_thiep,
         ngay_thuc_hien__year=nam,
         ngay_thuc_hien__month=thang,
@@ -2772,8 +2810,11 @@ def _parent_travel_group_journals(nhom_hd, ky_can_thiep, nam, thang, include_loc
     return queryset.order_by("ngay_thuc_hien", "id")
 
 
+@transaction.atomic
 def _sync_parent_travel_group_dot(dot, journals):
     """Bổ sung nhật ký còn thiếu vào đợt theo Nhóm HĐ + Kỳ, không ghi trùng lượt."""
+    ids = list(NhatKyThucHien.objects.filter(pk__in=[journal.pk for journal in journals]).order_by("pk").select_for_update().values_list("pk", flat=True))
+    journals = list(NhatKyThucHien.objects.filter(pk__in=ids).select_related("hop_dong", "nhom_hd_nguon", "phan_cong__nhom_hd", "phan_cong__phan_bo__nhom_hd"))
     paid_by_journal = dict(
         ChiTietThanhToanDiLaiPhuHuynh.objects.filter(nhat_ky_id__in=[journal.pk for journal in journals])
         .values("nhat_ky_id")
@@ -2869,10 +2910,15 @@ def tao_dot_thanh_toan_di_lai_phu_huynh_theo_nhom(request):
                     thang=thang,
                 ).first()
                 if dot:
-                    with transaction.atomic():
-                        added_count = _sync_parent_travel_group_dot(dot, journals)
+                    try:
+                        with transaction.atomic():
+                            added_count = _sync_parent_travel_group_dot(dot, journals)
+                    except ValidationError as exc:
+                        form.add_error(None, exc)
                 else:
                     form.add_error(None, "Đợt thanh toán theo Nhóm HĐ, Kỳ, tháng và năm này đã tồn tại.")
+            except ValidationError as exc:
+                form.add_error(None, exc)
             if dot and not form.errors:
                 messages.success(request, f"Đã gom đủ {len(journals)} nhật ký; bổ sung {added_count} dòng còn thiếu.")
                 return redirect("chi_tiet_dot_thanh_toan_phu_huynh", pk=dot.pk)
@@ -2946,35 +2992,25 @@ def danh_sach_gia_han_hop_dong(request):
 def _sync_hop_dong_from_signed_extensions(hop_dong, fallback_end=None, fallback_total=None, fallback_volume=None):
     """Đồng bộ HĐ theo các phụ lục đã ký, kể cả khi Admin bỏ ký một phụ lục."""
     time_extensions = hop_dong.phu_luc.filter(
-        loai_phu_luc="GIA_HAN_THOI_GIAN",
+        loai_phu_luc__in={"GIA_HAN_THOI_GIAN", "GIA_HAN_KHOI_LUONG"},
         den_ngay_moi__isnull=False,
     ).order_by("ngay_lap", "id")
     signed_time = time_extensions.filter(is_signed=True).order_by("-ngay_lap", "-id").first()
-    first_time = time_extensions.first()
     effective_end = (
         signed_time.den_ngay_moi
         if signed_time
-        else (first_time.den_ngay_cu if first_time else fallback_end if fallback_end is not None else hop_dong.den_ngay)
+        else (fallback_end if fallback_end is not None else hop_dong.den_ngay)
     )
 
     volume_extensions = hop_dong.phu_luc.filter(
         loai_phu_luc="GIA_HAN_KHOI_LUONG",
     ).prefetch_related("chi_tiet_gia_han_khoi_luong").order_by("ngay_lap", "id")
     signed_volume = volume_extensions.filter(is_signed=True).order_by("-ngay_lap", "-id").first()
-    first_volume = volume_extensions.first()
-    effective_volume = signed_volume or first_volume
+    effective_volume = signed_volume
     if signed_volume:
         effective_total = signed_volume.tong_tien_moi
-    elif first_volume:
-        effective_total = first_volume.tong_tien_moi - first_volume.tong_tien_tang_them
     else:
-        if fallback_total is not None:
-            effective_total = fallback_total
-        else:
-            detail_total = ChiTietKhoiLuongHopDong.objects.filter(hop_dong=hop_dong).aggregate(
-                total=Sum("thanh_tien")
-            )["total"]
-            effective_total = detail_total if detail_total is not None else hop_dong.gia_tri_hop_dong
+        effective_total = fallback_total if fallback_total is not None else hop_dong.gia_tri_hop_dong
 
     update_fields = []
     if hop_dong.den_ngay != effective_end:
@@ -3060,7 +3096,7 @@ def them_gia_han_thoi_gian(request, hop_dong_id=None):
             return redirect("danh_sach_gia_han_hop_dong")
         with transaction.atomic():
             current_end = (
-                PhuLucHopDong.objects.filter(hop_dong=hop_dong, loai_phu_luc="GIA_HAN_THOI_GIAN", den_ngay_moi__isnull=False)
+                PhuLucHopDong.objects.filter(hop_dong=hop_dong, loai_phu_luc__in={"GIA_HAN_THOI_GIAN", "GIA_HAN_KHOI_LUONG"}, is_signed=True, den_ngay_moi__isnull=False)
                 .order_by("-ngay_lap", "-id")
                 .values_list("den_ngay_moi", flat=True)
                 .first()
@@ -3150,7 +3186,8 @@ def them_gia_han_khoi_luong(request, hop_dong_id=None):
                 )
             if extension.is_signed:
                 hop_dong.gia_tri_hop_dong = amounts["tong_gia_tri_moi"]
-                hop_dong.save(update_fields=["gia_tri_hop_dong", "updated_at"])
+                hop_dong.den_ngay = new_end
+                hop_dong.save(update_fields=["gia_tri_hop_dong", "den_ngay", "updated_at"])
                 for service, group in (("VLTL", "PHCN"), ("CSXH", "CS")):
                     travel, new_count, new_sessions = rates[group]
                     ChiTietKhoiLuongHopDong.objects.update_or_create(
@@ -3182,7 +3219,7 @@ def sua_gia_han_hop_dong(request, pk):
     is_volume = extension.loai_phu_luc == "GIA_HAN_KHOI_LUONG"
     original_signed = extension.is_signed
     original_contract = extension.hop_dong
-    original_end = extension.den_ngay_cu if original_signed and not is_volume else None
+    original_end = extension.den_ngay_cu if original_signed else None
     original_total = extension.tong_tien_moi - extension.tong_tien_tang_them if original_signed and is_volume else None
     original_volume = [
         {
@@ -3257,7 +3294,12 @@ def sua_gia_han_hop_dong(request, pk):
                     extension.tong_tien_moi = hop_dong.gia_tri_hop_dong
                     extension.ghi_chu = form.cleaned_data["ghi_chu"]
                     extension.save()
-                _sync_hop_dong_from_signed_extensions(hop_dong)
+                _sync_hop_dong_from_signed_extensions(
+                    hop_dong,
+                    fallback_end=original_end if original_contract.pk == hop_dong.pk else None,
+                    fallback_total=original_total if original_contract.pk == hop_dong.pk else None,
+                    fallback_volume=original_volume if original_contract.pk == hop_dong.pk else None,
+                )
                 if original_contract.pk != hop_dong.pk:
                     _sync_hop_dong_from_signed_extensions(
                         original_contract, fallback_end=original_end,
@@ -3294,7 +3336,7 @@ def xoa_gia_han_hop_dong(request, pk):
             "Không thể xóa phụ lục đã ký vì hợp đồng đã phát sinh nghiệm thu, thanh lý hoặc thanh toán.",
         )
         return redirect("danh_sach_gia_han_hop_dong")
-    fallback_end = extension.den_ngay_cu if extension.loai_phu_luc == "GIA_HAN_THOI_GIAN" and extension.is_signed else None
+    fallback_end = extension.den_ngay_cu if extension.is_signed else None
     fallback_total = None
     fallback_volume = None
     if extension.loai_phu_luc == "GIA_HAN_KHOI_LUONG" and extension.is_signed:

@@ -163,7 +163,10 @@ def import_assignment_workbook(uploaded_file, *, validate_only=False):
             hinh_thuc_ct = clean_empty_excel_value(get_excel_value(row, "Hình thức CT", "HinhThucCT"))
             ghi_chu = clean_empty_excel_value(get_excel_value(row, "Ghi chú", "GhiChu"))
             default_dm = Decimal("0")
-            if allocation and PhanCongTre.service_group(service) == "CS":
+            rate_field = "dinh_muc_di_lai_cs" if PhanCongTre.service_group(service) == "CS" else "dinh_muc_di_lai_phcn"
+            if isinstance(allocation, dict):
+                default_dm = PhanBoChiTieu._meta.get_field(rate_field).get_default()
+            elif allocation and PhanCongTre.service_group(service) == "CS":
                 default_dm = allocation.dinh_muc_di_lai_cs
             elif allocation:
                 default_dm = allocation.dinh_muc_di_lai_phcn

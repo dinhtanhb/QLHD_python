@@ -10,7 +10,7 @@ from django.db.models import Case, Exists, F, IntegerField, Max, OuterRef, Sum, 
 from django.utils import timezone
 
 from ..financial import FinancialConfig, calculate_payment_breakdown
-from ..models import CauHinhThue, ChiTietPhieuThanhToan, HopDong, NhatKyThucHien, PhieuThanhToan
+from ..models import CauHinhThue, ChiTietPhieuThanhToan, ChiTietThanhToan, HopDong, NhatKyThucHien, PhieuThanhToan
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,47 @@ def snapshot_journals(journals):
     missing = [journal.pk for journal in journals if journal.pk not in by_journal]
     if missing:
         raise ValidationError(f"Nhật ký chưa có snapshot phiếu thanh toán: {', '.join(map(str, missing[:10]))}")
-    return [PaymentJournalSnapshot(by_journal[journal.pk]) for journal in journals]
+    full_ids = {}
+    for voucher_id, journal_id in ChiTietPhieuThanhToan.objects.filter(
+        phieu_id__in={detail.phieu_id for detail in by_journal.values()}, hoat_dong=True,
+    ).values_list("phieu_id", "nhat_ky_id"):
+        full_ids.setdefault(voucher_id, set()).add(journal_id)
+    snapshots = [PaymentJournalSnapshot(by_journal[journal.pk]) for journal in journals]
+    for item in snapshots:
+        item.voucher_journal_ids = full_ids[item.phieu.pk]
+    return snapshots
+
+
+def journal_payment_breakdown(journals):
+    """Sum individual payment rounds, retaining the finalized voucher tax."""
+    groups = {}
+    for item in journals:
+        if isinstance(item, PaymentJournalSnapshot):
+            key = ("voucher", item.phieu.pk)
+        else:
+            contract = getattr(item, "hop_dong_hieu_luc", None) or getattr(item, "hop_dong", None)
+            staff = getattr(item, "can_bo_hieu_luc", None) or getattr(contract, "can_bo", None)
+            key = ("journal", getattr(contract, "pk", None), getattr(staff, "pk", None),
+                   getattr(item, "ky_can_thiep", None), getattr(item, "lan_thanh_toan", None))
+        groups.setdefault(key, []).append(item)
+    result = {name: Decimal("0") for name in ("tien_cong", "tien_di_lai", "tong_truoc_thue", "thue_tncn", "thuc_linh")}
+    for items in groups.values():
+        first = items[0]
+        if isinstance(first, PaymentJournalSnapshot):
+            selected = {item.pk for item in items}
+            if len(selected) != len(items) or selected != first.voucher_journal_ids:
+                raise ValidationError("Bộ lọc chỉ chọn một phần phiếu thanh toán. Hãy chọn đủ nhật ký của phiếu để xuất đúng thuế đã chốt.")
+            voucher = first.phieu
+            amounts = {"tien_cong": voucher.tong_tien_cong, "tien_di_lai": voucher.tong_tien_di_lai,
+                       "tong_truoc_thue": voucher.tong_tien_cong + voucher.tong_tien_di_lai,
+                       "thue_tncn": voucher.thue_tncn, "thuc_linh": voucher.thuc_nhan}
+        else:
+            labor = sum((Decimal(item.so_buoi_thuc_hien) * Decimal(item.don_gia_cong) for item in items), Decimal("0"))
+            travel = sum((Decimal(item.so_luot_di_lai_cbct) * Decimal(item.dinh_muc_di_lai) for item in items), Decimal("0"))
+            amounts = calculate_payment_breakdown(labor, travel)
+        for name in result:
+            result[name] += amounts[name]
+    return result
 
 
 def _effective_staff_annotation(queryset):
@@ -103,8 +143,9 @@ class NhatKyQuerySet:
     @staticmethod
     def chua_thanh_toan(queryset):
         active_detail = ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=OuterRef("pk"), hoat_dong=True)
-        return _effective_staff_annotation(queryset).annotate(_da_thanh_toan=Exists(active_detail)).filter(
-            _da_thanh_toan=False
+        legacy_detail = ChiTietThanhToan.objects.filter(nhat_ky_id=OuterRef("pk"))
+        return _effective_staff_annotation(queryset).annotate(_da_thanh_toan=Exists(active_detail), _da_thanh_toan_cu=Exists(legacy_detail)).filter(
+            _da_thanh_toan=False, _da_thanh_toan_cu=False
         )
 
 
@@ -141,6 +182,8 @@ def kiem_tra_dieu_kien(nhat_ky, kiem_tra_da_thanh_toan=True):
         errors.append("Nhật ký không có số buổi thực hiện hợp lệ")
     if kiem_tra_da_thanh_toan and ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=nhat_ky.pk, hoat_dong=True).exists():
         errors.append("Nhật ký đã nằm trong phiếu thanh toán hiệu lực")
+    if kiem_tra_da_thanh_toan and ChiTietThanhToan.objects.filter(nhat_ky_id=nhat_ky.pk).exists():
+        errors.append("Nhật ký đã nằm trong thanh toán cũ")
     return errors
 
 
@@ -207,6 +250,12 @@ def tao_phieu_thanh_toan(can_bo, hop_dong, ky_can_thiep, user=None, *, locked_jo
                 labor=Sum("tong_tien_cong"), travel=Sum("tong_tien_di_lai")
             )
             previous_total = (previous_amounts["labor"] or Decimal("0")) + (previous_amounts["travel"] or Decimal("0"))
+            # Converted legacy rows already belong to vouchers; count only the
+            # remaining legacy amounts to prevent both double counting and overspend.
+            legacy_total = ChiTietThanhToan.objects.filter(dot_thanh_toan__hop_dong=locked_contract).exclude(
+                nhat_ky__chi_tiet_phieu_thanh_toan__hoat_dong=True,
+            ).aggregate(total=Sum("thanh_tien"))["total"] or Decimal("0")
+            previous_total += legacy_total
             if previous_total + breakdown["tong_truoc_thue"] > Decimal(locked_contract.gia_tri_hop_dong):
                 raise ValidationError(
                     f"Tổng thanh toán {previous_total + breakdown['tong_truoc_thue']:,.0f} vượt giá trị hợp đồng {locked_contract.gia_tri_hop_dong:,.0f}."

@@ -513,7 +513,8 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_
     cs_sessions, cs_labor, cs_trips, cs_travel = totals(cs)
     labor_total = phcn_labor + cs_labor
     travel_total = phcn_travel + cs_travel
-    breakdown = calculate_payment_breakdown(labor_total, travel_total)
+    from .services.payment_ledger import journal_payment_breakdown
+    breakdown = journal_payment_breakdown(journals)
     payment_round = int(lan_tt or getattr(first, "lan_thanh_toan", 1) or 1)
     contract_values = {item.pk: item.gia_tri_hop_dong for item in contracts}
     current_journal_ids = {item.pk for item in journals if item.pk}
@@ -559,6 +560,12 @@ def export_journal_payment_request(journals, ky=None, thang=None, nam=None, lan_
         context.update({f"STT_Lan{index}": "", f"NoiDung_Lan{index}": "", f"SoTien_Lan{index}": ""})
     document = _document(PAYMENT_REQUEST_TEMPLATE)
     _replace_document(document, context)
+    # Vouchers may use different tax configurations; the template's fixed
+    # "10%" label must not contradict the finalized amount.
+    for paragraph in _iter_paragraphs(document):
+        if "Thuế TNCN 10%" in paragraph.text:
+            for run in paragraph.runs:
+                run.text = run.text.replace("10%", "")
     requester_name = getattr(nguoi_de_nghi, "ho_ten", nguoi_de_nghi) or staff.ho_ten
     if len(document.tables) > 1 and document.tables[1].rows:
         requester_cell = document.tables[1].rows[0].cells[-1]

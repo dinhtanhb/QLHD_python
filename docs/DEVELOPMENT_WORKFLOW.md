@@ -64,6 +64,15 @@ Theo ủy quyền thường trực của người dùng, sau mỗi đợt thay �
 
 ## Lưu ý môi trường Windows
 
+### Hồi quy tài chính và import sau rà soát 01/10/2026
+
+- Chạy `test quanly.test_review_fixes` cho 14 lỗi và các ca biên; chạy `test quanly --noinput` trên MySQL riêng/database test để kiểm tra cả khóa dòng đồng thời.
+- Khóa tập nhật ký theo PK trước HĐ; mọi bulk update/snapshot chỉ dùng các ID đã khóa, không thêm dòng xuất hiện sau locking read.
+- Đối chiếu thuế theo từng phiếu bằng cấu hình khác mặc định và nhiều HĐ cùng CBCT; thử bộ lọc thiếu dòng phiếu, không tự phân bổ thuế hay mở rộng bộ lọc.
+- Kiểm tra bảo vệ của cả sổ mới, sổ cũ và đi lại PH; rebuild phải giữ từng kênh riêng và không tính thêm lượt cho ca sớm/nối tiếp mốc đã chốt.
+- Import dòng lỗi phải rollback cả phân công tự sinh và cache occurrence. Với HĐ đã chốt, kiểm tra no-op, bộ đếm giữ nguyên và cảnh báo; không reset trạng thái/đơn giá hoặc liên kết lại nhật ký tài chính.
+- Khi bỏ ký/xóa/sửa gia hạn, thử có bản nháp và có phụ lục thời gian/khối lượng ký còn lại; bản nháp không làm thay đổi baseline hiện hành.
+
 `.env` của môi trường hiện tại có thể đặt `DEBUG` thành giá trị không phải Boolean. Khi chạy kiểm thử local, đặt `$env:DEBUG = 'True'` trong phiên PowerShell hiện tại; không sửa `.env` chỉ để chạy test.
 ### Quyền Admin trong giai đoạn kiểm thử
 

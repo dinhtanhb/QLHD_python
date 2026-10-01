@@ -462,7 +462,8 @@ def _current_contract_end(hop_dong, exclude_id=None):
     if not hop_dong:
         return None
     query = hop_dong.phu_luc.filter(
-            loai_phu_luc="GIA_HAN_THOI_GIAN",
+            loai_phu_luc__in={"GIA_HAN_THOI_GIAN", "GIA_HAN_KHOI_LUONG"},
+            is_signed=True,
             den_ngay_moi__isnull=False,
         )
     if exclude_id:
@@ -472,6 +473,7 @@ def _current_contract_end(hop_dong, exclude_id=None):
         .order_by("-ngay_lap", "-id")
         .values_list("den_ngay_moi", flat=True)
         .first()
+        or (hop_dong.phu_luc.filter(pk=exclude_id, is_signed=True).values_list("den_ngay_cu", flat=True).first() if exclude_id else None)
         or hop_dong.den_ngay
     )
 
@@ -596,7 +598,7 @@ class GiaHanKhoiLuongForm(BootstrapModelForm):
 
     @staticmethod
     def baseline(hop_dong, exclude_id=None):
-        query = hop_dong.phu_luc.filter(loai_phu_luc="GIA_HAN_KHOI_LUONG")
+        query = hop_dong.phu_luc.filter(loai_phu_luc="GIA_HAN_KHOI_LUONG", is_signed=True)
         if exclude_id:
             query = query.exclude(pk=exclude_id)
         latest = (
@@ -611,6 +613,14 @@ class GiaHanKhoiLuongForm(BootstrapModelForm):
                 group = "cs" if PhanCongTre.service_group(item.loai_dich_vu) == "CS" else "phcn"
                 values[group] = (item.so_tre_moi, item.so_buoi_moi)
             return values
+        original = hop_dong.phu_luc.filter(pk=exclude_id, is_signed=True).first() if exclude_id else None
+        if original:
+            values = {"phcn": (0, 0), "cs": (0, 0)}
+            for item in original.chi_tiet_gia_han_khoi_luong.all():
+                group = "cs" if PhanCongTre.service_group(item.loai_dich_vu) == "CS" else "phcn"
+                values[group] = (item.so_tre_cu, item.so_buoi_cu)
+            if original.chi_tiet_gia_han_khoi_luong.exists():
+                return values
         if hop_dong.de_xuat_id:
             allocation = hop_dong.de_xuat.phan_bo
             return {
@@ -653,7 +663,7 @@ class GiaHanKhoiLuongForm(BootstrapModelForm):
             new_count, new_sessions = values[group]
             service_totals[group] = Decimal(new_count or 0) * Decimal(new_sessions or 0) * rates[group]
             increases[group] = max(Decimal(new_count or 0) - Decimal(old_count or 0), Decimal("0")) * Decimal(new_sessions or 0) * rates[group]
-        latest_volume_query = hop_dong.phu_luc.filter(loai_phu_luc="GIA_HAN_KHOI_LUONG")
+        latest_volume_query = hop_dong.phu_luc.filter(loai_phu_luc="GIA_HAN_KHOI_LUONG", is_signed=True)
         if exclude_id:
             latest_volume_query = latest_volume_query.exclude(pk=exclude_id)
         latest_volume = latest_volume_query.order_by("-ngay_lap", "-id").first()

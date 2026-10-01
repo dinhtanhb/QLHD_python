@@ -2,6 +2,15 @@
 
 Tai lieu nay huong dan quy trinh van hanh hang ngay. Cac so lieu tai chinh phai doi chieu tu nhat ky -> phan cong -> phan bo/hop dong -> phieu thanh toan.
 
+## Lưu ý sau bảo trì ngày 01/10/2026
+
+- Hồ sơ ĐNTT/DSTK/ĐNCK lấy thuế và thực nhận của từng phiếu đã chốt. Khi bộ lọc chỉ lấy một phần nhật ký của phiếu, chọn đủ phạm vi phiếu trước khi xuất; hệ thống không tự mở rộng bộ lọc.
+- Nhật ký có thanh toán CBCT, sổ cũ hoặc đi lại PH chỉ sửa ghi chú. Phân công liên quan cũng không được đổi định danh/tính tiền, kể cả tài khoản Admin.
+- Import HĐ đã chốt hiển thị số dòng **giữ nguyên** và cảnh báo. Muốn rà nhật ký chưa liên kết, dùng danh sách nhật ký thiếu HĐ và đối chiếu riêng; import lại HĐ đã chốt không tự thay hồ sơ lịch sử.
+- Nhật ký đã có sổ thanh toán cũ không được lập thêm phiếu mới; sử dụng quy trình chuyển sổ có dry-run và đối chiếu được hướng dẫn trong dự án.
+- Chỉ phụ lục đã ký ảnh hưởng ngày, giá trị và khối lượng hiện hành. Gia hạn khối lượng đã ký cập nhật cả ngày kết thúc.
+- Dòng nhật ký import lỗi không lưu phân công kỹ thuật kèm theo. Phân biệt số dòng thêm/cập nhật/bỏ qua/giữ nguyên với cảnh báo, và kiểm tra thông báo sau mỗi lượt import.
+
 ## 1. Khoi dong va dang nhap
 
 Trong PowerShell tai thu muc `D:\QLHD`:

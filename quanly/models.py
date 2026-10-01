@@ -281,6 +281,29 @@ class PhanCongTre(TimeStampedModel):
     def __str__(self):
         return f"Phân công {self.tre.ho_ten} - {self.loai_dich_vu}"
 
+    def clean(self):
+        super().clean()
+        if not self.pk:
+            return
+        old = type(self).objects.get(pk=self.pk)
+        protected = (
+            "phan_bo_id", "can_bo_nguon_id", "nhom_hd_id", "tre_id", "loai_dich_vu",
+            "so_buoi_du_kien", "dinh_muc_di_lai", "dia_diem_ct", "hinh_thuc_ct",
+            "dot_phan_cong", "ky_phan_cong", "ngay_phan_cong",
+        )
+        if any(getattr(old, name) != getattr(self, name) for name in protected):
+            ids = self.nhat_ky_thuc_hien.values_list("pk", flat=True)
+            if NhatKyThucHien.payment_protected_ids(ids):
+                raise ValidationError("Phân công đã có dữ liệu thanh toán; không được thay đổi định danh hoặc dữ liệu tính tiền.")
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            if self.pk:
+                list(self.nhat_ky_thuc_hien.order_by("pk").select_for_update().values_list("pk", flat=True))
+                type(self).objects.select_for_update().get(pk=self.pk)
+                self.clean()
+            return super().save(*args, **kwargs)
+
 
 class LichSuDieuChuyenPhanCong(TimeStampedModel):
     phan_cong = models.ForeignKey(PhanCongTre, on_delete=models.CASCADE, related_name="lich_su_dieu_chuyen")
@@ -639,6 +662,33 @@ class NhatKyThucHien(TimeStampedModel):
         )
 
     @classmethod
+    def payment_channel_ids(cls, journal_ids):
+        ids = list(journal_ids)
+        cbct = set(ChiTietPhieuThanhToan.objects.filter(nhat_ky_id__in=ids, hoat_dong=True).values_list("nhat_ky_id", flat=True))
+        cbct.update(ChiTietThanhToan.objects.filter(nhat_ky_id__in=ids).values_list("nhat_ky_id", flat=True))
+        parent = set(ChiTietThanhToanDiLaiPhuHuynh.objects.filter(nhat_ky_id__in=ids).values_list("nhat_ky_id", flat=True))
+        return cbct, parent
+
+    @classmethod
+    def payment_protected_ids(cls, journal_ids):
+        cbct, parent = cls.payment_channel_ids(journal_ids)
+        return cbct | parent
+
+    @classmethod
+    def travel_snapshots(cls, rows):
+        rows = list(rows)
+        cbct, parent = cls.payment_channel_ids(row.pk for row in rows)
+        snapshots = {}
+        for row in rows:
+            item = row._travel_snapshot()
+            item.cbct_frozen = row.pk in cbct
+            item.parent_frozen = row.pk in parent
+            item.cbct_trip_claimed = row.pk in cbct and row.so_luot_di_lai_cbct > 0
+            item.parent_trip_claimed = row.pk in parent and row.so_luot_di_lai > 0
+            snapshots[row.pk] = item
+        return snapshots, cbct, parent
+
+    @classmethod
     @transaction.atomic
     def recalculate_day(cls, date_value):
         """Tính lại đi lại và cờ trùng cho toàn bộ nhật ký của một ngày."""
@@ -662,14 +712,8 @@ class NhatKyThucHien(TimeStampedModel):
                 "phan_cong__phan_bo__nhom_hd",
             )
         )
-        paid_ids = set(
-            ChiTietPhieuThanhToan.objects.filter(nhat_ky_id__in=[row.pk for row in rows], hoat_dong=True)
-            .values_list("nhat_ky_id", flat=True)
-        )
-        snapshots = {row.pk: row._travel_snapshot() for row in rows}
+        snapshots, cbct_ids, parent_ids = cls.travel_snapshots(rows)
         for row in rows:
-            if row.pk in paid_ids:
-                continue
             current = snapshots[row.pk]
             others = [item for pk, item in snapshots.items() if pk != row.pk]
             conflicts = journal_conflict_types(current, others) if current.start and current.end else []
@@ -679,12 +723,14 @@ class NhatKyThucHien(TimeStampedModel):
             }
             if current.start and current.end:
                 travel = calculate_travel_flags(current, others)
-                updates.update(
-                    so_luot_di_lai_cbct=travel["so_luot_di_lai_cbct"],
-                    so_luot_di_lai=travel["so_luot_di_lai_ph"],
-                    thanh_tien=Decimal(row.so_buoi_thuc_hien) * Decimal(row.don_gia_cong)
-                    + Decimal(travel["so_luot_di_lai_cbct"]) * Decimal(row.dinh_muc_di_lai),
-                )
+                if row.pk not in cbct_ids:
+                    updates.update(
+                        so_luot_di_lai_cbct=travel["so_luot_di_lai_cbct"],
+                        thanh_tien=Decimal(row.so_buoi_thuc_hien) * Decimal(row.don_gia_cong)
+                        + Decimal(travel["so_luot_di_lai_cbct"]) * Decimal(row.dinh_muc_di_lai),
+                    )
+                if row.pk not in parent_ids:
+                    updates["so_luot_di_lai"] = travel["so_luot_di_lai_ph"]
             cls.objects.filter(pk=row.pk).update(**updates)
 
     def save(self, *args, **kwargs):
@@ -709,8 +755,7 @@ class NhatKyThucHien(TimeStampedModel):
     def _save_locked(self, *args, recalculate_travel=True, **kwargs):
         old_date = None
         if self.pk:
-            paid_detail = ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=self.pk, hoat_dong=True).first()
-            if paid_detail:
+            if self.payment_protected_ids([self.pk]):
                 current = type(self).objects.get(pk=self.pk)
                 protected = (
                     "ngay_thuc_hien", "gio_bat_dau", "gio_ket_thuc", "ky_can_thiep", "so_buoi_thuc_hien",
@@ -741,7 +786,7 @@ class NhatKyThucHien(TimeStampedModel):
                 "can_bo_nguon", "hop_dong__can_bo", "hop_dong__nhom_hd", "nhom_hd_nguon",
                 "phan_cong__tre", "phan_cong__nhom_hd", "phan_cong__phan_bo__can_bo", "phan_cong__phan_bo__nhom_hd",
             )
-            records = [SimpleNamespace(child_id=x.phan_cong.tre_id, cb_id=x.can_bo_hieu_luc_id, ace=x.phan_cong.tre.ace_ruot or "", service=x.phan_cong.loai_dich_vu, date=x.ngay_thuc_hien, start=x.gio_bat_dau, end=x.gio_ket_thuc, location=x.dia_diem_ct or x.phan_cong.dia_diem_ct or "", record_id=x.pk) for x in existing]
+            records = list(self.travel_snapshots(existing)[0].values())
             travel = calculate_travel_flags(current, records)
             self.so_luot_di_lai_cbct = travel["so_luot_di_lai_cbct"]
             self.so_luot_di_lai = travel["so_luot_di_lai_ph"]
@@ -766,7 +811,7 @@ class NhatKyThucHien(TimeStampedModel):
         return (old_date, self.ngay_thuc_hien) if recalculate_travel else None
 
     def delete(self, *args, **kwargs):
-        if ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=self.pk, hoat_dong=True).exists():
+        if self.payment_protected_ids([self.pk]):
             raise ValidationError("Không thể xóa nhật ký đã nằm trong phiếu thanh toán hiệu lực.")
         date_value = self.ngay_thuc_hien
         result = super().delete(*args, **kwargs)
@@ -838,6 +883,8 @@ class ChiTietThanhToan(TimeStampedModel):
 
     def clean(self):
         errors = {}
+        if self.nhat_ky_id and ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=self.nhat_ky_id, hoat_dong=True).exists():
+            errors["nhat_ky"] = "Nhật ký đã có phiếu thanh toán hiệu lực, không được lập thêm thanh toán cũ."
         if self.dot_thanh_toan_id and self.nhat_ky_id:
             if self.dot_thanh_toan.hop_dong_id != self.nhat_ky.hop_dong_id:
                 errors["nhat_ky"] = "Nhật ký không thuộc hợp đồng của đợt thanh toán."
@@ -867,9 +914,11 @@ class ChiTietThanhToan(TimeStampedModel):
         return calculate_payment_breakdown(self.tien_cong, self.tien_di_lai)["thuc_linh"]
 
     def save(self, *args, **kwargs):
-        self.full_clean()
-        self.thanh_tien = Decimal(self.so_buoi_thanh_toan) * Decimal(self.nhat_ky.don_gia_cong) + Decimal(self.so_luot_di_lai) * Decimal(self.nhat_ky.dinh_muc_di_lai)
-        super().save(*args, **kwargs)
+        with transaction.atomic():
+            self.nhat_ky = NhatKyThucHien.objects.select_for_update().get(pk=self.nhat_ky_id)
+            self.full_clean()
+            self.thanh_tien = Decimal(self.so_buoi_thanh_toan) * Decimal(self.nhat_ky.don_gia_cong) + Decimal(self.so_luot_di_lai) * Decimal(self.nhat_ky.dinh_muc_di_lai)
+            super().save(*args, **kwargs)
 
 
 class DotThanhToanDiLaiPhuHuynh(TimeStampedModel):
@@ -979,9 +1028,11 @@ class ChiTietThanhToanDiLaiPhuHuynh(TimeStampedModel):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
-        self.full_clean()
-        self.thanh_tien = Decimal(self.so_luot_di_lai) * Decimal(self.dinh_muc_di_lai)
-        super().save(*args, **kwargs)
+        with transaction.atomic():
+            self.nhat_ky = NhatKyThucHien.objects.select_for_update().get(pk=self.nhat_ky_id)
+            self.full_clean()
+            self.thanh_tien = Decimal(self.so_luot_di_lai) * Decimal(self.dinh_muc_di_lai)
+            super().save(*args, **kwargs)
 
     @property
     def nguoi_nhan(self):

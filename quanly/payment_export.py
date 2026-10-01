@@ -448,6 +448,7 @@ def _parent_travel_payment_groups(rows):
             "provider_name": provider_name,
             "contract_name": getattr(contract, "so_hop_dong", "") or "",
             "details": OrderedDict(),
+                "journals": [],
             "planned": 0,
             "actual_sessions": 0,
             "travel": 0,
@@ -659,8 +660,10 @@ def _group_journal_payment_rows(journals):
                 "staff": staff,
                 "contracts": OrderedDict(),
                 "details": OrderedDict(),
+                "journals": [],
             }
         staff_group = grouped[staff_key]
+        staff_group["journals"].append(journal)
         contract = getattr(journal, "hop_dong_hieu_luc", None) or getattr(journal, "hop_dong", None)
         if contract:
             staff_group["contracts"][contract.pk] = contract
@@ -748,8 +751,8 @@ def export_journal_account_list(journals, nguoi_de_nghi=None):
     for index, (staff, items) in enumerate(grouped.values(), start=1):
         row = 4 + index
         labor, travel = _journal_totals(items)
-        from .financial import calculate_payment_breakdown
-        net = calculate_payment_breakdown(labor, travel)["thuc_linh"]
+        from .services.payment_ledger import journal_payment_breakdown
+        net = journal_payment_breakdown(items)["thuc_linh"]
         total_net += net
         for column, value in enumerate((index, staff.ho_ten, staff.dien_thoai or "", staff.email or "", staff.dia_chi or "", staff.tai_khoan or "", staff.ngan_hang or "", staff.chi_nhanh or "", labor + travel, net, staff.mst or "", staff.cccd or ""), start=1):
             ws.cell(row, column).value = value
@@ -773,6 +776,10 @@ def export_journal_payment_request_excel(
         raise ValidationError("Không có nhật ký phù hợp để xuất ĐNTT Excel.")
     workbook = _workbook(INTERVENTION_PAYMENT_TEMPLATE)
     ws = workbook["DNTT"]
+    for cells in ws.iter_rows(max_row=FIRST_DETAIL_ROW - 1):
+        for cell in cells:
+            if isinstance(cell.value, str) and "10%" in cell.value:
+                cell.value = "Theo phiếu"
     _clear_detail_rows(ws)
     staff_groups = _group_journal_payment_rows(journals)
     output_rows = sum(1 + len(group["details"]) for group in staff_groups)
@@ -783,7 +790,7 @@ def export_journal_payment_request_excel(
         _copy_row_style(ws, LAST_TEMPLATE_DETAIL_ROW, total_row)
         total_row += 1
     from openpyxl.styles import PatternFill
-    from .financial import calculate_payment_breakdown
+    from .services.payment_ledger import journal_payment_breakdown
 
     summary_fill = PatternFill(fill_type="solid", fgColor="FFF200")
     row = FIRST_DETAIL_ROW
@@ -799,7 +806,7 @@ def export_journal_payment_request_excel(
             ),
             Decimal("0"),
         )
-        breakdown = calculate_payment_breakdown(group["labor"], group["travel"])
+        breakdown = journal_payment_breakdown(group["journals"])
         summary_values = (
             index,
             group["staff"].ho_ten,
@@ -844,7 +851,7 @@ def export_journal_payment_request_excel(
         "Q": sum((group["travel"] for group in staff_groups), Decimal("0")),
     }
     totals["R"] = totals["P"] + totals["Q"]
-    totals["S"] = sum((calculate_payment_breakdown(group["labor"], group["travel"])["thue_tncn"] for group in staff_groups), Decimal("0"))
+    totals["S"] = sum((journal_payment_breakdown(group["journals"])["thue_tncn"] for group in staff_groups), Decimal("0"))
     totals["T"] = totals["R"] - totals["S"]
     for column, value in totals.items():
         ws[f"{column}{total_row}"] = _blank_zero(value)
@@ -894,8 +901,8 @@ def export_journal_commitment(journals, tu_ngay="", den_ngay="", nguoi_de_nghi=N
     for index, (staff, items) in enumerate(grouped.values(), start=1):
         row = 4 + index
         labor, travel = _journal_totals(items)
-        from .financial import calculate_payment_breakdown
-        net = calculate_payment_breakdown(labor, travel)["thuc_linh"]
+        from .services.payment_ledger import journal_payment_breakdown
+        net = journal_payment_breakdown(items)["thuc_linh"]
         total_net += net
         for column, value in enumerate((index, staff.ho_ten, staff.dia_chi or "", staff.tai_khoan or "", staff.ngan_hang or "", staff.chi_nhanh or "", net), start=1):
             ws.cell(row, column).value = value
