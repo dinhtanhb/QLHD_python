@@ -19,6 +19,7 @@
         
         <form method="post">
             {% csrf_token %}
+            {{ form.is_active.as_hidden }}{{ form.ace_ruot.as_hidden }}{{ form.ghi_chu.as_hidden }}
             
             <!-- Hiển thị lỗi ngầm của form (nếu có) -->
             {% if form.errors %}

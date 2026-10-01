@@ -113,7 +113,13 @@ from .services.payment_ledger import (
 
 def _is_id(value, min_value=1, max_value=2_147_483_647):
     """True nếu tham số request là số nguyên ASCII hợp lệ; thay cho str.isdigit() (nhận cả "²")."""
-    return parse_get_int(value, min_value=min_value, max_value=max_value) is not None
+    if parse_get_int(value, min_value=min_value, max_value=max_value) is None:
+        return False
+    try:
+        int(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return True
 
 
 def _is_operationally_locked(hop_dong):
@@ -127,6 +133,7 @@ def _hop_dong_has_financial_records(hop_dong):
             NghiemThu.objects.filter(hop_dong=hop_dong).exists(),
             ThanhLyHopDong.objects.filter(hop_dong=hop_dong).exists(),
             DotThanhToan.objects.filter(hop_dong=hop_dong).exists(),
+            PhieuThanhToan.objects.filter(hop_dong=hop_dong).exists(),
             DotThanhToanDiLaiPhuHuynh.objects.filter(hop_dong=hop_dong).exists(),
             ChiTietThanhToanDiLaiPhuHuynh.objects.filter(nhat_ky__hop_dong=hop_dong).exists(),
         )
@@ -160,7 +167,7 @@ def parse_int(value, default=0):
         return default
     try:
         return int(float(value))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return default
 
 
@@ -212,8 +219,9 @@ def resolve_contract_group(value):
     ).first()
     if group:
         return group
-    if normalized.isdigit():
-        return NhomHD.objects.filter(pk=int(normalized)).first()
+    group_id = parse_get_int(normalized)
+    if group_id is not None:
+        return NhomHD.objects.filter(pk=group_id).first()
     return None
 
 
@@ -1056,7 +1064,7 @@ def sua_phan_cong(request, pk):
     if item.phan_bo_id and item.phan_bo.is_locked and not is_admin_user(request.user):
         messages.error(request, "Phân bổ đã khóa, chỉ Admin mới được sửa phân công.")
         return redirect("danh_sach_phan_cong")
-    form = PhanCongTreForm(request.POST or None, instance=item)
+    form = PhanCongTreForm(request.POST or None, instance=item, allow_locked=is_admin_user(request.user))
     if request.method == "POST" and form.is_valid():
         affected_dates = set(
             NhatKyThucHien.objects.filter(phan_cong=item).values_list("ngay_thuc_hien", flat=True)
@@ -1168,10 +1176,7 @@ def import_nhat_ky_can_thiep(request):
             nhom_value = clean_empty_excel_value(get_excel_value(row, "NhomHD", "Nhóm HĐ"))
             source_group = None
             if nhom_value:
-                source_filter = Q(ma_nhom_hd=nhom_value) | Q(ten_nhom_hd__iexact=nhom_value)
-                if str(nhom_value).replace(".0", "", 1).isdigit():
-                    source_filter |= Q(pk=int(float(nhom_value)))
-                source_group = NhomHD.objects.filter(source_filter).first()
+                source_group = resolve_contract_group(nhom_value)
                 if not source_group and not historical_mode:
                     raise ValueError(f"Không tìm thấy Nhóm HĐ {nhom_value}")
                 if not source_group:
@@ -1635,6 +1640,7 @@ def import_phan_bo(request):
     if request.method != "POST" or "excel_file" not in request.FILES:
         return render(request, "quanly/import_phan_bo.html", {"has_preview": False})
 
+    request.session.pop("import_phan_bo_valid_data", None)
     try:
         df = normalized_columns(pd.read_excel(request.FILES["excel_file"]))
     except Exception as exc:
@@ -1658,6 +1664,8 @@ def import_phan_bo(request):
         so_buoi_phcn = parse_int(get_excel_value(row, "SoBuoiPHCN"))
         so_tre_cs = parse_int(get_excel_value(row, "SoTreCS"))
         so_buoi_cs = parse_int(get_excel_value(row, "SoBuoiCS"))
+        if any(value < 0 for value in (so_tre_phcn, so_buoi_phcn, so_tre_cs, so_buoi_cs)):
+            errors.append("Số trẻ và số buổi không được âm")
         dm_phcn_code = clean_empty_excel_value(get_excel_value(row, "DMDL_PHCN")) or "1"
         dm_cs_code = clean_empty_excel_value(get_excel_value(row, "DMDL_CS")) or "1"
         dm_phcn = Decimal(str(FinancialConfig.DON_GIA_DI_LAI_DM1 if dm_phcn_code in {"1", "1.0"} else FinancialConfig.DON_GIA_DI_LAI_DM2))
@@ -1719,7 +1727,14 @@ def confirm_import_phan_bo(request):
             so_buoi_cs=item["so_buoi_cs"],
             dinh_muc_di_lai_cs=Decimal(str(item["dmdl_cs_val"])),
         ))
-    PhanBoChiTieu.objects.bulk_create(records)
+    try:
+        with transaction.atomic():
+            for record in records:
+                record.full_clean()
+            PhanBoChiTieu.objects.bulk_create(records)
+    except (ValidationError, IntegrityError) as exc:
+        messages.error(request, f"Không thể lưu phân bổ; toàn bộ dữ liệu đã được hoàn tác: {exc}")
+        return redirect("import_phan_bo")
     messages.success(request, f"Đã lưu {len(records)} Phân bổ chỉ tiêu.")
     return redirect("danh_sach_phan_bo")
 
@@ -2363,7 +2378,10 @@ def them_nhat_ky_thuc_hien(request, hop_dong_id):
     if _is_operationally_locked(hop_dong) and not is_admin_user(request.user):
         messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được thêm nhật ký.")
         return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
-    form = NhatKyThucHienForm(request.POST or None, hop_dong=hop_dong)
+    form = NhatKyThucHienForm(
+        request.POST or None, hop_dong=hop_dong,
+        instance=NhatKyThucHien(hop_dong=hop_dong),
+    )
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
         item.hop_dong = hop_dong
@@ -2436,6 +2454,12 @@ def sua_nhat_ky_can_thiep(request, pk):
             )
         else:
             updated = form.save(commit=False)
+            if updated.hop_dong_id and _is_operationally_locked(updated.hop_dong) and not is_admin_user(request.user):
+                form.add_error("hop_dong", "Hợp đồng đã khóa, chỉ Admin mới được sửa nhật ký.")
+                return render(request, "quanly/them_nhat_ky_can_thiep.html", {
+                    "form": form, "page_title": "Sửa nhật ký can thiệp",
+                    "submit_label": "Lưu thay đổi", "in_payment": in_payment,
+                })
             try:
                 updated.dia_diem_ct = updated.dia_diem_ct or updated.phan_cong.dia_diem_ct
                 if updated.hop_dong_id:
@@ -2487,13 +2511,18 @@ def tao_dot_thanh_toan(request, hop_dong_id):
     if _is_operationally_locked(hop_dong) and not is_admin_user(request.user):
         messages.error(request, "Hợp đồng đã khóa, chỉ Admin mới được tạo đợt thanh toán.")
         return redirect("chi_tiet_hop_dong", pk=hop_dong.pk)
-    form = DotThanhToanForm(request.POST or None)
+    form = DotThanhToanForm(request.POST or None, hop_dong=hop_dong)
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
         item.hop_dong = hop_dong
-        item.save()
-        messages.success(request, "Đã tạo đợt thanh toán.")
-        return redirect("chi_tiet_dot_thanh_toan", pk=item.pk)
+        try:
+            with transaction.atomic():
+                item.save()
+        except IntegrityError:
+            form.add_error(None, "Đợt thanh toán tháng/năm này đã tồn tại cho hợp đồng.")
+        else:
+            messages.success(request, "Đã tạo đợt thanh toán.")
+            return redirect("chi_tiet_dot_thanh_toan", pk=item.pk)
     return render(request, "quanly/tao_dot_thanh_toan.html", {"form": form, "hop_dong": hop_dong})
 
 
@@ -2963,14 +2992,18 @@ def _sync_hop_dong_from_signed_extensions(hop_dong, fallback_end=None, fallback_
         is_signed = bool(signed_volume)
         for detail in effective_volume.chi_tiet_gia_han_khoi_luong.all():
             effective_services.add(detail.loai_dich_vu)
+            child_count = detail.so_tre_moi if is_signed else detail.so_tre_cu
+            session_count = detail.so_buoi_moi if is_signed else detail.so_buoi_cu
             ChiTietKhoiLuongHopDong.objects.update_or_create(
                 hop_dong=hop_dong,
                 loai_dich_vu=detail.loai_dich_vu,
                 defaults={
-                    "so_tre": detail.so_tre_moi if is_signed else detail.so_tre_cu,
-                    "so_buoi": detail.so_buoi_moi if is_signed else detail.so_buoi_cu,
+                    "so_tre": child_count,
+                    "so_buoi": session_count,
                     "don_gia_cong": detail.don_gia_cong,
                     "dinh_muc_di_lai": detail.dinh_muc_di_lai,
+                    "thanh_tien": Decimal(child_count) * Decimal(session_count)
+                    * (Decimal(detail.don_gia_cong) + Decimal(detail.dinh_muc_di_lai)),
                 },
             )
     elif fallback_volume is not None:
@@ -2984,6 +3017,8 @@ def _sync_hop_dong_from_signed_extensions(hop_dong, fallback_end=None, fallback_
                     "so_buoi": detail["so_buoi"],
                     "don_gia_cong": detail["don_gia_cong"],
                     "dinh_muc_di_lai": detail["dinh_muc_di_lai"],
+                    "thanh_tien": Decimal(detail["so_tre"]) * Decimal(detail["so_buoi"])
+                    * (Decimal(detail["don_gia_cong"]) + Decimal(detail["dinh_muc_di_lai"])),
                 },
             )
     if effective_services:
@@ -3145,6 +3180,18 @@ def sua_gia_han_hop_dong(request, pk):
         loai_phu_luc__in={"GIA_HAN_THOI_GIAN", "GIA_HAN_KHOI_LUONG"},
     )
     is_volume = extension.loai_phu_luc == "GIA_HAN_KHOI_LUONG"
+    original_signed = extension.is_signed
+    original_contract = extension.hop_dong
+    original_end = extension.den_ngay_cu if original_signed and not is_volume else None
+    original_total = extension.tong_tien_moi - extension.tong_tien_tang_them if original_signed and is_volume else None
+    original_volume = [
+        {
+            "loai_dich_vu": detail.loai_dich_vu,
+            "so_tre": detail.so_tre_cu, "so_buoi": detail.so_buoi_cu,
+            "don_gia_cong": detail.don_gia_cong, "dinh_muc_di_lai": detail.dinh_muc_di_lai,
+        }
+        for detail in extension.chi_tiet_gia_han_khoi_luong.all()
+    ] if original_signed and is_volume else None
     form_class = GiaHanKhoiLuongForm if is_volume else GiaHanThoiGianForm
     form = form_class(request.POST or None, instance=extension)
     if request.method == "GET":
@@ -3162,7 +3209,10 @@ def sua_gia_han_hop_dong(request, pk):
 
     if request.method == "POST" and form.is_valid():
         hop_dong = form.cleaned_data["hop_dong"]
-        if extension.is_signed and _hop_dong_has_financial_records(hop_dong):
+        if (original_signed or form.cleaned_data["is_signed"]) and (
+            _hop_dong_has_financial_records(original_contract)
+            or (hop_dong.pk != original_contract.pk and _hop_dong_has_financial_records(hop_dong))
+        ):
             messages.error(request, "Không thể sửa phụ lục đã ký sau khi hợp đồng đã phát sinh nghiệm thu, thanh lý hoặc thanh toán.")
             return redirect("danh_sach_gia_han_hop_dong")
         try:
@@ -3208,6 +3258,11 @@ def sua_gia_han_hop_dong(request, pk):
                     extension.ghi_chu = form.cleaned_data["ghi_chu"]
                     extension.save()
                 _sync_hop_dong_from_signed_extensions(hop_dong)
+                if original_contract.pk != hop_dong.pk:
+                    _sync_hop_dong_from_signed_extensions(
+                        original_contract, fallback_end=original_end,
+                        fallback_total=original_total, fallback_volume=original_volume,
+                    )
         except (IntegrityError, ValidationError) as exc:
             form.add_error(None, str(exc))
         else:
@@ -3702,9 +3757,21 @@ def tao_phieu_thanh_toan(request):
             created = 0
             try:
                 with transaction.atomic():
+                    contracts = list(contracts.order_by("pk"))
+                    contract_ids = [contract.pk for contract in contracts]
+                    # Take the complete batch's journal locks before any contract
+                    # lock, matching journal rebuild and single-voucher creation.
+                    locked_journal_ids = list(NhatKyThucHien.objects.filter(
+                        hop_dong_id__in=contract_ids, ky_can_thiep=int(ky),
+                    ).order_by("pk").select_for_update().values_list("pk", flat=True))
+                    list(HopDong.objects.filter(pk__in=contract_ids).order_by("pk")
+                         .select_for_update().values_list("pk", flat=True))
                     for contract in contracts:
                         try:
-                            tao_phieu_thanh_toan_service(contract.can_bo, contract, int(ky), request.user)
+                            tao_phieu_thanh_toan_service(
+                                contract.can_bo, contract, int(ky), request.user,
+                                locked_journal_ids=locked_journal_ids,
+                            )
                             created += 1
                         except NoEligiblePaymentJournals as exc:
                             skipped.append(f"{contract.so_hop_dong}: {exc.messages[0] if exc.messages else exc}")
@@ -4086,13 +4153,18 @@ def them_chi_tiet_thanh_toan(request, dot_id):
     if _is_operationally_locked(dot.hop_dong) and not is_admin_user(request.user):
         messages.error(request, "Hợp đồng đã khóa/thanh lý, chỉ Admin mới được thêm chi tiết thanh toán.")
         return redirect("chi_tiet_dot_thanh_toan", pk=dot.pk)
-    form = ChiTietThanhToanForm(request.POST or None, hop_dong=dot.hop_dong)
+    form = ChiTietThanhToanForm(request.POST or None, hop_dong=dot.hop_dong, dot=dot)
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
         item.dot_thanh_toan = dot
-        item.save()
-        messages.success(request, "Đã thêm chi tiết thanh toán.")
-        return redirect("chi_tiet_dot_thanh_toan", pk=dot.pk)
+        try:
+            with transaction.atomic():
+                item.save()
+        except (ValidationError, IntegrityError) as exc:
+            form.add_error(None, str(exc))
+        else:
+            messages.success(request, "Đã thêm chi tiết thanh toán.")
+            return redirect("chi_tiet_dot_thanh_toan", pk=dot.pk)
     return render(request, "quanly/them_chi_tiet_thanh_toan.html", {"form": form, "dot": dot})
 
 

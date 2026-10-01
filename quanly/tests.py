@@ -1008,7 +1008,8 @@ class DatabaseRegressionTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(PhuLucHopDong.objects.filter(pk=extension.pk).exists())
 
-    def test_acceptance_get_does_not_create_and_value_is_user_confirmed(self):
+    @patch("quanly.services.contract_status.timezone.localdate", return_value=date(2026, 9, 30))
+    def test_acceptance_get_does_not_create_and_value_is_user_confirmed(self, _today):
         contract = HopDong.objects.create(
             can_bo=self.cb1,
             nhom_hd=self.group,

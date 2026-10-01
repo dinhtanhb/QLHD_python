@@ -21,11 +21,12 @@ class Command(BaseCommand):
             try:
                 if apply_changes:
                     with transaction.atomic():
-                        sync_trang_thai_hop_dong(contract)
+                        contract = sync_trang_thai_hop_dong(contract)
                 else:
                     target = desired_trang_thai(contract)
                     if target == "THANH_LY" and contract.trang_thai not in {"NGHIEM_THU", "THANH_LY"}:
                         validate_status_transition(contract, "NGHIEM_THU")
+                        contract.trang_thai = "NGHIEM_THU"
                     validate_status_transition(contract, target)
                     after = (target, target == "THANH_LY" or contract.is_locked)
                     if after != before:

@@ -1,7 +1,6 @@
 """Validated, atomic import for the child-assignment workbook."""
 
 from dataclasses import dataclass, field
-from datetime import date
 from decimal import Decimal, InvalidOperation
 import logging
 from pathlib import Path
@@ -9,9 +8,10 @@ from pathlib import Path
 import pandas as pd
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from .models import CanBo, NhomHD, PhanBoChiTieu, PhanCongTre, Tre
-from .parsing import parse_money_vnd
+from .parsing import parse_get_int, parse_money_vnd
 
 logger = logging.getLogger(__name__)
 MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -49,7 +49,7 @@ def _read_workbook(uploaded_file):
 
 def import_assignment_workbook(uploaded_file, *, validate_only=False):
     """Validate every row first, then write the complete workbook atomically."""
-    from .views import clean_empty_excel_value, get_excel_value, normalize_service_code, parse_date, parse_int, parse_decimal, take_import_occurrence
+    from .views import clean_empty_excel_value, get_excel_value, normalize_service_code, parse_date, parse_int, take_import_occurrence
 
     result = AssignmentImportResult(dry_run=validate_only)
     try:
@@ -125,8 +125,9 @@ def import_assignment_workbook(uploaded_file, *, validate_only=False):
             nhom = None
             if nhom_value:
                 nhom = group_by_key.get(str(nhom_value).casefold())
-                if not nhom and str(nhom_value).replace(".0", "", 1).isdigit():
-                    nhom = NhomHD.objects.filter(pk=int(float(nhom_value))).first()
+                group_id = parse_get_int(str(nhom_value).removesuffix(".0"))
+                if not nhom and group_id is not None:
+                    nhom = NhomHD.objects.filter(pk=group_id).first()
             if not nhom and can_bo:
                 nhom = inferred_group_by_cb.get(can_bo.pk)
                 if nhom:
@@ -142,7 +143,7 @@ def import_assignment_workbook(uploaded_file, *, validate_only=False):
                 allocation_key = (None, nhom.pk, cbda or "")
                 allocation = new_allocation_specs.setdefault(
                     allocation_key,
-                    {"nhom_hd": nhom, "cbda_quan_ly": cbda, "ngay_lap": parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong"), date.today())},
+                    {"nhom_hd": nhom, "cbda_quan_ly": cbda, "ngay_lap": parse_date(get_excel_value(row, "Ngày phân công", "NgayPhanCong"), timezone.localdate())},
                 )
                 result.warnings.append(f"Dòng {row_no}: sẽ tạo Phân bổ mới cho Nhóm HĐ {nhom.ma_nhom_hd}.")
 
@@ -269,4 +270,5 @@ def import_assignment_workbook(uploaded_file, *, validate_only=False):
         logger.exception("Assignment import failed; transaction rolled back")
         result.system_error = True
         result.errors = ["Không thể lưu file phân công; toàn bộ thay đổi đã được hoàn tác."]
+        result.created = result.updated = result.unchanged = result.phan_bo_tao_moi = 0
     return result

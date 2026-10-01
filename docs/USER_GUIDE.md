@@ -46,3 +46,11 @@ Thuế TNCN được tính riêng trên tiền công của từng lần thanh to
 - Nhật ký đã nằm trong phiếu thanh toán hiệu lực chỉ cho sửa ghi chú; các trường số liệu bị khóa và danh sách không hiện nút Xóa. Nếu cần điều chỉnh số liệu, xử lý phiếu theo quy trình thanh toán trước.
 - Khong tu y xoa hop dong/phu luc da phat sinh nghiem thu, thanh ly hoac thanh toan.
 - Khi gap loi file Excel, luu lai thong bao repair cua Excel va gui kem ten file, bo loc, Nhom HD, Ky.
+
+## Kiểm tra form và import sau đợt bảo trì 01/10/2026
+
+- Đợt thanh toán tháng/năm trùng và chi tiết vượt số buổi/lượt nhật ký hiển thị lỗi trên form; không tạo thêm bản ghi.
+- Tài khoản thường không thể chuyển phân công sang phân bổ khóa hoặc nhật ký sang HĐ khóa/thanh lý bằng cách thay lựa chọn trên form. Admin tiếp tục dùng quyền UAT hiện hành.
+- Phụ lục đã ký có nghiệm thu, thanh lý hoặc phiếu thanh toán mới được bảo vệ; bỏ chọn “Đã ký” hoặc đổi HĐ không vượt được kiểm tra này.
+- Form sửa gia hạn giữ đúng hợp đồng, trạng thái ký và ngày đã lưu. Các ô ngày HTML dùng giá trị ISO để trình duyệt hiển thị được dữ liệu cũ.
+- Import phân bổ đánh dấu số trẻ/số buổi âm là không hợp lệ; xác nhận kiểm tra lại quan hệ dữ liệu trước khi lưu. Nếu lượt ghi phân công rollback, số thêm/cập nhật báo bằng 0; chế độ chỉ kiểm tra vẫn báo số dự kiến.

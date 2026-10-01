@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from .financial import FinancialConfig, calculate_payment_breakdown, calculate_travel_flags, journal_conflict_types
@@ -447,6 +447,8 @@ class ChiTietKhoiLuongHopDong(TimeStampedModel):
 
     def save(self, *args, **kwargs):
         self.thanh_tien = Decimal(self.so_tre) * Decimal(self.so_buoi) * (Decimal(self.don_gia_cong) + Decimal(self.dinh_muc_di_lai))
+        if kwargs.get("update_fields"):
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | {"thanh_tien"}
         super().save(*args, **kwargs)
 
 
@@ -506,6 +508,8 @@ class ChiTietGiaHanKhoiLuong(TimeStampedModel):
         self.thanh_tien = Decimal(self.so_tre_moi) * Decimal(self.so_buoi_moi) * (
             Decimal(self.don_gia_cong) + Decimal(self.dinh_muc_di_lai)
         )
+        if kwargs.get("update_fields"):
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | {"thanh_tien"}
         super().save(*args, **kwargs)
 
 
@@ -635,12 +639,19 @@ class NhatKyThucHien(TimeStampedModel):
         )
 
     @classmethod
+    @transaction.atomic
     def recalculate_day(cls, date_value):
         """Tính lại đi lại và cờ trùng cho toàn bộ nhật ký của một ngày."""
         if not date_value:
             return
+        # Lock only journal rows (no joined FK tables), always by primary key.
+        # Voucher creation takes the same locks before reading snapshots.
+        journal_ids = list(
+            cls.objects.filter(ngay_thuc_hien=date_value).order_by("pk")
+            .select_for_update().values_list("pk", flat=True)
+        )
         rows = list(
-            cls.objects.filter(ngay_thuc_hien=date_value).select_related(
+            cls.objects.filter(pk__in=journal_ids).order_by("pk").select_related(
                 "can_bo_nguon",
                 "hop_dong__can_bo",
                 "hop_dong__nhom_hd",
@@ -678,6 +689,24 @@ class NhatKyThucHien(TimeStampedModel):
 
     def save(self, *args, **kwargs):
         recalculate_travel = kwargs.pop("recalculate_travel", True)
+        with transaction.atomic():
+            if self.pk:
+                # Serialize the paid-state check and write with voucher snapshots.
+                # Avoid select_related here: locking FK parents first would invert
+                # the journal -> contract order used by voucher creation.
+                list(type(self).objects.filter(pk=self.pk).select_for_update().values_list("pk", flat=True))
+            dates = self._save_locked(*args, recalculate_travel=recalculate_travel, **kwargs)
+        # Do not hold the edited journal while acquiring the whole day's locks:
+        # two simultaneous edits of different rows must not lock each other out.
+        if dates:
+            old_date, new_date = dates
+            def rebuild_after_commit():
+                type(self).recalculate_day(old_date)
+                if new_date != old_date:
+                    type(self).recalculate_day(new_date)
+            transaction.on_commit(rebuild_after_commit)
+
+    def _save_locked(self, *args, recalculate_travel=True, **kwargs):
         old_date = None
         if self.pk:
             paid_detail = ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=self.pk, hoat_dong=True).first()
@@ -687,9 +716,18 @@ class NhatKyThucHien(TimeStampedModel):
                     "ngay_thuc_hien", "gio_bat_dau", "gio_ket_thuc", "ky_can_thiep", "so_buoi_thuc_hien",
                     "so_luot_di_lai", "so_luot_di_lai_cbct", "don_gia_cong", "dinh_muc_di_lai", "hop_dong_id",
                     "phan_cong_id", "can_bo_nguon_id",
+                    "nhom_hd_nguon_id", "dia_diem_ct", "du_lieu_lich_su", "lan_thanh_toan", "thanh_tien",
                 )
                 if any(getattr(current, field) != getattr(self, field) for field in protected):
                     raise ValidationError("Nhật ký đã thanh toán chỉ được sửa ghi chú, không được thay đổi dữ liệu tính tiền.")
+                # Paid rows retain their original travel/money even if the day's
+                # schedule or assignment has changed since the voucher was made.
+                requested_fields = kwargs.get("update_fields")
+                kwargs["update_fields"] = (
+                    {"ghi_chu", "updated_at"} if requested_fields is None
+                    else set(requested_fields).intersection({"ghi_chu", "updated_at"})
+                )
+                return super().save(*args, **kwargs)
             old_date = type(self).objects.filter(pk=self.pk).values_list("ngay_thuc_hien", flat=True).first()
         self.full_clean()
         if self.ngay_thuc_hien and self.gio_bat_dau and self.gio_ket_thuc:
@@ -725,10 +763,7 @@ class NhatKyThucHien(TimeStampedModel):
             self.chi_tiet_trung = ""
         self.thanh_tien = Decimal(self.so_buoi_thuc_hien) * Decimal(self.don_gia_cong) + Decimal(self.so_luot_di_lai_cbct) * Decimal(self.dinh_muc_di_lai)
         super().save(*args, **kwargs)
-        if recalculate_travel:
-            type(self).recalculate_day(old_date)
-            if self.ngay_thuc_hien != old_date:
-                type(self).recalculate_day(self.ngay_thuc_hien)
+        return (old_date, self.ngay_thuc_hien) if recalculate_travel else None
 
     def delete(self, *args, **kwargs):
         if ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=self.pk, hoat_dong=True).exists():

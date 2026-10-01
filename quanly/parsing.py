@@ -15,7 +15,10 @@ def _numeric_value(value):
         return None
     if isinstance(value, (Decimal, numbers.Integral, numbers.Real)):
         try:
-            return Decimal(str(value))
+            numeric = Decimal(str(value))
+            if not numeric.is_finite():
+                raise ValueError(f"Giá trị số không hợp lệ: {value}")
+            return numeric
         except (InvalidOperation, ValueError):
             raise ValueError(f"Giá trị số không hợp lệ: {value}")
     return None
@@ -82,7 +85,8 @@ def parse_decimal(value, default=Decimal("0")):
                     text = text.replace(".", "").replace(",", ".")
                 else:
                     text = text.replace(",", "")
-            return Decimal(text)
+            numeric = Decimal(text)
+            return numeric if numeric.is_finite() else default
         except (InvalidOperation, ValueError, TypeError):
             return default
 
@@ -97,7 +101,11 @@ def parse_get_int(value, *, min_value=1, max_value=2_147_483_647):
     text = str(value if value is not None else "").strip()
     if not text or not (text.isascii() and text.isdigit()):
         return None
-    number = int(text)
+    # Bound the conversion before int(): Python rejects several thousand digits.
+    significant = text.lstrip("0") or "0"
+    if len(significant) > len(str(max_value)):
+        return None
+    number = int(significant)
     if number < min_value or number > max_value:
         return None
     return number

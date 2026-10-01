@@ -18,6 +18,7 @@
         
         <form method="post">
             {% csrf_token %}
+            {{ form.is_active.as_hidden }}
             
             {% if form.errors %}
                 <div class="alert alert-danger">

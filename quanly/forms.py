@@ -32,6 +32,8 @@ class BootstrapModelForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
+            if isinstance(field.widget, forms.DateInput) and field.widget.attrs.get("type") == "date":
+                field.widget.format = "%Y-%m-%d"
             if isinstance(field.widget, (forms.Select, forms.SelectMultiple)):
                 css_class = "form-select"
             else:
@@ -164,8 +166,8 @@ class PhanCongTreForm(BootstrapModelForm):
         loai_dich_vu = cleaned_data.get("loai_dich_vu")
         dinh_muc_di_lai = cleaned_data.get("dinh_muc_di_lai")
 
-        if phan_bo and phan_bo.is_locked and not self.instance.pk and not self.allow_locked:
-            raise forms.ValidationError("Phân bổ đã khóa, không thể thêm phân công mới.")
+        if phan_bo and phan_bo.is_locked and not self.allow_locked:
+            raise forms.ValidationError("Phân bổ đã khóa, chỉ Admin mới được thay đổi phân công.")
         if (cleaned_data.get("so_buoi_du_kien") or 0) <= 0:
             self.add_error("so_buoi_du_kien", "Số buổi dự kiến phải lớn hơn 0.")
         if tre and not tre.is_active:
@@ -362,6 +364,22 @@ class NhatKyGhiChuForm(forms.Form):
 
 
 class DotThanhToanForm(BootstrapModelForm):
+    def __init__(self, *args, hop_dong=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if hop_dong is not None:
+            self.instance.hop_dong = hop_dong
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.instance.hop_dong_id and cleaned.get("nam") is not None and cleaned.get("thang") is not None:
+            duplicates = DotThanhToan.objects.filter(
+                hop_dong_id=self.instance.hop_dong_id,
+                nam=cleaned["nam"], thang=cleaned["thang"],
+            ).exclude(pk=self.instance.pk)
+            if duplicates.exists():
+                raise forms.ValidationError("Đợt thanh toán tháng/năm này đã tồn tại cho hợp đồng.")
+        return cleaned
+
     class Meta:
         model = DotThanhToan
         fields = ["nam", "thang", "ngay_de_nghi", "ghi_chu"]
@@ -383,8 +401,10 @@ class ChiTietThanhToanForm(BootstrapModelForm):
             "ghi_chu": forms.Textarea(attrs={"rows": 3}),
         }
 
-    def __init__(self, *args, hop_dong=None, **kwargs):
+    def __init__(self, *args, hop_dong=None, dot=None, **kwargs):
         super().__init__(*args, **kwargs)
+        if dot is not None:
+            self.instance.dot_thanh_toan = dot
         if hop_dong is not None:
             self.fields["nhat_ky"].queryset = NhatKyThucHien.objects.filter(
                 hop_dong=hop_dong
@@ -493,12 +513,18 @@ class GiaHanThoiGianForm(BootstrapModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.contract_end_dates = {}
+        contracts = {}
         for contract in self.fields["hop_dong"].queryset:
+            contracts[str(contract.pk)] = contract
             current_end = _current_contract_end(contract, self.instance.pk)
             self.contract_end_dates[str(contract.pk)] = current_end.isoformat() if current_end else ""
         selected = self.initial.get("hop_dong") or (self.instance.hop_dong if self.instance.pk else None)
+        if selected is not None and not isinstance(selected, HopDong):
+            selected = contracts.get(str(selected))
         if selected:
             self.initial["den_ngay_cu"] = _current_contract_end(selected, self.instance.pk)
+        if isinstance(self.initial.get("is_signed"), bool):
+            self.initial["is_signed"] = "1" if self.initial["is_signed"] else "0"
 
     def clean(self):
         cleaned = super().clean()
@@ -516,6 +542,12 @@ class GiaHanThoiGianForm(BootstrapModelForm):
 
 
 class GiaHanKhoiLuongForm(BootstrapModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.original_contract_id = self.instance.hop_dong_id
+        if isinstance(self.initial.get("is_signed"), bool):
+            self.initial["is_signed"] = "1" if self.initial["is_signed"] else "0"
+
     hop_dong = forms.ModelChoiceField(
         queryset=HopDong.objects.filter(can_bo__isnull=False).select_related("can_bo", "nhom_hd"),
         label="Hợp đồng",
@@ -627,7 +659,7 @@ class GiaHanKhoiLuongForm(BootstrapModelForm):
         latest_volume = latest_volume_query.order_by("-ngay_lap", "-id").first()
         if latest_volume:
             old_total = Decimal(latest_volume.tong_tien_moi)
-        elif self.instance.pk and self.instance.tong_tien_moi:
+        elif self.instance.pk and self.original_contract_id == hop_dong.pk and self.instance.tong_tien_moi:
             old_total = Decimal(self.instance.tong_tien_moi) - Decimal(self.instance.tong_tien_tang_them or 0)
         else:
             old_total = Decimal(hop_dong.gia_tri_hop_dong or 0)

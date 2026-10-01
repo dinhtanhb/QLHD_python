@@ -28,8 +28,11 @@ $env:DEBUG = 'True'
 .\venv\Scripts\python.exe manage.py check
 .\venv\Scripts\python.exe manage.py makemigrations --check --dry-run
 .\venv\Scripts\python.exe manage.py test quanly.tests
+.\venv\Scripts\python.exe manage.py test quanly --noinput
 git diff --check
 ```
+
+`test quanly` chạy cả bộ gốc và các module `test_review_*.py`; chỉ chạy `quanly.tests` sẽ bỏ sót test bảo vệ mới. Với lệnh chuyển sổ, kiểm tra dry-run và `--force` trên fixture riêng: tổng dòng chọn phải bằng dòng dự kiến chuyển + dòng đã có phiếu + dòng xung đột; lỗi ở nhóm cuối phải rollback cả lượt. Không suy ngày đã chi từ ngày đề nghị. Kiểm tra giao dịch đồng thời trên MySQL riêng khi thay đổi khóa dòng; kiểm tra thứ tự truy vấn trên SQLite chưa đủ chứng minh hành vi đồng thời.
 
 Kiểm thử thêm theo loại thay đổi:
 

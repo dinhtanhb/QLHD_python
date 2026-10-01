@@ -32,13 +32,13 @@ class Command(BaseCommand):
             changed = []
             if not admin_user.is_active:
                 admin_user.is_active = True
-                changed.append("active")
+                changed.append("is_active")
             if not admin_user.is_staff:
                 admin_user.is_staff = True
-                changed.append("staff")
+                changed.append("is_staff")
             if not admin_user.is_superuser:
                 admin_user.is_superuser = True
-                changed.append("superuser")
+                changed.append("is_superuser")
             if changed:
                 admin_user.save(update_fields=changed)
                 self.stdout.write(self.style.SUCCESS("Admin account synchronized with full administrator permissions."))

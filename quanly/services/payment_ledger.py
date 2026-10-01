@@ -144,7 +144,7 @@ def kiem_tra_dieu_kien(nhat_ky, kiem_tra_da_thanh_toan=True):
     return errors
 
 
-def _eligible_journals(can_bo, hop_dong, ky_can_thiep):
+def _eligible_journals(can_bo, hop_dong, ky_can_thiep, journal_ids=None):
     active_detail = ChiTietPhieuThanhToan.objects.filter(nhat_ky_id=OuterRef("pk"), hoat_dong=True)
     queryset = NhatKyThucHien.objects.filter(
         hop_dong=hop_dong,
@@ -154,20 +154,30 @@ def _eligible_journals(can_bo, hop_dong, ky_can_thiep):
         "hop_dong", "can_bo_nguon", "phan_cong__tre", "phan_cong__phan_bo__can_bo"
     )
     queryset = NhatKyQuerySet.chua_thanh_toan(queryset).filter(_effective_staff_id=can_bo.pk)
+    if journal_ids is not None:
+        queryset = queryset.filter(pk__in=journal_ids)
     # queryset đã loại các nhật ký có chi tiết phiếu hiệu lực (Exists ở trên) nên không cần
     # truy vấn .exists() lần nữa cho từng nhật ký.
     return [item for item in queryset if not kiem_tra_dieu_kien(item, kiem_tra_da_thanh_toan=False)]
 
 
-def tao_phieu_thanh_toan(can_bo, hop_dong, ky_can_thiep, user=None):
+def tao_phieu_thanh_toan(can_bo, hop_dong, ky_can_thiep, user=None, *, locked_journal_ids=None):
     if not can_bo or not hop_dong:
         raise ValidationError("Cần chọn CBCT và hợp đồng để tạo phiếu thanh toán.")
     try:
         with transaction.atomic():
+            # A journal edit/rebuild and a voucher snapshot must serialize on
+            # the same rows. Lock journals first, by PK, without joined parents.
+            if locked_journal_ids is None:
+                locked_journal_ids = list(NhatKyThucHien.objects.filter(
+                    hop_dong_id=hop_dong.pk, ky_can_thiep=ky_can_thiep,
+                ).order_by("pk").select_for_update().values_list("pk", flat=True))
             locked_contract = HopDong.objects.select_for_update().get(pk=hop_dong.pk)
             if locked_contract.trang_thai in {"DU_THAO", "HUY", "THANH_LY"}:
                 raise ValidationError("Hợp đồng chưa ở trạng thái được thanh toán.")
-            journals = _eligible_journals(can_bo, locked_contract, ky_can_thiep)
+            # Exclude journals inserted after the locking read: snapshots must
+            # only use rows whose money/identity are protected by our locks.
+            journals = _eligible_journals(can_bo, locked_contract, ky_can_thiep, journal_ids=locked_journal_ids)
             if not journals:
                 raise NoEligiblePaymentJournals(
                     "Không có nhật ký mới đủ điều kiện để tạo phiếu thanh toán."
@@ -244,6 +254,11 @@ def huy_phieu(phieu, ly_do, user=None):
     """Hủy phiếu chờ chi. Trạng thái được đọc lại dưới khóa dòng để không dựa vào đối tượng cũ."""
     updated_fields = ["trang_thai", "hoat_dong", "ly_do_huy", "huy_boi", "ngay_huy", "updated_at"]
     with transaction.atomic():
+        # Creation allocates the next round under this same contract lock.
+        # Lock the parent first so the latest-round check and cancellation
+        # cannot race with creation of a newer voucher.
+        contract_id = PhieuThanhToan.objects.values_list("hop_dong_id", flat=True).get(pk=phieu.pk)
+        HopDong.objects.select_for_update().get(pk=contract_id)
         locked = PhieuThanhToan.objects.select_for_update().get(pk=phieu.pk)
         if locked.trang_thai == "DA_CHI":
             raise ValidationError("Phiếu đã chi không thể hủy bằng luồng thông thường.")

@@ -34,6 +34,12 @@ python manage.py chuyen_so_thanh_toan_cu --help
 
 Lenh chuyen so mac dinh dry-run; chi dung `--force` sau khi da doi chieu va phe duyet.
 
+Từ đợt sửa 01/10/2026, lệnh báo riêng số chi tiết được chọn, số phiếu/chi tiết dự kiến chuyển, số chi tiết đã nằm trong phiếu và số xung đột. `--from`/`--to` nhận ngày ISO `YYYY-MM-DD`. Nếu có xung đột, `--force` dừng trước khi ghi; lỗi ghi ở nhóm sau rollback toàn bộ lượt.
+
+Không tự gộp các đợt cũ cùng CBCT/HĐ/kỳ hoặc bỏ cả nhóm khi mới chuyển một phần. Đợt cũ `CHO_THANH_TOAN` được chuyển thành `CHO_CHI`, không gán ngày đã chi từ ngày đề nghị. Trạng thái cũ không có cách khớp được kiểm chứng, nhật ký thiếu/lệch hợp đồng, khối lượng thanh toán một phần hoặc đơn giá lịch sử đã thay đổi được báo để đối chiếu; không tự điều chỉnh tiền hay xóa lịch sử. Chỉ xác nhận đã chi qua quy trình thanh toán khi có chứng từ/ngày thực tế.
+
+`setup_roles` lưu đúng các cờ `is_active`, `is_staff`, `is_superuser` của tài khoản `admin`. Lệnh đồng bộ trạng thái HĐ báo đúng số thay đổi đã lưu; dry-run kiểm tra cùng các bước chuyển trạng thái với apply.
+
 ## 4. Backup va ban giao
 
 Backup review chi gom file can review; backup full gom ma nguon, migration, template va tai lieu. Khong dua `.env`, database, du lieu that, `venv`, log, file tam hoac thu muc backups vao ZIP.

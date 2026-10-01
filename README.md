@@ -92,7 +92,10 @@ $env:DEBUG = 'True'
 .\venv\Scripts\python.exe manage.py check
 .\venv\Scripts\python.exe manage.py makemigrations --check --dry-run
 .\venv\Scripts\python.exe manage.py test quanly.tests --noinput
+.\venv\Scripts\python.exe manage.py test quanly --noinput
 ```
+
+`quanly.tests` là bộ hồi quy gốc. Lệnh `test quanly` khám phá thêm các module `test_review_*.py` về form, khóa dữ liệu, chuyển sổ và parser; dùng lệnh này để kiểm tra toàn bộ ứng dụng sau bảo trì.
 
 Các lệnh trên không kiểm chứng tương thích MySQL hoặc số liệu trên dữ liệu thật. Hãy UAT trên bản sao MySQL trước khi triển khai. Để rà trạng thái hợp đồng, dùng `python manage.py sync_trang_thai_hop_dong --dry-run`; chỉ dùng `--apply` sau khi đối chiếu danh sách thay đổi. Các lệnh chuyển sổ cũ mặc định dry-run.
 
