@@ -19,11 +19,11 @@ const phases = [
   {
     id: "P0",
     title: "P0 · Chốt nền tảng và baseline",
-    status: "Đang chuẩn bị",
+    status: "Baseline đã kiểm chứng",
     outcome: "Một bản chạy local ổn định, biết rõ source, database và dữ liệu mẫu.",
     work: [
       "Đọc và đối chiếu models, forms, views, urls, signals, financial, apps.",
-      "Xác nhận cấu hình MySQL và loại bỏ mâu thuẫn SQLite/PostgreSQL trong tài liệu.",
+      "Đã thống nhất MySQL cho vận hành và SQLite riêng cho kiểm thử.",
       "Chạy manage.py check, test hiện có, kiểm tra migration và git diff.",
       "Tạo bộ dữ liệu kiểm thử tối thiểu cho PHCN, CSXH, kỳ 1 và kỳ 2.",
     ],
@@ -32,7 +32,7 @@ const phases = [
   {
     id: "P1",
     title: "P1 · Hoàn thiện hợp đồng chính thức",
-    status: "Mốc tiếp theo",
+    status: "Đã có luồng và hồi quy",
     outcome: "Proposal được duyệt có thể tạo một HopDong hợp lệ, an toàn và truy vết được.",
     work: [
       "Chuẩn hóa POST duyệt đề xuất và trạng thái DA_DUYET.",
@@ -45,7 +45,7 @@ const phases = [
   {
     id: "P2",
     title: "P2 · Word hợp đồng + Phụ lục 2 kỳ 1",
-    status: "Sau P1",
+    status: "Đã có mẫu xuất",
     outcome: "Xuất được một file Word hoàn chỉnh gồm hợp đồng chính và Phụ lục 2 kỳ 1.",
     work: [
       "Tìm và tái sử dụng cơ chế docx/python-docx/docxtpl hiện có nếu có.",
@@ -58,7 +58,7 @@ const phases = [
   {
     id: "P3",
     title: "P3 · Export Phụ lục kỳ 2+",
-    status: "Sau P2",
+    status: "Đã có luồng xuất",
     outcome: "Mỗi kỳ từ kỳ 2 trở đi xuất được file riêng mà không tạo HĐ/phụ lục DB mới.",
     work: [
       "Lọc PhanCongTre theo hợp đồng và ky_phan_cong.",
@@ -71,7 +71,7 @@ const phases = [
   {
     id: "P4",
     title: "P4 · Ghi nhận thực hiện và thanh toán",
-    status: "Sau P3",
+    status: "Đã có sổ phiếu và bảo vệ dữ liệu",
     outcome: "Theo dõi được thực tế đã làm và thanh toán đúng khối lượng hợp lệ, không trùng.",
     work: [
       "Thiết kế NhatKyThucHien theo dòng phân công, dịch vụ, ngày và số buổi.",
@@ -84,7 +84,7 @@ const phases = [
   {
     id: "P5",
     title: "P5 · Nghiệm thu, thanh lý, báo cáo và UAT",
-    status: "Hoàn thiện sản phẩm",
+    status: "Cần UAT vận hành",
     outcome: "Có quy trình đóng hợp đồng, báo cáo và bộ kiểm thử để chạy thật.",
     work: [
       "Kiểm soát chuyển trạng thái nghiệm thu/thanh lý theo điều kiện.",
@@ -140,16 +140,16 @@ export default function QLHDRoadmap() {
       <Stack gap={8}>
         <Row gap={8} align="center">
           <Pill active>QLHD</Pill>
-          <Text size="small" tone="secondary">Roadmap chạy thật · branch dev</Text>
+          <Text size="small" tone="secondary">Cập nhật 02/10/2026 · main · nền 5628f468</Text>
         </Row>
         <H1>Lộ trình từ baseline đến vận hành</H1>
         <Text tone="secondary">
-          Phát triển theo từng cổng nghiệm thu: code → test → kiểm tra nghiệp vụ → cập nhật bàn giao → nhắc push.
+          Các luồng chính đã có. SQLite: 180 test đạt, 3 test đồng thời cần MySQL bị bỏ qua. Ba ca HTTP đạt; giao diện Edge còn cần kiểm tra trên Windows.
         </Text>
       </Stack>
 
-      <Callout tone="warning" title="Điểm cần chốt trước khi code">
-        README hiện ghi SQLite/PostgreSQL, trong khi tài liệu bàn giao đã chốt MySQL. Mình sẽ giữ MySQL theo quyết định nghiệp vụ, nhưng cần xác nhận cấu hình kết nối thực tế trước khi chạy test tích hợp.
+      <Callout tone="warning" title="Phần còn cần nghiệm thu">
+        MySQL là CSDL vận hành; SQLite dùng kiểm thử. ĐNTT Word đã bỏ trang trắng trên fixture. Cần đối soát bản sao dữ liệu thật, mở Word/Excel desktop và chạy ba ca UAT bằng Edge. Báo cáo địa bàn/PDF nhà tài trợ cần chốt chỉ tiêu và mẫu trước khi bổ sung.
       </Callout>
 
       <Grid columns={3} gap={12}>
@@ -167,17 +167,17 @@ export default function QLHDRoadmap() {
         </Card>
       </Grid>
 
-      <H2>Các phase triển khai</H2>
+      <H2>Các giai đoạn và phạm vi kiểm chứng</H2>
       <Grid columns={2} gap={16}>
         {phases.map((phase) => <PhaseCard key={phase.id} phase={phase} />)}
       </Grid>
 
       <Stack gap={8}>
-        <H2>Thông tin cần xác nhận</H2>
-        <Text>1. MySQL đang chạy ở máy nào, tên database và cách cấp biến môi trường là gì?</Text>
-        <Text>2. File Word mẫu hiện nằm ở đâu và có phiên bản cuối cùng chưa?</Text>
-        <Text>3. Dữ liệu UAT có thể dùng là dữ liệu mẫu hay cần chuẩn bị bản ẩn danh?</Text>
-        <Text tone="secondary" size="small">Nếu chưa có câu trả lời ngay, mình vẫn có thể bắt đầu P0 bằng kiểm tra source và test không kết nối database thật.</Text>
+        <H2>Bằng chứng và bước vận hành</H2>
+        <Text>1. docs/PROJECT_PROGRESS.md ghi kết quả từng đợt; kết quả MySQL cũ không thay lần chạy mới.</Text>
+        <Text>2. docs/UAT_CURRENT.md hướng dẫn ba ca tạo/sửa/xóa, lập/hủy/chi phiếu và kiểm tra dữ liệu đã thanh toán.</Text>
+        <Text>3. Edge 154.0.4258.53 không khởi động trong phiên kiểm thử do hạn chế socket; chưa xác minh JavaScript/bố cục trên Edge.</Text>
+        <Text tone="secondary" size="small">Các dòng phạm vi trong từng thẻ là cổng nghiệm thu, không khẳng định mọi dữ liệu vận hành đã được kiểm tra.</Text>
       </Stack>
     </Stack>
   );

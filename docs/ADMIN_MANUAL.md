@@ -1,5 +1,7 @@
 # Huong dan quan tri QLHD VietHealth
 
+**Cập nhật 02/10/2026:** dùng nhánh `main`. Bộ SQLite tại commit nền `5628f468`: 180 đạt, 3 test đồng thời bỏ qua; cần MySQL riêng để chạy ba test này. Checklist tạo/sửa/xóa và đối chiếu phiếu tại [UAT_CURRENT.md](UAT_CURRENT.md). Kiểm thử trong phiên này dùng CSDL SQLite giả lập, chưa truy cập MySQL hoặc Edge trên máy Windows của người dùng.
+
 ## 1. Ma tran quyen
 
 | Vai tro | Xem dashboard/bao cao | Danh muc va nghiep vu | Thanh toan | Quan tri du lieu khoa |

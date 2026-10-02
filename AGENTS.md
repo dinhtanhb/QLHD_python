@@ -13,6 +13,7 @@ Tài liệu này là quy tắc bắt buộc cho mọi lần sửa mã nguồn, t
    .\venv\Scripts\python.exe manage.py check
    .\venv\Scripts\python.exe manage.py makemigrations --check --dry-run
    .\venv\Scripts\python.exe manage.py test quanly.tests
+   .\venv\Scripts\python.exe manage.py test quanly --noinput
    ```
 
 4. Đọc các file liên quan và xác định tác động đến dữ liệu, tính tiền, import, export, template và URL.
@@ -25,6 +26,7 @@ Tài liệu này là quy tắc bắt buộc cho mọi lần sửa mã nguồn, t
 2. Kiểm thử đúng luồng người dùng bị ảnh hưởng trên dữ liệu thực hoặc fixture đại diện.
 3. Với HTML: mở trang và kiểm tra lỗi render, bộ lọc, phân trang và bố cục.
 4. Với DOCX/XLSX/PDF: mở bằng ứng dụng tương ứng hoặc công cụ kiểm tra định dạng, kiểm tra tên file, số liệu, công thức và nội dung hiển thị.
+   Với UAT tạo/sửa/xóa qua giao diện, dùng checklist `docs/UAT_CURRENT.md` trên CSDL riêng; ghi rõ trình duyệt thực sự đã chạy. HTTP test không thay thế kiểm tra JavaScript/bố cục trên Edge. Chạy `test quanly --noinput` để gồm các module `test_review_*.py`, và ghi riêng số test bị bỏ qua.
 5. Chạy `git diff --check`, cập nhật `docs/PROJECT_PROGRESS.md` và ghi rõ rủi ro dữ liệu còn lại.
 6. Chỉ commit/push theo ủy quyền của người dùng; áp dụng ủy quyền thường trực ở cuối tài liệu này cho các đợt sửa đã hoàn thành.
 

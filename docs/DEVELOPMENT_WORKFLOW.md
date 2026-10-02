@@ -36,6 +36,8 @@ git diff --check
 
 Kiểm thử thêm theo loại thay đổi:
 
+Ba ca UAT tạo/sửa/xóa và luồng phiếu nằm tại [UAT_CURRENT.md](UAT_CURRENT.md). Dùng dữ liệu giả lập hoặc bản sao MySQL tách biệt; kiểm tra lại bản ghi sau mỗi lần lưu. Ghi riêng kiểm thử trình duyệt và kiểm thử HTTP: HTTP không chứng minh JavaScript, select2, hộp xác nhận hay bố cục trên Edge hoạt động. Không ghi “đạt toàn bộ” khi có test bị bỏ qua.
+
 | Phạm vi | Kiểm thử bắt buộc |
 |---|---|
 | View/URL/template | Mở route, kiểm tra GET/POST, bộ lọc, phân trang, thao tác và bố cục |

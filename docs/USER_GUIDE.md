@@ -51,6 +51,8 @@ Thuế TNCN được tính riêng trên tiền công của từng lần thanh to
 
 ## 5. Luu y
 
+Mẫu ĐNTT Word từ commit `5628f468` đã bỏ đoạn trống thừa trong ô chữ ký. Fixture đã kiểm tra còn hai trang: đề nghị thanh toán và bảng kê; dữ liệu tên/địa chỉ dài vẫn cần xem trước khi in. Các ca kiểm tra lưu, sửa, xóa và phiếu thanh toán được mô tả tại [UAT_CURRENT.md](UAT_CURRENT.md).
+
 - Canh bao import khong dong nghia voi bo qua; xem tong `them`, `cap nhat`, `bo qua`, `canh bao`.
 - Nhật ký đã nằm trong phiếu thanh toán hiệu lực chỉ cho sửa ghi chú; các trường số liệu bị khóa và danh sách không hiện nút Xóa. Nếu cần điều chỉnh số liệu, xử lý phiếu theo quy trình thanh toán trước.
 - Khong tu y xoa hop dong/phu luc da phat sinh nghiem thu, thanh ly hoac thanh toan.

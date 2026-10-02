@@ -2,7 +2,7 @@
 
 Ứng dụng Django nội bộ của VietHealth quản lý cán bộ can thiệp (CBCT), trẻ, đơn vị, phân bổ chỉ tiêu, phân công, hợp đồng, nhật ký thực hiện và hồ sơ thanh toán cho hoạt động PHCN/CSXH.
 
-**Trạng thái 29/09/2026:** các luồng nghiệp vụ chính đã có trong mã nguồn. Tiếp tục rà soát dữ liệu lịch sử, kiểm thử MySQL trên bản sao dữ liệu và UAT trước khi áp dụng cho dữ liệu vận hành. Xem [tiến độ và rủi ro](docs/PROJECT_PROGRESS.md) để biết kết quả xác minh theo từng đợt; các kết quả cũ trong tài liệu là lịch sử, không phải kết quả kiểm thử hiện tại.
+**Trạng thái 02/10/2026:** mã nguồn được đối chiếu tại `main`, commit nền `5628f468`. Các luồng chính đã có; đợt bảo trì 01/10 sửa 14 vấn đề về thanh toán, import và gia hạn. Mẫu ĐNTT Word đã bỏ trang trắng, xác minh lại bằng LibreOffice trên fixture. Bộ SQLite mới nhất khám phá 183 test: **180 đạt, 3 test đồng thời cần MySQL bị bỏ qua**. Kết quả MySQL 183/183 trong tiến độ là ghi nhận đợt trước, chưa chạy lại trong phiên này. Xem [tiến độ](docs/PROJECT_PROGRESS.md) và [ba ca UAT](docs/UAT_CURRENT.md) cho bằng chứng và phần còn cần kiểm chứng trên máy vận hành.
 
 ## Chức năng hiện có
 

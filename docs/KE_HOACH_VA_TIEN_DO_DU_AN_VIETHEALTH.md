@@ -1,13 +1,20 @@
 # BÁO CÁO KẾ HOẠCH, TIẾN ĐỘ THỰC HIỆN VÀ LỘ TRÌNH HOÀN THÀNH DỰ ÁN
 **Dự án:** Hệ thống Quản lý Phân bổ Chỉ tiêu & Hợp đồng Cán bộ Chuyên trách (CBCT)
 **Đơn vị triển khai:** Trung tâm Phát triển Sức khỏe Bền vững (VietHealth)
-**Ngày cập nhật:** 28/09/2026
-**Trạng thái:** Đã triển khai các luồng chính; đang chuẩn hóa an toàn dữ liệu, vòng đời hợp đồng và kiểm thử hồi quy P0
+**Ngày cập nhật:** 02/10/2026
+**Trạng thái:** Đã triển khai các luồng chính và bảo trì 14 vấn đề; tiếp tục UAT với dữ liệu vận hành trên bản sao riêng
 
 **Ghi chú:** Câu 1: 1 trẻ có thể được phân công cho nhiều CBCT (Cán bộ can thiệp) tùy theo nhu cầu tương ứng với các đợt phân công và hợp đồng cụ thể; Câu 2: 1 CBCT có thể có ký nhiều HĐ trong 1 năm hoặc được gia hạn cả năm, hoặc từ năm này sang năm sau; Câu 3: chỉ theo TỈnh - xã - địa chỉ chi tiết; Câu 4: mỗi tháng sẽ có 1 đợt thanh toán gồm: Đề nghị thanh toán + bảng kê các lần thanh toán (có mẫu word). Khi tới hạn kết thúc HĐ sẽ có Biên bản nghiệm thu & Thanh lý hợp đồng; Câu 5: Admin, Điều phối viên, Kế toán, Cán bộ dự án (CBDA)...
 ---
 
-> **Cập nhật trạng thái 28/09/2026:** Bảng mốc lịch sử phía dưới được bổ sung từ giai đoạn đầu. Trạng thái thực tế hiện tại, các phần đã triển khai và việc còn lại được quản lý tại [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md); tài liệu đó là nguồn chuẩn cho tiến độ hiện hành.
+> **Cập nhật trạng thái 02/10/2026:** Bảng mốc và checklist dưới đây là kế hoạch gốc. Các ô “Chờ triển khai” không phản ánh mã nguồn hiện tại. Xem [PROJECT_PROGRESS.md](PROJECT_PROGRESS.md) cho lịch sử kiểm chứng và [UAT_CURRENT.md](UAT_CURRENT.md) cho ba ca vận hành.
+
+| Phạm vi hiện hành | Trạng thái kiểm chứng | Việc còn lại |
+|---|---|---|
+| Danh mục, phân bổ, đề xuất/HĐ, phân công, nhật ký, thanh toán, nghiệm thu/thanh lý | Đã có luồng và bộ test; SQLite 180 đạt, 3 test đồng thời bỏ qua tại `5628f468` | Đối soát dữ liệu lịch sử và chạy UAT trên bản sao MySQL đại diện |
+| Báo cáo thanh toán, phân trang, ngày chi, hồ sơ Word/Excel | Có trong mã; ĐNTT Word fixture 3→2 trang, kiểm chứng LibreOffice | Mở hồ sơ với tên/địa chỉ dài bằng Word/Excel desktop |
+| UAT trên Microsoft Edge của máy vận hành | Chưa thực hiện trong phiên này | Chạy checklist bằng Edge trên Windows và bản sao DB riêng |
+| Báo cáo địa bàn, chỉ tiêu riêng, PDF nhà tài trợ của kế hoạch gốc | Chưa chốt đủ định nghĩa chỉ tiêu/mẫu | Người dùng xác nhận yêu cầu trước khi bổ sung nghiệp vụ |
 
 ## I. TỔNG QUAN DỰ ÁN & MỤC TIÊU HỆ THỐNG
 

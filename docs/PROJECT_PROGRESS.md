@@ -1,12 +1,21 @@
 # Tiến độ dự án QLHD
 
+## Đồng bộ tài liệu và ba ca HTTP UAT — 02/10/2026
+
+- Đối chiếu nguồn mới nhất trên `main` tại `5628f468`; cập nhật README, roadmap, kế hoạch, hướng dẫn người dùng/quản trị, quy trình và AGENTS. Giữ các kết quả lịch sử với ngày ghi nhận; không đưa thay đổi local cũ chưa push vào đợt này.
+- Review độc lập code và dữ liệu xác nhận commit mẫu chỉ xóa ba đoạn trống trong chữ ký, không đổi chữ/placeholder/bảng/section. Xuất cùng fixture trước/sau và render LibreOffice: 3→2 trang, đã xem toàn bộ; thuế 300.000, thực nhận 5.700.000, giá trị HĐ 10.000.000, còn lại 4.000.000 giữ nguyên.
+- Baseline toàn ứng dụng trên SQLite: 183 test được khám phá, **180 đạt, 3 test đồng thời cần MySQL bị bỏ qua**. `check`, kiểm tra migration và diff đạt. Không chạy lại MySQL trong phiên này.
+- **3/3 ca UAT HTTP đạt** trên CSDL giả lập riêng đã áp migration: (1) tạo/lưu/sửa/mở lại/xóa trẻ chưa liên kết; (2) tạo/sửa/mở lại/xóa nhật ký chưa thanh toán, đơn giá lấy từ HĐ; (3) tạo/hủy/lập lại phiếu, xác nhận chi ngày 02/10/2026, sửa ghi chú nhật ký đã chi, chặn xóa và kiểm tra báo cáo. Thao tác qua `runserver` thật, cookie và CSRF; đọc lại DB sau lưu. Phiếu fixture có tiền công 200.000.
+- Đã thử Microsoft Edge chính thức 154.0.4258.53, nhưng môi trường chặn socket nội bộ nên không khởi động. **Chưa test giao diện Edge**, không dùng kết quả HTTP để khẳng định JavaScript/select2/hộp xác nhận/bố cục đạt. Xem [UAT_CURRENT.md](UAT_CURRENT.md) để chạy lại trên Windows và bản sao MySQL.
+- Không sửa logic nghiệp vụ, schema hoặc dữ liệu vận hành. Skill validation hiện đã yêu cầu full suite và ghi test bỏ qua; được rà lại, không cần đổi. Hai bản ZIP bàn giao dùng allowlist nguồn/tài liệu/template, loại credentials/database/dữ liệu thật/file tạm; commit/push theo ủy quyền hiện hành.
+
 ## Tiếp tục rà soát và sửa trang trắng Word — 02/10/2026
 
 - Theo yêu cầu mới của người dùng, từ nay làm trực tiếp trên `main`. Checkout hiện tại là `main`, nền `dc9b375d`; không sửa nhánh `dev`.
 - Đã rà lại diff sửa 14 vấn đề (`b5ce4138..dc9b375d`) và các caller liên quan; chưa phát hiện thêm lỗi chặn có bằng chứng. Đây là lượt rà của root, không phải xác nhận mới từ agent độc lập.
 - Xác minh trang trắng ĐNTT xuất hiện cả trong Microsoft Word. Bỏ một đoạn trống trong mỗi ô chữ ký của `quanly/document_templates/thanh_toan_cong_can_thiep/Mau_DNTT.docx`; toàn bộ chữ, placeholder, bảng và nội dung tài chính được giữ nguyên. Fixture xuất lại bằng code hiện tại giảm từ **3 trang xuống 2 trang**, đã xem cả hai trang; bảng kê vẫn bắt đầu ở trang riêng.
 - Kiểm chứng: trước sửa mẫu, MySQL **183/183** test đạt (gồm 3 test đồng thời); sau sửa, SQLite **19/19** test hồi quy đạt. `check`, `makemigrations --check --dry-run`, `git diff --check` đạt. Word xuất PDF thành công; thuế **300.000**, thực nhận **5.700.000**, giá trị HĐ **10.000.000** và số còn lại **4.000.000** giữ nguyên trên fixture.
-- Renderer đóng gói chưa chạy được vì không tìm thấy LibreOffice trên PATH; lượt này dùng Microsoft Word và Poppler để kiểm tra trực quan. Chưa xác minh lại render LibreOffice. Không thay schema, logic tính tiền hoặc database vận hành; hồ sơ sai đã chốt từ trước vẫn cần đối chiếu riêng.
+- Tại lượt sửa mẫu, renderer đóng gói chưa chạy được vì không tìm thấy LibreOffice trên PATH; dùng Microsoft Word và Poppler để kiểm tra trực quan. Lượt đối chiếu sau đó ngày 02/10 đã render LibreOffice thành công và xác nhận 3→2 trang trên cùng fixture. Không thay schema, logic tính tiền hoặc database vận hành; hồ sơ sai đã chốt từ trước vẫn cần đối chiếu riêng.
 - File thay đổi của lượt này: mẫu ĐNTT Word và tài liệu tiến độ này. Bản sao `review`/`full` nằm trong `backups/`, chỉ gồm nguồn/tài liệu/template theo allowlist; không gồm dữ liệu thật hay file tạm. Người dùng đã yêu cầu commit/push trực tiếp lên GitHub nhánh `main` ngày 02/10/2026.
 
 ## Sửa 14 vấn đề sau rà soát toàn dự án — 01/10/2026
@@ -34,7 +43,7 @@
 
 **Review:** code reviewer và data-integrity reviewer đã rà độc lập trước/sau sửa. Các phát hiện về thứ tự khóa import, đồng bộ bản nháp và bộ đếm giữ nguyên đã được xử lý. Data reviewer cuối không còn finding chặn; lượt code reviewer cuối dừng bởi hạn mức dịch vụ, root tiếp tục rà diff và kiểm thử.
 
-**Giới hạn:** không tự sửa số liệu sai đã chốt từ trước; cần đối chiếu riêng trước khi điều chỉnh hồ sơ lịch sử. Re-import HĐ đã chốt giữ nguyên toàn dòng, không tự liên kết thêm nhật ký chưa có HĐ; nhật ký vẫn được bảo toàn. Mẫu Word hiện hữu có một trang trắng khi render LibreOffice giữa ĐNTT và bảng kê, số liệu/nội dung hai trang có nội dung đã kiểm tra. Bản sao `review` và `full` tạo từ allowlist trong `backups/`; commit/push thực hiện theo quy trình bàn giao sau khi kiểm tra đạt.
+**Giới hạn tại thời điểm 01/10:** không tự sửa số liệu sai đã chốt từ trước; cần đối chiếu riêng trước khi điều chỉnh hồ sơ lịch sử. Re-import HĐ đã chốt giữ nguyên toàn dòng, không tự liên kết thêm nhật ký chưa có HĐ; nhật ký vẫn được bảo toàn. Mẫu Word khi đó có một trang trắng giữa ĐNTT và bảng kê; đã xử lý tại `5628f468` ngày 02/10 và xác minh lại LibreOffice trong lượt review sau đó. Bản sao `review` và `full` tạo từ allowlist trong `backups/`; commit/push thực hiện theo quy trình bàn giao sau khi kiểm tra đạt.
 
 ## Ghi nhận bàn giao cũ ngày 28/09/2026
 
