@@ -10,6 +10,8 @@ Tai lieu nay huong dan quy trinh van hanh hang ngay. Cac so lieu tai chinh phai 
 - Nhật ký đã có sổ thanh toán cũ không được lập thêm phiếu mới; sử dụng quy trình chuyển sổ có dry-run và đối chiếu được hướng dẫn trong dự án.
 - Chỉ phụ lục đã ký ảnh hưởng ngày, giá trị và khối lượng hiện hành. Gia hạn khối lượng đã ký cập nhật cả ngày kết thúc.
 - Dòng nhật ký import lỗi không lưu phân công kỹ thuật kèm theo. Phân biệt số dòng thêm/cập nhật/bỏ qua/giữ nguyên với cảnh báo, và kiểm tra thông báo sau mỗi lượt import.
+- Khi import nhật ký với mã nhóm dịch vụ `PHCN` hoặc `CS`, hệ thống dùng dịch vụ cụ thể của phân công đã chọn để nhận diện dòng khi nhập lại. Trong file phân công, Nhóm HĐ ghi rõ phải khớp danh mục (chấp nhận biến thể dấu Unicode và khoảng trắng); giá trị không tìm thấy sẽ báo lỗi thay vì chuyển sang nhóm của CBCT.
+- Django Admin chỉ cho xem phiếu thanh toán CBCT và chi tiết phiếu. Việc lập, hủy hoặc xác nhận chi thực hiện trên các màn hình thanh toán để giữ số liệu đối chiếu.
 
 ## 1. Khoi dong va dang nhap
 

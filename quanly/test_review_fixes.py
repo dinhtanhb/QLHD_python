@@ -3,10 +3,13 @@
 from datetime import date, time
 from decimal import Decimal
 from io import BytesIO
+import unicodedata
 from unittest.mock import patch
 
 import pandas as pd
 from openpyxl import load_workbook
+from django.contrib import admin
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.messages import get_messages
@@ -15,9 +18,9 @@ from django.urls import reverse
 
 from .assignment_import import import_assignment_workbook
 from .forms import GiaHanKhoiLuongForm, GiaHanThoiGianForm, _current_contract_end
-from .models import (CauHinhThue, ChiTietThanhToan, ChiTietThanhToanDiLaiPhuHuynh,
+from .models import (CauHinhThue, ChiTietPhieuThanhToan, ChiTietThanhToan, ChiTietThanhToanDiLaiPhuHuynh,
                      DotThanhToan, DotThanhToanDiLaiPhuHuynh, HopDong, NhatKyThucHien,
-                     NhomHD, PhanCongTre, PhuLucHopDong, Tre, DonVi)
+                     NhomHD, PhanBoChiTieu, PhanCongTre, PhuLucHopDong, Tre, DonVi)
 from .payment_export import (export_journal_account_list, export_journal_commitment,
                              export_journal_payment_request_excel)
 from .document_export import export_journal_payment_request
@@ -232,6 +235,93 @@ class ReviewFixTests(TestCase):
         self.assertEqual(NhatKyThucHien.objects.count(), 2)
         self.assertEqual(NhatKyThucHien.objects.latest("pk").don_gia_cong, 0)
         self.assertEqual(NhatKyThucHien.objects.latest("pk").hop_dong_id, self.contract.pk)
+
+    def test_generic_service_import_reuses_journal_across_three_sample_rows(self):
+        PhanCongTre.objects.create(
+            phan_bo=self.allocation, nhom_hd=self.group, tre=self.child,
+            loai_dich_vu="CSXH", so_buoi_du_kien=10,
+        )
+        samples = (
+            ("PHCN", "2026-09-03", "VLTL"),
+            ("CS", "2026-09-04", "CSXH"),
+            ("VLTL", "2026-09-05", "VLTL"),
+        )
+        for service, day, expected_service in samples:
+            with self.subTest(service=service):
+                row = self.journal_row(MaLoaiDichVu=service, NgayCanThiep=day)
+                before = NhatKyThucHien.objects.count()
+                first = self.client.post(reverse("import_nhat_ky_can_thiep"),
+                                         {"file_excel": self.workbook([row])})
+                second = self.client.post(reverse("import_nhat_ky_can_thiep"),
+                                          {"file_excel": self.workbook([row])})
+                self.assertEqual(first.status_code, 302)
+                self.assertEqual(second.status_code, 302)
+                self.assertEqual(NhatKyThucHien.objects.count(), before + 1)
+                saved = NhatKyThucHien.objects.get(ngay_thuc_hien=date.fromisoformat(day))
+                self.assertEqual(saved.phan_cong.loai_dich_vu, expected_service)
+                self.assertTrue(any("thêm 0, cập nhật 1, bỏ qua 0" in str(item)
+                                    for item in get_messages(second.wsgi_request)))
+
+    def test_assignment_import_respects_explicit_group_with_unicode_or_spaces(self):
+        self.group.ten_nhom_hd = "Nhóm Ánh"
+        self.group.save(update_fields=["ten_nhom_hd"])
+        other = NhomHD.objects.create(ma_nhom_hd="OTHER", ten_nhom_hd="Nhóm khác")
+        PhanBoChiTieu.objects.create(can_bo=self.staff, nhom_hd=other, so_tre_phcn=1)
+        base = {"Mã CB": self.staff.ma_can_bo, "IDChild": self.child.ma_tre,
+                "Loại dịch vụ": "HDTL", "Số buổi dự kiến": 2,
+                "Đợt phân công": 2, "Kỳ phân công": 1}
+        for name in (unicodedata.normalize("NFD", "Nhóm Ánh"), "Nhóm   Ánh"):
+            with self.subTest(name=name):
+                result = import_assignment_workbook(self.workbook([{**base, "Nhóm HĐ": name}]))
+                self.assertFalse(result.errors)
+                self.assertEqual(PhanCongTre.objects.get(tre=self.child, loai_dich_vu="HDTL").nhom_hd_id,
+                                 self.group.pk)
+        result = import_assignment_workbook(self.workbook([{**base, "Nhóm HĐ": "Nhóm không tồn tại"}]))
+        self.assertTrue(result.errors)
+        self.assertEqual(PhanCongTre.objects.get(tre=self.child, loai_dich_vu="HDTL").nhom_hd_id,
+                         self.group.pk)
+
+    def test_payment_admin_blocks_direct_add_change_and_delete(self):
+        voucher = self.voucher()
+        detail = voucher.chi_tiet.get()
+        for model, obj in ((type(voucher), voucher), (ChiTietPhieuThanhToan, detail)):
+            with self.subTest(model=model.__name__):
+                model_admin = admin.site._registry[model]
+                self.assertFalse(model_admin.has_add_permission(self.client.request().wsgi_request))
+                self.assertFalse(model_admin.has_change_permission(self.client.request().wsgi_request, obj))
+                self.assertFalse(model_admin.has_delete_permission(self.client.request().wsgi_request, obj))
+                app, name = model._meta.app_label, model._meta.model_name
+                self.assertEqual(self.client.get(reverse(f"admin:{app}_{name}_changelist")).status_code, 200)
+                self.assertEqual(self.client.get(reverse(f"admin:{app}_{name}_change", args=[obj.pk])).status_code, 200)
+                self.assertEqual(self.client.post(reverse(f"admin:{app}_{name}_add"), {}).status_code, 403)
+                self.assertEqual(self.client.post(reverse(f"admin:{app}_{name}_change", args=[obj.pk]), {}).status_code, 403)
+                self.assertEqual(self.client.post(reverse(f"admin:{app}_{name}_delete", args=[obj.pk]), {"post": "yes"}).status_code, 403)
+        self.assertTrue(type(voucher).objects.filter(pk=voucher.pk).exists())
+        self.assertTrue(ChiTietPhieuThanhToan.objects.filter(pk=detail.pk).exists())
+        staff_without_payment_permission = User.objects.create_user(
+            "unrelated-staff", password="secret", is_staff=True,
+        )
+        self.client.force_login(staff_without_payment_permission)
+        for model in (type(voucher), ChiTietPhieuThanhToan):
+            app, name = model._meta.app_label, model._meta.model_name
+            self.assertEqual(self.client.get(reverse(f"admin:{app}_{name}_changelist")).status_code, 403)
+
+    def test_assignment_import_exact_group_code_wins_over_ambiguous_normalized_code(self):
+        first = NhomHD.objects.create(ma_nhom_hd="NHOM A", ten_nhom_hd="Nhóm một")
+        second = NhomHD.objects.create(ma_nhom_hd="NHOM-A", ten_nhom_hd="Nhóm hai")
+        for group in (first, second):
+            PhanBoChiTieu.objects.create(can_bo=self.staff, nhom_hd=group, so_tre_phcn=1)
+        base = {"Mã CB": self.staff.ma_can_bo, "IDChild": self.child.ma_tre,
+                "Loại dịch vụ": "HDTL", "Số buổi dự kiến": 2,
+                "Đợt phân công": 2, "Kỳ phân công": 1}
+        exact = import_assignment_workbook(self.workbook([{**base, "Nhóm HĐ": second.ma_nhom_hd}]))
+        self.assertFalse(exact.errors)
+        assignment = PhanCongTre.objects.get(tre=self.child, loai_dich_vu="HDTL")
+        self.assertEqual(assignment.nhom_hd_id, second.pk)
+        ambiguous = import_assignment_workbook(self.workbook([{**base, "Nhóm HĐ": "nhom a"}]))
+        self.assertTrue(ambiguous.errors)
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.nhom_hd_id, second.pk)
 
     def test_14_failed_import_row_rolls_back_generated_assignment_and_occurrence(self):
         before = PhanCongTre.objects.count()

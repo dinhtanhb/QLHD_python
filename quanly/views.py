@@ -1357,6 +1357,10 @@ def import_nhat_ky_can_thiep(request):
                     row_warnings.append(f"đã tạo phân công kỹ thuật độc lập cho dịch vụ {exact_service}")
                 if not assignment:
                     raise ValueError(f"Không tìm thấy phân công của trẻ {ma_tre} cho CBCT {ma_cb} và dịch vụ {raw_service}")
+                # Mã nhóm dịch vụ (PHCN/CS) chỉ dùng để chọn phân công; khóa
+                # khớp nhật ký phải dùng dịch vụ cụ thể của phân công đã chọn.
+                if exact_service is None:
+                    exact_service = assignment.loai_dich_vu
                 if source_hinh_thuc_ct and not assignment.hinh_thuc_ct:
                     assignment.hinh_thuc_ct = source_hinh_thuc_ct
                     assignment.save(update_fields=["hinh_thuc_ct", "updated_at"])

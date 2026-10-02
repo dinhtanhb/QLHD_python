@@ -49,7 +49,8 @@ def _read_workbook(uploaded_file):
 
 def import_assignment_workbook(uploaded_file, *, validate_only=False):
     """Validate every row first, then write the complete workbook atomically."""
-    from .views import clean_empty_excel_value, get_excel_value, normalize_service_code, parse_date, parse_int, take_import_occurrence
+    from .views import (add_unique_reference, clean_empty_excel_value, get_excel_value, normalize_service_code,
+                        normalized_reference_keys, parse_date, parse_int, take_import_occurrence)
 
     result = AssignmentImportResult(dry_run=validate_only)
     try:
@@ -79,10 +80,18 @@ def import_assignment_workbook(uploaded_file, *, validate_only=False):
     can_bo_by_code = {item.ma_can_bo: item for item in CanBo.objects.filter(ma_can_bo__in=cb_codes)}
     tre_by_code = {item.ma_tre: item for item in Tre.objects.filter(ma_tre__in=child_codes)}
     groups = list(NhomHD.objects.all())
-    group_by_key = {}
+    group_by_exact_code = {}
+    group_by_code = {}
+    group_by_name = {}
     for group in groups:
-        group_by_key.setdefault(group.ma_nhom_hd.casefold(), group)
-        group_by_key.setdefault(group.ten_nhom_hd.casefold(), group)
+        group_by_exact_code[group.ma_nhom_hd] = group
+        for key in normalized_reference_keys(group.ma_nhom_hd):
+            add_unique_reference(group_by_code, key, group)
+        for key in normalized_reference_keys(group.ten_nhom_hd):
+            if key in group_by_name and group_by_name[key] != group:
+                group_by_name[key] = None
+            else:
+                group_by_name[key] = group
 
     allocations = list(PhanBoChiTieu.objects.select_related("can_bo", "nhom_hd").order_by("-ngay_lap", "-id"))
     allocation_by_key = {}
@@ -124,10 +133,19 @@ def import_assignment_workbook(uploaded_file, *, validate_only=False):
             nhom_value = clean_empty_excel_value(get_excel_value(row, "Nhóm HĐ", "NhomHD", "Mã nhóm HĐ"))
             nhom = None
             if nhom_value:
-                nhom = group_by_key.get(str(nhom_value).casefold())
+                keys = normalized_reference_keys(nhom_value)
+                nhom = group_by_exact_code.get(str(nhom_value))
+                if not nhom and any(key in group_by_code and group_by_code[key] is None for key in keys):
+                    raise ValueError(f"Mã Nhóm HĐ '{nhom_value}' không duy nhất sau chuẩn hóa")
+                if not nhom:
+                    nhom = next((group_by_code[key] for key in keys if group_by_code.get(key)), None)
+                if not nhom:
+                    nhom = next((group_by_name[key] for key in keys if group_by_name.get(key)), None)
                 group_id = parse_get_int(str(nhom_value).removesuffix(".0"))
                 if not nhom and group_id is not None:
                     nhom = NhomHD.objects.filter(pk=group_id).first()
+                if not nhom:
+                    raise ValueError(f"Không tìm thấy Nhóm HĐ '{nhom_value}' đã ghi trong file")
             if not nhom and can_bo:
                 nhom = inferred_group_by_cb.get(can_bo.pk)
                 if nhom:
