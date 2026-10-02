@@ -1,5 +1,14 @@
 # Tiến độ dự án QLHD
 
+## Tiếp tục rà soát và sửa trang trắng Word — 02/10/2026
+
+- Theo yêu cầu mới của người dùng, từ nay làm trực tiếp trên `main`. Checkout hiện tại là `main`, nền `dc9b375d`; không sửa nhánh `dev`.
+- Đã rà lại diff sửa 14 vấn đề (`b5ce4138..dc9b375d`) và các caller liên quan; chưa phát hiện thêm lỗi chặn có bằng chứng. Đây là lượt rà của root, không phải xác nhận mới từ agent độc lập.
+- Xác minh trang trắng ĐNTT xuất hiện cả trong Microsoft Word. Bỏ một đoạn trống trong mỗi ô chữ ký của `quanly/document_templates/thanh_toan_cong_can_thiep/Mau_DNTT.docx`; toàn bộ chữ, placeholder, bảng và nội dung tài chính được giữ nguyên. Fixture xuất lại bằng code hiện tại giảm từ **3 trang xuống 2 trang**, đã xem cả hai trang; bảng kê vẫn bắt đầu ở trang riêng.
+- Kiểm chứng: trước sửa mẫu, MySQL **183/183** test đạt (gồm 3 test đồng thời); sau sửa, SQLite **19/19** test hồi quy đạt. `check`, `makemigrations --check --dry-run`, `git diff --check` đạt. Word xuất PDF thành công; thuế **300.000**, thực nhận **5.700.000**, giá trị HĐ **10.000.000** và số còn lại **4.000.000** giữ nguyên trên fixture.
+- Renderer đóng gói chưa chạy được vì không tìm thấy LibreOffice trên PATH; lượt này dùng Microsoft Word và Poppler để kiểm tra trực quan. Chưa xác minh lại render LibreOffice. Không thay schema, logic tính tiền hoặc database vận hành; hồ sơ sai đã chốt từ trước vẫn cần đối chiếu riêng.
+- File thay đổi của lượt này: mẫu ĐNTT Word và tài liệu tiến độ này. Bản sao `review`/`full` nằm trong `backups/`, chỉ gồm nguồn/tài liệu/template theo allowlist; không gồm dữ liệu thật hay file tạm. Người dùng đã yêu cầu commit/push trực tiếp lên GitHub nhánh `main` ngày 02/10/2026.
+
 ## Sửa 14 vấn đề sau rà soát toàn dự án — 01/10/2026
 
 Đợt sửa trên `main`, xuất phát từ `b5ce4138`. Giữ nguyên file `CLAUDE.md` chưa được theo dõi của người dùng. Không thay schema, không chạy backfill hay chỉnh dữ liệu vận hành.
