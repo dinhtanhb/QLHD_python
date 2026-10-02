@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nhật ký can thiệp</title>
+    
+    <!-- Bootstrap CSS & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --sidebar-bg: #102a43;
+            --sidebar-hover: #1f4b6e;
+            --sidebar-submenu-bg: #0b2033;
+            --sidebar-color: #b8c9d8;
+            --sidebar-active-color: #ffffff;
+            --accent: #18a999;
+            --page-bg: #f4f7fa;
+            --border: #e3eaf0;
+            --resizer-width: 3px;
+        }
+
+        body {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            margin: 0;
+            background-color: var(--page-bg);
+            color: #263746;
+            font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+            font-size: 0.94rem;
+        }
+
+        /* Sidebar Styles */
+        #sidebar {
+            width: 260px;
+            min-width: 70px;
+            max-width: 450px;
+            background: linear-gradient(180deg, #102a43 0%, #0b2033 100%);
+            color: var(--sidebar-color);
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+            z-index: 1000;
+        }
+
+        .sidebar-header {
+            padding: 18px 16px;
+            text-align: left;
+            font-weight: 700;
+            font-size: 1.2rem;
+            letter-spacing: 0.5px;
+            color: #fff;
+            border-bottom: 1px solid rgba(255,255,255,.1);
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .menu-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .menu-item {
+            padding: 10px 18px;
+            color: var(--sidebar-color);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .menu-item:hover {
+            color: var(--sidebar-active-color);
+            background: var(--sidebar-hover);
+            border-left-color: var(--accent);
+        }
+
+        .menu-item i.menu-icon {
+            font-size: 1.15rem;
+            min-width: 32px;
+            display: inline-block;
+        }
+
+        .menu-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-grow: 1;
+        }
+
+        .arrow-icon {
+            font-size: 0.8rem;
+            transition: transform 0.2s ease;
+        }
+
+        .menu-item.open .arrow-icon {
+            transform: rotate(180deg);
+        }
+
+        /* Submenu Styles */
+        .submenu {
+            display: none;
+            background: var(--sidebar-submenu-bg);
+        }
+
+        .submenu .menu-item {
+            padding: 8px 18px 8px 46px;
+            font-size: 0.9rem;
+        }
+
+        /* Resizer Divider */
+        #resizer {
+            width: var(--resizer-width);
+            cursor: col-resize;
+            background: #d8e1e8;
+            transition: background 0.2s;
+            z-index: 1001;
+        }
+
+        #resizer:hover, #resizer:active {
+            background: #0d6efd;
+        }
+
+        /* Main Content Layout */
+        #main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        #topbar {
+            background: rgba(255,255,255,.96);
+            padding: 14px 28px;
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 2px 12px rgba(16,42,67,.05);
+            display: flex;
+            align-items: center;
+            z-index: 999;
+        }
+
+        #content-area {
+            padding: 28px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        /* Collapsed Sidebar State */
+        .collapsed #sidebar {
+            width: 70px !important;
+        }
+
+        .collapsed .menu-text, 
+        .collapsed .submenu, 
+        .collapsed .sidebar-title,
+        .collapsed .arrow-icon {
+            display: none !important;
+        }
+
+        .collapsed .menu-item {
+            justify-content: center;
+            padding: 14px 0;
+        }
+
+        .collapsed .menu-item i.menu-icon {
+            min-width: unset;
+            text-align: center;
+        }
+
+        .collapsed #resizer {
+            cursor: default;
+            pointer-events: none;
+        }
+
+        .sidebar-footer { padding: 14px 16px 18px; border-top: 1px solid rgba(255,255,255,.1); }
+        .sidebar-footer .text-secondary { color: var(--sidebar-color) !important; }
+        .sidebar-footer .btn { width: 100%; margin-top: 10px; }
+        #toggle-btn { border-color: var(--border); color: #486581; }
+        #toggle-btn:hover { background: #eaf5f4; color: #147d72; }
+        #content-area > .container-fluid, #content-area > .container { max-width: 1480px; margin: 0 auto; }
+        .card { border: 1px solid var(--border) !important; border-radius: 14px !important; box-shadow: 0 5px 18px rgba(16,42,67,.06) !important; overflow: hidden; }
+        .card-header { border-bottom: 1px solid rgba(255,255,255,.12); padding: 14px 18px; }
+        .card-body { padding: 20px; }
+        .table { --bs-table-border-color: var(--border); margin-bottom: 0; }
+        .table thead th { background: #f6f9fb; color: #486581; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+        .table td, .table th { padding: .72rem .8rem; vertical-align: middle; }
+        .table tbody tr:hover { background: #f8fbfc; }
+        .btn { border-radius: 8px; font-weight: 600; }
+        .btn-primary { --bs-btn-bg: #147d72; --bs-btn-border-color: #147d72; --bs-btn-hover-bg: #0f665d; --bs-btn-hover-border-color: #0f665d; }
+        .btn-success { --bs-btn-bg: #147d72; --bs-btn-border-color: #147d72; --bs-btn-hover-bg: #0f665d; --bs-btn-hover-border-color: #0f665d; }
+        .form-control, .form-select { border-color: #cbd7e1; border-radius: 8px; min-height: 40px; }
+        .form-control:focus, .form-select:focus { border-color: var(--accent); box-shadow: 0 0 0 .2rem rgba(24,169,153,.14); }
+        .select2-container { width: 100% !important; }
+        .select2-container .select2-selection--single { height: 40px; border: 1px solid #cbd7e1; border-radius: 8px; }
+        .select2-container .select2-selection--single .select2-selection__rendered { line-height: 38px; color: #263746; padding-left: 12px; }
+        .select2-container .select2-selection--single .select2-selection__arrow { height: 38px; right: 6px; }
+        .select2-container--open .select2-selection--single, .select2-container--focus .select2-selection--single { border-color: var(--accent); box-shadow: 0 0 0 .2rem rgba(24,169,153,.14); }
+        form p { margin-bottom: 1rem; }
+        form p label { display: block; font-weight: 600; color: #486581; margin-bottom: .35rem; }
+        .alert { border: 0; border-radius: 10px; }
+        @media (max-width: 768px) {
+            #sidebar { width: 72px; min-width: 72px; }
+            #sidebar .menu-text, #sidebar .submenu, #sidebar .sidebar-title, #sidebar .arrow-icon, #sidebar .sidebar-footer { display: none; }
+            #sidebar .menu-item { justify-content: center; padding: 13px 0; }
+            #sidebar .menu-item i.menu-icon { min-width: unset; }
+            #content-area { padding: 16px; }
+            #topbar { padding: 12px 16px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar Navigation -->
+    <nav id="sidebar">
+        <div class="sidebar-header">
+            <span class="sidebar-title">VIETHEALTH</span>
+        </div>
+        
+        <div class="menu-list mt-2">
+            <a href="/" class="menu-item">
+                <i class="bi bi-house-door menu-icon"></i> 
+                <span class="menu-text">Trang chủ (Dashboard)</span>
+            </a>
+            <a href="/nhat-ky-can-thiep/" class="menu-item">
+                <i class="bi bi-clipboard2-check menu-icon"></i>
+                <span class="menu-text">Nhật ký can thiệp</span>
+            </a>
+            <a href="/thanh-quyet-toan/" class="menu-item">
+                <i class="bi bi-receipt menu-icon"></i>
+                <span class="menu-text">Thanh quyết toán</span>
+            </a>
+            <a href="/thanh-quyet-toan/phieu/" class="menu-item">
+                <i class="bi bi-journal-text menu-icon"></i>
+                <span class="menu-text">Sổ thanh toán CBCT</span>
+            </a>
+             <a href="/bao-cao-thanh-toan/" class="menu-item">
+                  <i class="bi bi-bar-chart-line menu-icon"></i>
+                  <span class="menu-text">Báo cáo thanh toán</span>
+              </a>
+            <a href="/thanh-toan-di-lai-phu-huynh/" class="menu-item">
+                <i class="bi bi-car-front menu-icon"></i>
+                <span class="menu-text">TQT đi lại phụ huynh</span>
+            </a>
+                        
+            <!-- Menu Danh mục -->
+            <div class="menu-item" onclick="toggleSubmenu('danhmuc', this)">
+                <i class="bi bi-folder2-open menu-icon"></i> 
+                <span class="menu-text">Danh mục</span>
+                <i class="bi bi-chevron-down arrow-icon"></i>
+            </div>
+            <div id="danhmuc" class="submenu">
+                <a href="/don-vi/" class="menu-item">
+                    <i class="bi bi-building menu-icon"></i> 
+                    <span class="menu-text">Đơn vị</span>
+                </a>
+                <a href="/nhom-hd/" class="menu-item">
+                    <i class="bi bi-tags menu-icon"></i> 
+                    <span class="menu-text">Nhóm Hợp đồng</span>
+                </a>
+                <a href="/tre/" class="menu-item">
+                    <i class="bi bi-person-hearts menu-icon"></i> 
+                    <span class="menu-text">Quản lý Trẻ</span>
+                </a>
+                <a href="/can-bo/" class="menu-item">
+                    <i class="bi bi-person-badge menu-icon"></i> 
+                    <span class="menu-text">Quản lý Cán bộ</span>
+                </a>
+            </div>
+
+            <!-- Menu Quy trình hợp đồng -->
+            <div class="menu-item" onclick="toggleSubmenu('quanlyhopdong', this)">
+                <i class="bi bi-journal-check menu-icon"></i> 
+                <span class="menu-text">Quy trình hợp đồng</span>
+                <i class="bi bi-chevron-down arrow-icon"></i>
+            </div>
+            <div id="quanlyhopdong" class="submenu">
+                <a href="/hop-dong/danh-sach-phan-bo/" class="menu-item">
+                    <i class="bi bi-diagram-3 menu-icon"></i> 
+                    <span class="menu-text">Phân bổ chỉ tiêu</span>
+                </a>
+                <a href="/hop-dong/phan-cong/" class="menu-item">
+                    <i class="bi bi-person-lines-fill menu-icon"></i>
+                    <span class="menu-text">Phân công trẻ</span>
+                </a>
+                <a href="/danh-sach-de-xuat/" class="menu-item">
+                    <i class="bi bi-card-checklist menu-icon"></i> 
+                    <span class="menu-text">Danh sách đề xuất (Chờ HĐ)</span>
+                </a>
+                <a href="/hop-dong/" class="menu-item">
+                    <i class="bi bi-file-earmark-text menu-icon"></i> 
+                    <span class="menu-text">Danh sách Hợp đồng</span>
+                </a>
+                <a href="/hop-dong/gia-han/" class="menu-item">
+                    <i class="bi bi-calendar-plus menu-icon"></i>
+                    <span class="menu-text">Gia hạn hợp đồng</span>
+                </a>
+            </div>
+        </div>
+        <div class="sidebar-footer">
+            
+                <span class="me-3 text-secondary small fw-semibold">
+                    <i class="bi bi-person-circle"></i> Xin chào, workflow-review-admin
+                </span>
+                <form action="/accounts/logout/" method="post" class="d-inline">
+                    <input type="hidden" name="csrfmiddlewaretoken" value="Lv5t2eRzUB7FqODpyQ7yTEcDERHS0838HKyUVlTxcsk8zKBL2f9SfLDewlVhEOPN">
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-box-arrow-right"></i> Đăng xuất
+                    </button>
+                </form>
+            
+</div>
+    </nav>
+
+    <!-- Thanh kéo dãn Kích thước Sidebar -->
+    <div id="resizer"></div>
+
+    <!-- Vùng Nội dung Chính -->
+    <div id="main-content">
+        <header id="topbar">
+            <button id="toggle-btn" class="btn btn-outline-secondary btn-sm me-3" title="Thu gọn/Mở rộng Sidebar">
+                <i class="bi bi-list fs-6"></i>
+            </button>
+            <h5 class="mb-0 fw-semibold text-secondary">Hệ thống Quản lý</h5>
+            <span class="ms-auto text-muted small d-none d-sm-inline">Đơn vị tiền: VND</span>
+        </header>
+
+        <main id="content-area">
+            
+            
+<div class="container-fluid mt-4"><div class="card shadow">
+  <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"><div><h4 class="mb-1">Nhật ký can thiệp</h4><small>Danh sách, nhập liệu và import dữ liệu thực tế</small></div><div class="d-flex gap-2"><a class="btn btn-light btn-sm" href="/nhat-ky-can-thiep/them/">Thêm nhật ký</a><a class="btn btn-light btn-sm" href="/nhat-ky-can-thiep/import/">Import Excel</a></div></div>
+  <div class="card-body">
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-5 g-3 mb-3">
+      <div class="col"><div class="card border-primary h-100"><div class="card-body py-2"><div class="text-muted small">Tổng số bản ghi</div><div class="fs-4 fw-bold text-primary">0</div></div></div></div>
+      <div class="col"><div class="card border-success h-100"><div class="card-body py-2"><div class="text-muted small">Bản ghi PHCN</div><div class="fs-4 fw-bold text-success">0</div></div></div></div>
+      <div class="col"><div class="card border-warning h-100"><div class="card-body py-2"><div class="text-muted small">Bản ghi CS</div><div class="fs-4 fw-bold text-warning">0</div></div></div></div>
+      <div class="col"><div class="card border-secondary h-100"><div class="card-body py-2"><div class="text-muted small">Số kỳ trong CSDL</div><div class="fs-4 fw-bold text-secondary">1</div><small class="text-muted">Không phụ thuộc bộ lọc</small></div></div></div>
+      <div class="col"><div class="card border-danger h-100"><div class="card-body py-2"><div class="text-muted small">Nhật ký trùng cần xử lý</div><div class="fs-4 fw-bold text-danger">0</div><a class="small text-danger" href="/nhat-ky-can-thiep/?trung=1">Mở danh sách trùng</a></div></div></div>
+    </div>
+    <details class="border rounded bg-light px-3 py-2 mb-3">
+      <summary class="fw-semibold text-primary" style="cursor: pointer;">Chi tiết các kỳ hiện có trong CSDL</summary>
+      <div class="table-responsive mt-2">
+        <table class="table table-sm table-bordered bg-white mb-0 align-middle">
+          <thead><tr><th class="text-end">Kỳ</th><th class="text-end">Số nhật ký</th><th class="text-end">Số buổi</th><th>Khoảng ngày can thiệp</th></tr></thead>
+          <tbody><tr><td class="fw-semibold">Kỳ 1</td><td class="text-end">1</td><td class="text-end">1</td><td>02/09/2026 – 02/09/2026</td></tr></tbody>
+        </table>
+      </div>
+    </details>
+    <form method="get" class="row g-2 align-items-end mb-3">
+      <div class="col-lg-3"><label class="form-label">Tìm kiếm</label><input name="q" value="CB-REVIEW" class="form-control" placeholder="Trẻ, hợp đồng, CBCT..."></div>
+      <div class="col-lg-2"><label class="form-label">CBCT</label><select name="can_bo" class="form-select select2-search"><option value="">Tất cả</option><option value="1" >CB-REVIEW - Cán bộ thử</option></select></div>
+      <div class="col-lg-2"><label class="form-label">Nhóm HĐ</label><select name="nhom_hd" class="form-select select2-search"><option value="">Tất cả</option><option value="1" >REVIEW</option></select></div>
+      <div class="col-lg-1"><label class="form-label">Kỳ</label><select name="ky" class="form-select"><option value="">Tất cả</option><option value="1" selected>Kỳ 1</option><option value="2" >Kỳ 2</option><option value="3" >Kỳ 3</option><option value="4" >Kỳ 4</option><option value="5" >Kỳ 5</option><option value="6" >Kỳ 6</option><option value="7" >Kỳ 7</option><option value="8" >Kỳ 8</option><option value="9" >Kỳ 9</option><option value="10" >Kỳ 10</option><option value="11" >Kỳ 11</option><option value="12" >Kỳ 12</option><option value="13" >Kỳ 13</option><option value="14" >Kỳ 14</option><option value="15" >Kỳ 15</option><option value="16" >Kỳ 16</option><option value="17" >Kỳ 17</option><option value="18" >Kỳ 18</option><option value="19" >Kỳ 19</option><option value="20" >Kỳ 20</option><option value="21" >Kỳ 21</option><option value="22" >Kỳ 22</option><option value="23" >Kỳ 23</option><option value="24" >Kỳ 24</option><option value="25" >Kỳ 25</option><option value="26" >Kỳ 26</option><option value="27" >Kỳ 27</option><option value="28" >Kỳ 28</option><option value="29" >Kỳ 29</option><option value="30" >Kỳ 30</option></select></div>
+      <div class="col-lg-1"><label class="form-label">Tháng</label><select name="thang" class="form-select"><option value="">Tất cả</option><option value="1" >1</option><option value="2" >2</option><option value="3" >3</option><option value="4" >4</option><option value="5" >5</option><option value="6" >6</option><option value="7" >7</option><option value="8" >8</option><option value="9" >9</option><option value="10" >10</option><option value="11" >11</option><option value="12" >12</option></select></div>
+      <div class="col-lg-1"><label class="form-label">Năm</label><select name="nam" class="form-select"><option value="">Tất cả</option><option value="2024" >2024</option><option value="2025" >2025</option><option value="2026" >2026</option><option value="2027" >2027</option><option value="2028" >2028</option><option value="2029" >2029</option><option value="2030" >2030</option></select></div>
+      <div class="col-lg-2"><button class="btn btn-primary me-1">Lọc</button><a class="btn btn-outline-secondary" href="/nhat-ky-can-thiep/">Xóa lọc</a></div>
+      <div class="col-12 d-flex flex-wrap gap-2 mt-3"><a class="btn btn-success" href="/thanh-quyet-toan/">Mở TQT công CBCT</a><a class="btn btn-info text-white" href="/thanh-toan-di-lai-phu-huynh/">Mở TQT đi lại PH</a><a class="btn btn-outline-danger" href="/nhat-ky-can-thiep/?trung=1">Danh sách trùng</a><a class="btn btn-outline-danger" href="/nhat-ky-can-thiep/xuat-danh-sach-trung/">Xuất Excel danh sách trùng</a><span class="text-muted small align-self-center">Chọn đúng quy trình theo loại thanh toán.</span></div>
+    </form>
+    <div class="text-muted small mb-2">Dữ liệu hiển thị theo bộ lọc hiện tại</div>
+    <div class="table-responsive"><table class="table table-bordered table-hover align-middle"><thead><tr><th>Ngày</th><th>Giờ</th><th>CBCT</th><th>Hợp đồng / Nhóm</th><th>Trẻ</th><th>Dịch vụ</th><th class="text-end">Kỳ</th><th class="text-end">Buổi</th><th>Đi lại CBCT</th><th>Đi lại PH</th><th class="text-end">Thành tiền</th><th>Thao tác</th></tr></thead><tbody>
+    <tr><td colspan="12" class="text-center text-muted py-4">Chưa có nhật ký phù hợp.</td></tr>
+    </tbody></table></div>
+    
+  </div>
+</div></div>
+
+        </main>
+    </div>
+
+    <!-- JavaScript Xử lý Tương tác -->
+    <script>
+        const body = document.body;
+        const sidebar = document.getElementById('sidebar');
+        const resizer = document.getElementById('resizer');
+
+        // Toggle Bật/Tắt Sidebar
+        document.getElementById('toggle-btn').addEventListener('click', () => {
+            body.classList.toggle('collapsed');
+        });
+
+        // Kéo dãn Sidebar
+        let isResizing = false;
+
+        resizer.addEventListener('mousedown', () => { 
+            isResizing = true; 
+            document.body.style.cursor = 'col-resize';
+        });
+
+        document.addEventListener('mouseup', () => { 
+            isResizing = false; 
+            document.body.style.cursor = 'default';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing || body.classList.contains('collapsed')) return;
+            let newWidth = e.clientX;
+            if (newWidth >= 180 && newWidth <= 450) {
+                sidebar.style.width = newWidth + 'px';
+            }
+        });
+
+        // Toggle Mở/Đóng Submenu
+        function toggleSubmenu(id, parentElem) {
+            if (body.classList.contains('collapsed')) return;
+            
+            const submenu = document.getElementById(id);
+            const isOpen = submenu.style.display === 'block';
+
+            submenu.style.display = isOpen ? 'none' : 'block';
+            if (parentElem) {
+                parentElem.classList.toggle('open', !isOpen);
+            }
+        }
+    </script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        $(function () {
+            $('.select2-search').select2({ width: '100%', placeholder: 'Chọn hoặc nhập để tìm...', allowClear: true });
+        });
+    </script>
+</body>
+</html>
