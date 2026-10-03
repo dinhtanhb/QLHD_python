@@ -1,5 +1,12 @@
 # Tiến độ dự án QLHD
 
+## Đồng bộ giao diện web — 03/10/2026
+
+- Cập nhật khung giao diện chung: điều hướng có trạng thái trang hiện tại, nhóm menu dùng nút có nhãn truy cập, menu di động mở/đóng bằng nút và bàn phím, điểm tập trung bàn phím trở về nút khi đóng. Chuẩn hóa màu, khoảng cách, tiêu đề, bảng, biểu mẫu và phân trang. Bổ sung Bootstrap bundle để nút đóng thông báo hoạt động.
+- Trang tổng quan chuyển sang thẻ số liệu thống nhất; lời chào lấy tên người đăng nhập thay cho tên cố định. Giữ nguyên các biến thống kê, đường dẫn và cách tính. Kiểm tra ba bộ số giả định gồm trống, nhỏ và lớn; kiểm tra phân trang trang 2/4 giữ tham số lọc. Kiểm tra cú pháp JavaScript và review độc lập; phát hiện và sửa quy tắc CSS có thể che màu cảnh báo trên bảng import/nhật ký.
+- Sau sửa: `check` không lỗi, `makemigrations --check --dry-run` không phát sinh migration, `quanly.tests` đạt **115/115** và `quanly --noinput` đạt **188/188**, không có bài bị bỏ qua; `git diff --check` đạt. Không thay đổi schema hay phép tính tài chính.
+- Kiểm thử trình duyệt Edge bằng bản HTML giả lập chưa thực hiện được vì chính sách browser chặn mở URL `file://`; không dùng cách vòng qua chính sách. Cần kiểm tra trực quan trên Edge tại môi trường UAT với CSDL riêng theo `docs/UAT_CURRENT.md`, đặc biệt menu di động, màu trạng thái các dòng import và thông báo đóng.
+
 ## Khóa quyền Admin và mặc định HTTPS production — 03/10/2026
 
 - Sau rà soát bảo mật, bỏ cơ chế nhận diện Admin theo tên đăng nhập `admin`; chỉ tài khoản đang hoạt động có `is_superuser` hoặc thuộc nhóm `Admin` mới có quyền Admin trong ứng dụng. `setup_roles` chỉ tạo bốn nhóm và không tự kích hoạt/nâng quyền tài khoản. Không đổi schema hoặc dữ liệu vận hành; tài khoản đang dựa duy nhất vào ngoại lệ tên cần được quản trị viên cấp nhóm `Admin` có chủ đích.

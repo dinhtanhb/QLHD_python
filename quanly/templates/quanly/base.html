@@ -215,14 +215,75 @@
             #content-area { padding: 16px; }
             #topbar { padding: 12px 16px; }
         }
+        /* Shared page language: clear headings, quiet surfaces and visible controls. */
+        :root { --page-bg: #f3f6f8; --border: #dce5eb; --accent: #087f72; }
+        body { color: #203446; line-height: 1.5; }
+        #sidebar { box-shadow: 8px 0 24px rgba(13, 37, 57, .10); }
+        .sidebar-header { display: flex; align-items: center; gap: 10px; font-size: 1.08rem; letter-spacing: .04em; }
+        .sidebar-header .bi { color: #58d5c3; font-size: 1.45rem; }
+        .menu-list { padding-bottom: 12px; }
+        button.menu-item { width: 100%; border: 0; background: transparent; text-align: left; font: inherit; }
+        .menu-item { min-height: 43px; border-radius: 0 8px 8px 0; margin-right: 8px; }
+        .menu-item:focus-visible, #toggle-btn:focus-visible, .btn:focus-visible, .page-link:focus-visible { outline: 3px solid #54d0bd; outline-offset: 2px; }
+        .menu-item.active { color: #fff; background: #20516b; border-left-color: #58d5c3; font-weight: 650; }
+        .submenu.open { display: block; }
+        #topbar { min-height: 66px; }
+        #topbar h1 { font-size: 1rem; color: #25455d; }
+        #content-area { scrollbar-gutter: stable; }
+        #content-area h2 { font-size: clamp(1.4rem, 2vw, 1.85rem); font-weight: 700; color: #173e53; }
+        #content-area h3, #content-area h4 { color: #25455d; }
+        #content-area > .container-fluid, #content-area > .container { margin-left: auto; margin-right: auto; }
+        .bg-white.shadow, .card { box-shadow: 0 4px 20px rgba(19, 52, 72, .06) !important; }
+        .bg-white.shadow { border: 1px solid var(--border); border-radius: 14px !important; }
+        .card-header.bg-primary, .card-header.bg-success, .card-header.bg-dark, .card-header.bg-info { background: #173e53 !important; color: #fff !important; }
+        .table-responsive { border-radius: 9px; }
+        .table thead th, .table .table-dark th, .table-dark th { background: #eaf1f4 !important; color: #29485a !important; border-color: var(--border) !important; }
+        .table td { color: #294052; }
+        .form-label, form p label { color: #29485a; }
+        .form-control, .form-select { background-color: #fff; }
+        .form-control:focus, .form-select:focus { border-color: #087f72; box-shadow: 0 0 0 .2rem rgba(8,127,114,.16); }
+        .btn-primary, .btn-success { --bs-btn-bg: #087f72; --bs-btn-border-color: #087f72; --bs-btn-hover-bg: #07685e; --bs-btn-hover-border-color: #07685e; }
+        .page-link { color: #126e66; border-color: var(--border); }
+        .page-link:hover { color: #075e54; background: #eaf5f2; }
+        .page-item.active .page-link { background: #087f72; border-color: #087f72; }
+        .alert { line-height: 1.5; }
+        .dashboard-page .dashboard-stat { color: #203446; transition: border-color .15s ease, transform .15s ease; }
+        .dashboard-page .dashboard-stat:hover { border-color: #62b5a9 !important; transform: translateY(-2px); }
+        .dashboard-page .dashboard-stat:focus-visible { outline: 3px solid #54d0bd; outline-offset: 2px; }
+        .dashboard-page .stat-icon { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; background: #e5f5f1; color: #087f72; border-radius: 11px; font-size: 1.25rem; }
+        .dashboard-page .stat-value { font-size: clamp(1.75rem, 2.5vw, 2.25rem); line-height: 1.15; font-weight: 750; letter-spacing: -.035em; }
+        .dashboard-page .stat-label { color: #506879; font-size: .9rem; margin-top: 5px; }
+        .dashboard-page dd { overflow-wrap: anywhere; }
+        .skip-link { position: absolute; left: 12px; top: -60px; z-index: 2000; padding: 8px 12px; background: #fff; color: #173e53; border-radius: 8px; }
+        .skip-link:focus { top: 10px; }
+        #sidebar-backdrop { display: none; }
+        @media (max-width: 768px) {
+            #sidebar { position: fixed; top: 0; bottom: 0; left: 0; width: min(84vw, 300px) !important; min-width: 0; transform: translateX(-105%); transition: transform .2s ease; }
+            #sidebar .menu-text, #sidebar .sidebar-title, #sidebar .arrow-icon { display: initial; }
+            #sidebar .sidebar-footer { display: block; }
+            #sidebar .submenu { display: none; }
+            #sidebar .submenu.open { display: block; }
+            #sidebar .menu-item { justify-content: flex-start; padding: 10px 18px; }
+            #sidebar .menu-item i.menu-icon { min-width: 32px; }
+            #resizer { display: none; }
+            .mobile-menu-open #sidebar { transform: translateX(0); }
+            .mobile-menu-open #sidebar-backdrop { display: block; position: fixed; inset: 0; background: rgba(12, 31, 45, .55); z-index: 999; }
+            .mobile-menu-open #content-area { overflow: hidden; }
+            #content-area { padding: 16px 12px 32px; }
+            #topbar { padding: 10px 16px; }
+            .collapsed #sidebar { width: min(84vw, 300px) !important; }
+            .collapsed #sidebar .menu-text, .collapsed #sidebar .sidebar-title, .collapsed #sidebar .arrow-icon { display: initial !important; }
+        }
     </style>
 </head>
 <body>
+    <a class="skip-link" href="#content-area">Chuyển đến nội dung</a>
+    <div id="sidebar-backdrop" aria-hidden="true"></div>
 
     <!-- Sidebar Navigation -->
     <nav id="sidebar">
         <div class="sidebar-header">
-            <span class="sidebar-title">VIETHEALTH</span>
+            <i class="bi bi-heart-pulse" aria-hidden="true"></i><span class="sidebar-title">VIETHEALTH</span>
         </div>
         
         <div class="menu-list mt-2">
@@ -252,11 +313,11 @@
             </a>
                         
             <!-- Menu Danh mục -->
-            <div class="menu-item" onclick="toggleSubmenu('danhmuc', this)">
+            <button type="button" class="menu-item" data-submenu="danhmuc" aria-label="Danh mục" aria-controls="danhmuc" aria-expanded="false">
                 <i class="bi bi-folder2-open menu-icon"></i> 
                 <span class="menu-text">Danh mục</span>
                 <i class="bi bi-chevron-down arrow-icon"></i>
-            </div>
+            </button>
             <div id="danhmuc" class="submenu">
                 <a href="/don-vi/" class="menu-item">
                     <i class="bi bi-building menu-icon"></i> 
@@ -277,11 +338,11 @@
             </div>
 
             <!-- Menu Quy trình hợp đồng -->
-            <div class="menu-item" onclick="toggleSubmenu('quanlyhopdong', this)">
+            <button type="button" class="menu-item" data-submenu="quanlyhopdong" aria-label="Quy trình hợp đồng" aria-controls="quanlyhopdong" aria-expanded="false">
                 <i class="bi bi-journal-check menu-icon"></i> 
                 <span class="menu-text">Quy trình hợp đồng</span>
                 <i class="bi bi-chevron-down arrow-icon"></i>
-            </div>
+            </button>
             <div id="quanlyhopdong" class="submenu">
                 <a href="{% url 'danh_sach_phan_bo' %}" class="menu-item">
                     <i class="bi bi-diagram-3 menu-icon"></i> 
@@ -328,10 +389,10 @@
     <!-- Vùng Nội dung Chính -->
     <div id="main-content">
         <header id="topbar">
-            <button id="toggle-btn" class="btn btn-outline-secondary btn-sm me-3" title="Thu gọn/Mở rộng Sidebar">
+            <button id="toggle-btn" type="button" class="btn btn-outline-secondary btn-sm me-3" aria-label="Mở hoặc thu gọn menu" aria-controls="sidebar" aria-expanded="true">
                 <i class="bi bi-list fs-6"></i>
             </button>
-            <h5 class="mb-0 fw-semibold text-secondary">Hệ thống Quản lý</h5>
+            <h1 class="mb-0 fw-semibold">Quản lý hợp đồng</h1>
             <span class="ms-auto text-muted small d-none d-sm-inline">Đơn vị tiền: VND</span>
         </header>
 
@@ -355,15 +416,59 @@
         const sidebar = document.getElementById('sidebar');
         const resizer = document.getElementById('resizer');
 
-        // Toggle Bật/Tắt Sidebar
-        document.getElementById('toggle-btn').addEventListener('click', () => {
-            body.classList.toggle('collapsed');
+        const toggleButton = document.getElementById('toggle-btn');
+        const backdrop = document.getElementById('sidebar-backdrop');
+        const mobileView = window.matchMedia('(max-width: 768px)');
+
+        function closeMobileMenu() {
+            body.classList.remove('mobile-menu-open');
+            sidebar.inert = true;
+            toggleButton.setAttribute('aria-expanded', 'false');
+            toggleButton.focus();
+        }
+
+        toggleButton.addEventListener('click', () => {
+            if (mobileView.matches) {
+                const isOpen = body.classList.toggle('mobile-menu-open');
+                sidebar.inert = !isOpen;
+                toggleButton.setAttribute('aria-expanded', String(isOpen));
+                if (isOpen) sidebar.querySelector('a.menu-item').focus();
+            } else {
+                const isExpanded = !body.classList.toggle('collapsed');
+                toggleButton.setAttribute('aria-expanded', String(isExpanded));
+            }
         });
+        backdrop.addEventListener('click', closeMobileMenu);
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && body.classList.contains('mobile-menu-open')) {
+                closeMobileMenu();
+            } else if (event.key === 'Tab' && body.classList.contains('mobile-menu-open')) {
+                const focusable = Array.from(sidebar.querySelectorAll('a, button')).filter((element) => element.offsetParent !== null);
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
+            }
+        });
+        mobileView.addEventListener('change', () => {
+            body.classList.remove('mobile-menu-open', 'collapsed');
+            if (mobileView.matches && sidebar.contains(document.activeElement)) toggleButton.focus();
+            sidebar.inert = mobileView.matches;
+            toggleButton.setAttribute('aria-expanded', String(!mobileView.matches));
+        });
+        sidebar.inert = mobileView.matches;
+        toggleButton.setAttribute('aria-expanded', String(!mobileView.matches));
 
         // Kéo dãn Sidebar
         let isResizing = false;
 
-        resizer.addEventListener('mousedown', () => { 
+        resizer.addEventListener('mousedown', () => {
+            if (mobileView.matches) return;
             isResizing = true; 
             document.body.style.cursor = 'col-resize';
         });
@@ -381,20 +486,36 @@
             }
         });
 
-        // Toggle Mở/Đóng Submenu
-        function toggleSubmenu(id, parentElem) {
-            if (body.classList.contains('collapsed')) return;
-            
-            const submenu = document.getElementById(id);
-            const isOpen = submenu.style.display === 'block';
-
-            submenu.style.display = isOpen ? 'none' : 'block';
-            if (parentElem) {
-                parentElem.classList.toggle('open', !isOpen);
-            }
+        function setSubmenu(button, isOpen) {
+            document.getElementById(button.dataset.submenu).classList.toggle('open', isOpen);
+            button.classList.toggle('open', isOpen);
+            button.setAttribute('aria-expanded', String(isOpen));
         }
+        document.querySelectorAll('[data-submenu]').forEach((button) => {
+            button.addEventListener('click', () => {
+                if (body.classList.contains('collapsed') && !mobileView.matches) {
+                    body.classList.remove('collapsed');
+                    toggleButton.setAttribute('aria-expanded', 'true');
+                    setSubmenu(button, true);
+                    return;
+                }
+                setSubmenu(button, button.getAttribute('aria-expanded') !== 'true');
+            });
+        });
+        const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
+        document.querySelectorAll('#sidebar a.menu-item').forEach((link) => {
+            link.setAttribute('aria-label', link.textContent.trim());
+            const linkPath = new URL(link.href).pathname.replace(/\/$/, '') || '/';
+            if (linkPath === currentPath) {
+                link.classList.add('active');
+                link.setAttribute('aria-current', 'page');
+                const parent = link.closest('.submenu');
+                if (parent) setSubmenu(document.querySelector('[data-submenu="' + parent.id + '"]'), true);
+            }
+        });
     </script>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script>
         $(function () {

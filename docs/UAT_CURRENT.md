@@ -1,5 +1,9 @@
 # UAT hiện hành — 02/10/2026
 
+## Kiểm tra giao diện sau thay đổi 03/10/2026
+
+Trên Edge với CSDL UAT riêng, kiểm tra ba màn hình đại diện: trang tổng quan, danh sách nhật ký can thiệp và trang import phân bổ. Ở kích thước màn hình rộng và hẹp, kiểm tra menu đang chọn, mở nhóm Danh mục/Quy trình hợp đồng, mở/đóng menu di động bằng nút, phím Tab và Escape. Kiểm tra bốn thẻ số liệu, bảng không tràn khỏi vùng hiển thị, màu dòng hợp lệ/lỗi/trùng vẫn phân biệt được, thông báo đóng được. Trên danh sách có nhiều trang, chuyển trang và xác nhận tham số lọc còn giữ nguyên. Chụp ảnh màn hình, ghi kích thước cửa sổ và phiên bản Edge; không dùng dữ liệu vận hành cho thao tác ghi.
+
 Nguồn kiểm tra: `main` tại `5628f468`. Dùng tài khoản Admin thử nghiệm và CSDL riêng đã áp migration; không trỏ các thao tác tạo/sửa/xóa vào dữ liệu vận hành. Dữ liệu nền cần một CBCT, một trẻ, một phân bổ/phân công VLTL và HĐ đã ký còn hiệu lực trong ngày nhật ký. Đơn giá fixture là 200.000/buổi; giá trị HĐ đủ để lập phiếu.
 
 ## Ba ca cần chạy trên Microsoft Edge
