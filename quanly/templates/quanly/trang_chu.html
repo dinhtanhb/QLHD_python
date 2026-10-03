@@ -4,15 +4,15 @@
 {% block title %}Tổng quan - VietHealth{% endblock %}
 
 {% block content %}
-<div class="container-fluid dashboard-page">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+<div class="container-fluid dashboard-page page-layout">
+    <header class="page-heading">
         <div>
-            <div class="text-uppercase fw-bold small text-success mb-1">Tổng quan hệ thống</div>
-            <h2 class="mb-1">Xin chào, {{ user.get_full_name|default:user.username }}</h2>
-            <p class="text-muted mb-0">Theo dõi hồ sơ, hợp đồng và chỉ tiêu trong cùng một nơi.</p>
+            <div class="page-eyebrow">Tổng quan hệ thống</div>
+            <h2 class="page-title">Xin chào, {{ user.get_full_name|default:user.username }}</h2>
+            <p class="page-subtitle">Theo dõi hồ sơ, hợp đồng và chỉ tiêu trong cùng một nơi.</p>
         </div>
         <span class="badge rounded-pill text-bg-light border px-3 py-2">Đơn vị tiền: VND</span>
-    </div>
+    </header>
 
     <div class="row g-3 mb-4">
         <div class="col-xl-3 col-md-6">

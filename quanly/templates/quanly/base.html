@@ -17,9 +17,12 @@
             --sidebar-submenu-bg: #0b2033;
             --sidebar-color: #b8c9d8;
             --sidebar-active-color: #ffffff;
-            --accent: #18a999;
-            --page-bg: #f4f7fa;
-            --border: #e3eaf0;
+            --accent: #087f72;
+            --page-bg: #f5f7f9;
+            --surface: #ffffff;
+            --ink: #17324d;
+            --muted: #52687a;
+            --border: #dce5eb;
             --resizer-width: 3px;
         }
 
@@ -216,7 +219,6 @@
             #topbar { padding: 12px 16px; }
         }
         /* Shared page language: clear headings, quiet surfaces and visible controls. */
-        :root { --page-bg: #f3f6f8; --border: #dce5eb; --accent: #087f72; }
         body { color: #203446; line-height: 1.5; }
         #sidebar { box-shadow: 8px 0 24px rgba(13, 37, 57, .10); }
         .sidebar-header { display: flex; align-items: center; gap: 10px; font-size: 1.08rem; letter-spacing: .04em; }
@@ -235,7 +237,15 @@
         #content-area > .container-fluid, #content-area > .container { margin-left: auto; margin-right: auto; }
         .bg-white.shadow, .card { box-shadow: 0 4px 20px rgba(19, 52, 72, .06) !important; }
         .bg-white.shadow { border: 1px solid var(--border); border-radius: 14px !important; }
-        .card-header.bg-primary, .card-header.bg-success, .card-header.bg-dark, .card-header.bg-info { background: #173e53 !important; color: #fff !important; }
+        .card-header.bg-primary, .card-header.bg-success, .card-header.bg-dark, .card-header.bg-info {
+            background: #f8fafb !important;
+            color: var(--ink) !important;
+            border-bottom: 1px solid var(--border) !important;
+        }
+        .card-header .btn-light { border-color: #cbd7e1; color: var(--ink); }
+        .card-header.bg-primary h2, .card-header.bg-primary h3, .card-header.bg-primary h4, .card-header.bg-primary h5,
+        .card-header.bg-success h2, .card-header.bg-success h3, .card-header.bg-success h4, .card-header.bg-success h5,
+        .card-header.bg-info h2, .card-header.bg-info h3, .card-header.bg-info h4, .card-header.bg-info h5 { color: var(--ink); }
         .table-responsive { border-radius: 9px; }
         .table thead th, .table .table-dark th, .table-dark th { background: #eaf1f4 !important; color: #29485a !important; border-color: var(--border) !important; }
         .table td { color: #294052; }
@@ -243,6 +253,11 @@
         .form-control, .form-select { background-color: #fff; }
         .form-control:focus, .form-select:focus { border-color: #087f72; box-shadow: 0 0 0 .2rem rgba(8,127,114,.16); }
         .btn-primary, .btn-success { --bs-btn-bg: #087f72; --bs-btn-border-color: #087f72; --bs-btn-hover-bg: #07685e; --bs-btn-hover-border-color: #07685e; }
+        .btn-outline-primary, .btn-outline-success, .btn-outline-info { --bs-btn-color: #087f72; --bs-btn-border-color: #087f72; --bs-btn-hover-bg: #087f72; --bs-btn-hover-border-color: #087f72; --bs-btn-hover-color: #fff; }
+        .btn-info { --bs-btn-bg: #087f72; --bs-btn-border-color: #087f72; --bs-btn-color: #fff; --bs-btn-hover-bg: #07685e; --bs-btn-hover-border-color: #07685e; --bs-btn-hover-color: #fff; }
+        #content-area h2.text-primary, #content-area h3.text-primary, #content-area h4.text-primary { color: var(--ink) !important; }
+        .alert-info { background: #eaf5f2; color: #20564f; border: 1px solid #b9ded6; }
+        .alert-secondary { background: #eef2f5; color: #344f61; border: 1px solid var(--border); }
         .page-link { color: #126e66; border-color: var(--border); }
         .page-link:hover { color: #075e54; background: #eaf5f2; }
         .page-item.active .page-link { background: #087f72; border-color: #087f72; }
@@ -254,6 +269,28 @@
         .dashboard-page .stat-value { font-size: clamp(1.75rem, 2.5vw, 2.25rem); line-height: 1.15; font-weight: 750; letter-spacing: -.035em; }
         .dashboard-page .stat-label { color: #506879; font-size: .9rem; margin-top: 5px; }
         .dashboard-page dd { overflow-wrap: anywhere; }
+        .page-layout { max-width: 1480px; margin: 0 auto; }
+        .page-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+        .page-eyebrow { color: var(--accent); font-size: .75rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 5px; }
+        #content-area .page-title { color: var(--ink); font-size: clamp(1.5rem, 2.2vw, 1.9rem); line-height: 1.25; font-weight: 750; margin: 0 0 5px; }
+        .page-subtitle { color: var(--muted); margin: 0; max-width: 75ch; }
+        .page-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .page-actions .btn { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; }
+        .filter-panel, .surface-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 4px 20px rgba(19,52,72,.05); padding: 20px; }
+        .filter-panel label { font-size: .85rem; font-weight: 650; margin-bottom: 6px; }
+        .filter-panel .btn { min-height: 40px; }
+        .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 4px 20px rgba(19,52,72,.05); height: 100%; padding: 18px 20px; }
+        .metric-label { color: var(--muted); font-size: .82rem; line-height: 1.35; }
+        .metric-value { color: var(--ink); font-size: clamp(1.4rem, 2vw, 1.8rem); line-height: 1.2; font-weight: 750; letter-spacing: -.02em; margin-top: 10px; overflow-wrap: anywhere; }
+        .metric-card--alert { border-left: 3px solid #c73946; }
+        .metric-card--alert .metric-value { color: #b42332; }
+        #content-area .section-title { color: var(--ink); font-size: 1.08rem; font-weight: 700; margin: 0 0 14px; }
+        .surface-panel .table-responsive { border: 1px solid var(--border); }
+        .surface-panel .table { margin-bottom: 0; }
+        @media (max-width: 768px) {
+            .filter-panel, .surface-panel { padding: 16px; }
+            .metric-card { padding: 16px; }
+        }
         .skip-link { position: absolute; left: 12px; top: -60px; z-index: 2000; padding: 8px 12px; background: #fff; color: #173e53; border-radius: 8px; }
         .skip-link:focus { top: 10px; }
         #sidebar-backdrop { display: none; }

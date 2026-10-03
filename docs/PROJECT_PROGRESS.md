@@ -1,5 +1,12 @@
 # Tiến độ dự án QLHD
 
+## Phương án giao diện A — 03/10/2026
+
+- Theo lựa chọn của người dùng, áp dụng giao diện sáng và thống nhất tại trang chủ, báo cáo thanh toán, thanh quyết toán và thành phần dùng chung: nền xám nhạt, tiêu đề xanh than trên nền sáng, nút chính xanh ngọc, bộ lọc và bảng trong các khối trắng riêng. Các chỉ số báo cáo dùng cùng màu chữ; riêng trùng lịch vẫn có dấu đỏ, tiêu đề cảnh báo nghiệp vụ màu vàng được giữ. Bộ lọc báo cáo xuống 1/2/4 cột theo bề ngang để tránh tràn khi có sidebar.
+- Chỉ đổi HTML/CSS và nhãn truy cập của ô lọc; giữ nguyên biến số liệu, truy vấn, quyền, điều kiện lập phiếu, URL xuất Excel, phân trang và cảnh báo nhật ký chưa liên kết. Ba màn hình đã render bằng dữ liệu giả định; review code và review toàn vẹn dữ liệu độc lập đã xác nhận không còn lỗi chặn sau khi sửa các điểm về tương phản, bề rộng bộ lọc và đơn vị VND.
+- Baseline và sau sửa đều đạt: `check` không lỗi, `makemigrations --check --dry-run` không phát sinh migration, `quanly.tests` **115/115**, `quanly --noinput` **188/188**, không có test bị bỏ qua. Kiểm tra render HTML trên ba mẫu và `git diff --check` đạt.
+- Kiểm tra trực quan trên Edge tại môi trường UAT vẫn cần hoàn tất: đánh giá bố cục ở màn hình rộng/hẹp, màu cảnh báo, nút trong đầu thẻ, bộ lọc và phân trang theo `docs/UAT_CURRENT.md`. Không coi render HTML hoặc HTTP test là bằng chứng đã kiểm tra bố cục trong Edge.
+
 ## Đồng bộ giao diện web — 03/10/2026
 
 - Cập nhật khung giao diện chung: điều hướng có trạng thái trang hiện tại, nhóm menu dùng nút có nhãn truy cập, menu di động mở/đóng bằng nút và bàn phím, điểm tập trung bàn phím trở về nút khi đóng. Chuẩn hóa màu, khoảng cách, tiêu đề, bảng, biểu mẫu và phân trang. Bổ sung Bootstrap bundle để nút đóng thông báo hoạt động.

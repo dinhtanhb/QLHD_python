@@ -4,6 +4,8 @@
 
 Trên Edge với CSDL UAT riêng, kiểm tra ba màn hình đại diện: trang tổng quan, danh sách nhật ký can thiệp và trang import phân bổ. Ở kích thước màn hình rộng và hẹp, kiểm tra menu đang chọn, mở nhóm Danh mục/Quy trình hợp đồng, mở/đóng menu di động bằng nút, phím Tab và Escape. Kiểm tra bốn thẻ số liệu, bảng không tràn khỏi vùng hiển thị, màu dòng hợp lệ/lỗi/trùng vẫn phân biệt được, thông báo đóng được. Trên danh sách có nhiều trang, chuyển trang và xác nhận tham số lọc còn giữ nguyên. Chụp ảnh màn hình, ghi kích thước cửa sổ và phiên bản Edge; không dùng dữ liệu vận hành cho thao tác ghi.
 
+Với phương án giao diện A, kiểm tra thêm trang Báo cáo thanh toán và Thanh quyết toán: tiêu đề xanh than dễ đọc trên nền sáng; bộ lọc nằm trong khối riêng và xuống dòng gọn ở các bề rộng 375, 768, 1280 và 1536 px; thẻ số liệu không cắt số tiền; hai bảng báo cáo và bảng thanh quyết toán cuộn ngang khi cần mà không đẩy cả trang tràn màn hình. Kiểm tra nút Lọc/Xóa lọc, Xuất Excel, In ĐNTT và liên kết Lập TT vẫn đúng vị trí, đúng URL; màu đỏ của trùng lịch và màu vàng cảnh báo nghiệp vụ vẫn dễ phân biệt. Đối chiếu ảnh trước/sau của cả ba trang trước khi xác nhận UAT trực quan.
+
 Nguồn kiểm tra: `main` tại `5628f468`. Dùng tài khoản Admin thử nghiệm và CSDL riêng đã áp migration; không trỏ các thao tác tạo/sửa/xóa vào dữ liệu vận hành. Dữ liệu nền cần một CBCT, một trẻ, một phân bổ/phân công VLTL và HĐ đã ký còn hiệu lực trong ngày nhật ký. Đơn giá fixture là 200.000/buổi; giá trị HĐ đủ để lập phiếu.
 
 ## Ba ca cần chạy trên Microsoft Edge
