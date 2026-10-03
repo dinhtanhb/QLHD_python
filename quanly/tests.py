@@ -413,10 +413,20 @@ class FinancialRulesTests(SimpleTestCase):
 
         staff_admin = SimpleNamespace(
             is_authenticated=True,
+            is_active=True,
             is_superuser=False,
             is_staff=True,
+            groups=SimpleNamespace(values_list=lambda *args, **kwargs: []),
             get_username=lambda: "admin",
         )
+        self.assertFalse(is_admin_user(staff_admin))
+        del staff_admin._qlhd_group_names
+        staff_admin.groups = SimpleNamespace(values_list=lambda *args, **kwargs: ["Admin"])
+        self.assertTrue(is_admin_user(staff_admin))
+        staff_admin.is_active = False
+        self.assertFalse(is_admin_user(staff_admin))
+        staff_admin.is_active = True
+        staff_admin.is_superuser = True
         self.assertTrue(is_admin_user(staff_admin))
 
     def test_parent_travel_export_filters_categories_and_writes_each_template(self):

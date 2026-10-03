@@ -45,8 +45,9 @@ if not SECRET_KEY:
 ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS", ("localhost", "127.0.0.1"))
 CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS", ())
 
-SECURE_SSL_REDIRECT = _env_bool("SECURE_SSL_REDIRECT", default=False)
-SECURE_HSTS_SECONDS = int(config("SECURE_HSTS_SECONDS", default="0") or 0)
+SECURE_SSL_REDIRECT = _env_bool("SECURE_SSL_REDIRECT", default=not DEBUG)
+# HSTS ngắn khi bắt đầu triển khai HTTPS; tăng thời hạn sau khi xác minh proxy/TLS.
+SECURE_HSTS_SECONDS = int(config("SECURE_HSTS_SECONDS", default="3600" if not DEBUG else "0") or 0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False)
 SECURE_HSTS_PRELOAD = _env_bool("SECURE_HSTS_PRELOAD", default=False)
 SECURE_PROXY_SSL_HEADER = (

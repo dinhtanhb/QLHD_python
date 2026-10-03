@@ -14,11 +14,6 @@ def user_group_names(user):
 
 def is_admin_user(user):
     """Nhận diện tài khoản quản trị thống nhất cho view và template."""
-    if not user or not user.is_authenticated:
+    if not user or not user.is_authenticated or not user.is_active:
         return False
-    if user.is_superuser:
-        return True
-    if "Admin" in user_group_names(user):
-        return True
-    # Giữ tài khoản vận hành mặc định có quyền quản trị nếu bị mất cờ superuser/group.
-    return user.get_username().strip().casefold() == "admin" and user.is_staff
+    return user.is_superuser or "Admin" in user_group_names(user)

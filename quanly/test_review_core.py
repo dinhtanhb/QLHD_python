@@ -6,12 +6,12 @@ from io import BytesIO, StringIO
 from unittest.mock import patch
 from html.parser import HTMLParser
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile
 import pandas as pd
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
 from .models import ChiTietGiaHanKhoiLuong, ChiTietKhoiLuongHopDong, NhatKyThucHien, PhanCongTre, PhuLucHopDong, ThanhLyHopDong
@@ -39,6 +39,21 @@ class NumericInputReviewTests(SimpleTestCase):
         for value in ("NaN", "Infinity", "-Infinity", Decimal("NaN"), float("inf")):
             with self.subTest(value=str(value)):
                 self.assertEqual(parse_decimal(value, Decimal("17")), Decimal("17"))
+
+
+class AdminRevocationReviewTests(TestCase):
+    def test_username_does_not_override_revoked_admin_role(self):
+        account = User.objects.create_user(username="admin", is_staff=True)
+        self.client.force_login(account)
+        import_url = reverse("import_don_vi")
+        self.assertEqual(self.client.get(import_url).status_code, 302)
+
+        account.groups.add(Group.objects.create(name="Admin"))
+        self.assertEqual(self.client.get(import_url).status_code, 200)
+
+        account.is_active = False
+        account.save(update_fields=["is_active"])
+        self.assertEqual(self.client.get(import_url).status_code, 302)
 
 
 class PaidJournalModelReviewTests(SettlementReportingTestBase):
@@ -83,14 +98,19 @@ class PaidJournalModelReviewTests(SettlementReportingTestBase):
 
 
 class ManagementCommandReviewTests(SettlementReportingTestBase):
-    def test_setup_roles_saves_actual_user_field_names_and_is_idempotent(self):
+    def test_setup_roles_does_not_reactivate_or_promote_admin(self):
         admin = User.objects.create_user(username="admin", is_active=False)
         output = StringIO()
         call_command("setup_roles", stdout=output)
         admin.refresh_from_db()
-        self.assertTrue(admin.is_active and admin.is_staff and admin.is_superuser)
+        self.assertFalse(admin.is_active or admin.is_staff or admin.is_superuser)
+        self.assertEqual(set(Group.objects.values_list("name", flat=True)),
+                         {"Admin", "DieuPhoiVien", "CBDA", "KeToan"})
         call_command("setup_roles", stdout=output)
-        self.assertIn("already has full", output.getvalue())
+        admin.refresh_from_db()
+        self.assertFalse(admin.is_active or admin.is_staff or admin.is_superuser)
+        self.assertEqual(Group.objects.count(), 4)
+        self.assertEqual(output.getvalue().count("Role setup completed."), 2)
 
     @patch("quanly.services.contract_status.timezone.localdate", return_value=date(2026, 10, 1))
     def test_status_sync_apply_reports_the_change_it_persisted(self, _today):

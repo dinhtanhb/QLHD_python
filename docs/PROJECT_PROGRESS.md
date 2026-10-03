@@ -1,5 +1,12 @@
 # Tiến độ dự án QLHD
 
+## Khóa quyền Admin và mặc định HTTPS production — 03/10/2026
+
+- Sau rà soát bảo mật, bỏ cơ chế nhận diện Admin theo tên đăng nhập `admin`; chỉ tài khoản đang hoạt động có `is_superuser` hoặc thuộc nhóm `Admin` mới có quyền Admin trong ứng dụng. `setup_roles` chỉ tạo bốn nhóm và không tự kích hoạt/nâng quyền tài khoản. Không đổi schema hoặc dữ liệu vận hành; tài khoản đang dựa duy nhất vào ngoại lệ tên cần được quản trị viên cấp nhóm `Admin` có chủ đích.
+- Khi `DEBUG=False`, mặc định chuyển HTTP sang HTTPS, bật HSTS 1 giờ và cookie Secure; `DEBUG=True` vẫn phục vụ HTTP local. Đã bỏ các dòng `False` trong `.env.example` vốn ghi đè mặc định an toàn. Máy chủ công ty dùng `https://`; nếu TLS kết thúc tại reverse proxy thì chỉ bật `SECURE_PROXY_SSL_HEADER=True` khi proxy tin cậy đã kiểm soát `X-Forwarded-Proto`.
+- Ba test quyền giả lập đạt: tài khoản `admin` còn staff nhưng đã bỏ quyền bị từ chối; thành viên nhóm `Admin` được vào; tài khoản bị vô hiệu hóa lại bị từ chối. `setup_roles` chạy hai lần không thay đổi cờ quyền của tài khoản bị vô hiệu hóa. Kiểm thử HTTP production giả lập: HTTPS trực tiếp và qua proxy trả 200, HSTS `max-age=3600`, CSRF cookie Secure; HTTP chuyển 301 sang HTTPS. `check --deploy` không còn `security.W004/W008`; `W005/W021` còn do chưa bật HSTS cho mọi subdomain/preload khi chưa kiểm kê tên miền công ty.
+- Kiểm chứng sau sửa trên MySQL test DB: `check` và kiểm tra migration đạt, `quanly.tests` **115/115**, `quanly --noinput` **188/188**, không có test bị bỏ qua; `git diff --check` đạt. Review độc lập sau sửa không thấy blocker. Cần kiểm tra `.env` thực trên máy chủ trước triển khai: giá trị `SECURE_*` ghi rõ sẽ ghi đè mặc định mới. Đối chiếu tên miền, reverse proxy, đăng nhập và POST trên máy chủ; không tự bật HSTS cho mọi subdomain hoặc preload.
+
 ## Chốt quy tắc nhật ký lịch sử — 03/10/2026
 
 - Người dùng xác nhận nhật ký lịch sử gắn HĐ làm liên kết kỹ thuật **được phép lập phiếu thanh toán**, kể cả khi HĐ liên kết không bao phủ ngày/nhóm nguồn, nếu thỏa các điều kiện lập phiếu còn lại. Luồng hiện tại đã cho phép trường hợp này; không sửa logic, schema hoặc dữ liệu. Cần đối chiếu nhật ký, phân công, HĐ, tiền và lần thanh toán trước khi xác nhận đã chi.
@@ -246,8 +253,8 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 ## Chuẩn hóa quyền admin và thao tác sửa/xóa nghiệp vụ — 28/09/2026
 
 - Đã rà lại tài khoản thật trong CSDL: `admin` đang có `is_staff=True` và `is_superuser=True`.
-- Đã gom nhận diện admin vào `quanly/permissions.py`; superuser, group `Admin` và tài khoản vận hành `admin` có cờ staff được nhận diện thống nhất ở decorator và template.
-- `setup_roles` hiện đồng bộ tài khoản `admin` thành active/staff/superuser nếu môi trường bị thiếu cờ quyền.
+- Đã gom nhận diện admin vào `quanly/permissions.py`; tại thời điểm 28/09, superuser, group `Admin` và tài khoản vận hành `admin` có cờ staff được nhận diện thống nhất ở decorator và template. Ngoại lệ theo tên đã bỏ ngày 03/10/2026.
+- Tại thời điểm 28/09, `setup_roles` đồng bộ tài khoản `admin` thành active/staff/superuser nếu môi trường bị thiếu cờ quyền. Hành vi tự nâng quyền đã bỏ ngày 03/10/2026.
 - Đã sửa thông báo của `setup_roles` về ASCII để lệnh không lỗi mã hóa CP1252 trên Windows; chạy thực tế trả `Role setup completed.`.
 - Bổ sung thao tác quản trị cho Đề xuất hợp đồng, đợt/chi tiết thanh toán CBCT và đợt/chi tiết TQT đi lại phụ huynh: Sửa/Xóa trên giao diện và endpoint POST có CSRF.
 - Giữ ràng buộc dữ liệu: không sửa/xóa đề xuất đã tạo hợp đồng; không xóa đợt đã có chi tiết liên kết; không xóa phân bổ/hợp đồng đã khóa hoặc đã phát sinh dữ liệu theo các quy tắc hiện hành.
@@ -302,7 +309,7 @@ Rủi ro còn lại: phân loại CBDA vẫn phụ thuộc nội dung Ghi chú h
 - Không đọc/ghi `.env`, không thay đổi DB thật và không đưa Excel dữ liệu thật vào lượt này.
 - Migration `0021_journal_without_contract.py` có thay đổi tương thích SQLite; với MySQL đã áp dụng, nhánh SQL vẫn chỉ chạy trên backend MySQL.
 - Cần chạy UAT trên MySQL bản sao sau khi người dùng kiểm tra các file import thật; đặc biệt rà các dòng trẻ mới thiếu ngày sinh/giới tính và các phân bổ CBDA được suy tự động.
-- Hai agent review độc lập không phát hiện P0. Các rủi ro P1 còn lại gồm các importer cũ (CBCT/đơn vị/nhật ký/hợp đồng) chưa được chuyển toàn bộ sang atomic trong Vòng 1 và chưa có test MySQL sạch; `import_phan_cong` đã đáp ứng atomic/validate-only theo phạm vi T4. Cấu hình HTTPS/HSTS mặc định cho phép tắt để chạy HTTP nội bộ; production phải bật các biến bảo mật tương ứng.
+- Hai agent review độc lập không phát hiện P0. Các rủi ro P1 còn lại gồm các importer cũ (CBCT/đơn vị/nhật ký/hợp đồng) chưa được chuyển toàn bộ sang atomic trong Vòng 1 và chưa có test MySQL sạch; `import_phan_cong` đã đáp ứng atomic/validate-only theo phạm vi T4. Tại thời điểm này HTTPS/HSTS mặc định tắt cho HTTP nội bộ; mặc định production đã đổi sang HTTPS ngày 03/10/2026.
 - Chưa xử lý sổ thanh toán thống nhất, tối ưu TQT quy mô lớn hoặc tách `views.py`; đây là phạm vi Vòng 2–3 theo tài liệu yêu cầu.
 
 ## Quyền Admin sửa/xóa dữ liệu khóa phục vụ kiểm thử — 28/09/2026

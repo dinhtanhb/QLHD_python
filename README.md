@@ -36,7 +36,7 @@ python -m venv venv
 Copy-Item .env.example .env
 ```
 
-Điền `SECRET_KEY`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` và các host/origin cần thiết trong `.env`. Dùng tài khoản MySQL riêng cho ứng dụng; không đưa `.env`, dữ liệu thật hoặc khóa API vào Git. Nếu chạy nội bộ bằng HTTP với `DEBUG=False`, đặt `SESSION_COOKIE_SECURE=False` và `CSRF_COOKIE_SECURE=False`; khi triển khai HTTPS, cấu hình cookie và SSL phù hợp.
+Điền `SECRET_KEY`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` và các host/origin cần thiết trong `.env`. Dùng tài khoản MySQL riêng cho ứng dụng; không đưa `.env`, dữ liệu thật hoặc khóa API vào Git. Trên máy chủ công ty dùng `https://`, đặt `DEBUG=False`, `ALLOWED_HOSTS` và `CSRF_TRUSTED_ORIGINS` theo tên miền thật. Mặc định production chuyển HTTP sang HTTPS, bật HSTS 1 giờ và cookie bảo mật. Nếu HTTPS kết thúc ở reverse proxy tin cậy, đặt `SECURE_PROXY_SSL_HEADER=True` sau khi proxy đã ghi đè `X-Forwarded-Proto` từ client; nếu không, để False. Kiểm tra đăng nhập, POST và `manage.py check --deploy` trước khi tăng thời hạn HSTS. Lệnh `setup_roles` chỉ tạo nhóm; tạo tài khoản quản trị bằng `createsuperuser` hoặc cấp nhóm `Admin` qua tài khoản quản trị hiện có.
 
 Chạy migration sau khi đã kiểm tra cấu hình và sao lưu dữ liệu (đặc biệt migration `0033` của sổ phiếu):
 
