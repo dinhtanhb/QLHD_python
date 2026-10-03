@@ -1,11 +1,16 @@
 # Tiến độ dự án QLHD
 
+## Chốt quy tắc nhật ký lịch sử — 03/10/2026
+
+- Người dùng xác nhận nhật ký lịch sử gắn HĐ làm liên kết kỹ thuật **được phép lập phiếu thanh toán**, kể cả khi HĐ liên kết không bao phủ ngày/nhóm nguồn, nếu thỏa các điều kiện lập phiếu còn lại. Luồng hiện tại đã cho phép trường hợp này; không sửa logic, schema hoặc dữ liệu. Cần đối chiếu nhật ký, phân công, HĐ, tiền và lần thanh toán trước khi xác nhận đã chi.
+- Baseline MySQL trước cập nhật tài liệu: `check` và kiểm tra migration đạt; `quanly.tests` **115/115**, `quanly --noinput` **187/187**, không có test bị bỏ qua. Các nhật ký trùng tạo từ import cũ vẫn cần kiểm kê riêng, không tự gộp.
+
 ## Rà soát dự án và sửa lỗi import/quyền Admin — 02/10/2026
 
 - Rà soát độc lập code và toàn vẹn dữ liệu phát hiện: import nhật ký dùng mã nhóm `PHCN`/`CS` có thể tạo trùng khi nhập lại; import phân công có thể suy sai Nhóm HĐ nếu tên ghi rõ khác dạng Unicode/khoảng trắng; Django Admin cho sửa/xóa phiếu và chi tiết trực tiếp ngoài luồng đối chiếu. Đã sửa tại `quanly/views.py`, `quanly/assignment_import.py`, `quanly/admin.py` và thêm hồi quy tại `quanly/test_review_fixes.py`.
 - Kiểm tra giả lập: 3 mẫu nhật ký `PHCN`, `CS`, `VLTL` nhập hai lần chỉ lưu mỗi mẫu một dòng và lượt sau báo cập nhật; tên nhóm dạng Unicode tách dấu, khoảng trắng lặp và mã nhóm chính xác được khớp đúng; nhóm ghi rõ không tồn tại hoặc khóa chuẩn hóa mơ hồ bị báo lỗi. Admin xem được phiếu khi có quyền; thao tác thêm/sửa/xóa trực tiếp bị chặn và staff không có quyền không xem được.
 - Kiểm chứng sau sửa trên MySQL test DB: `check` không lỗi, `makemigrations --check --dry-run` không phát sinh thay đổi, `quanly.tests` đạt **115/115**, `quanly --noinput` đạt **187/187**, không có test bị bỏ qua; `git diff --check` đạt. Hai lượt lỗi kiểm thử trung gian: tiến trình song song đụng tên test DB, rồi fixture hai mã chỉ khác dấu bị MySQL collation coi là trùng. Đã dừng chạy song song, đổi fixture sang mã khác dấu nối/khoảng trắng và chạy lại đạt.
-- Rà soát độc lập code và data-integrity sau bản vá cuối không thấy blocker. Điểm cần quyết định nghiệp vụ: nhật ký lịch sử gắn HĐ chỉ để liên kết kỹ thuật nhưng HĐ nằm ngoài ngày/nhóm nguồn hiện vẫn có thể đi vào tập xem xét lập phiếu nếu thỏa các điều kiện khác. Chưa đổi quy tắc này vì cần xác định có được thanh toán hay chỉ lưu tra cứu lịch sử; phải đối chiếu trước khi chi. Các nhật ký trùng từ import cũ cần kiểm kê riêng, không tự gộp. Chưa kiểm tra giao diện bằng Edge hoặc ghi thử trên dữ liệu vận hành.
+- Rà soát độc lập code và data-integrity sau bản vá cuối không thấy blocker. Tại thời điểm 02/10, quy tắc thanh toán cho nhật ký lịch sử gắn HĐ kỹ thuật chưa được chốt; người dùng đã xác nhận ngày 03/10 như ghi ở đầu tài liệu. Các nhật ký trùng từ import cũ cần kiểm kê riêng, không tự gộp. Chưa kiểm tra giao diện bằng Edge hoặc ghi thử trên dữ liệu vận hành.
 - Bản sao bàn giao theo allowlist: `backups/QLHD_project_review_review_20261002_222114.zip` (**8 file**) và `backups/QLHD_project_review_full_20261002_222114.zip` (**181 file**); đã kiểm tra ZIP, loại `.env`, CSDL, dữ liệu thật, `venv`, log, `_qa/` và file tạm. Commit/push cùng đợt được đối chiếu bằng Git/remote khi bàn giao.
 
 ## Đồng bộ tài liệu và ba ca HTTP UAT — 02/10/2026

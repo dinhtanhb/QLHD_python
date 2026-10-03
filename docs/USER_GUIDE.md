@@ -12,6 +12,7 @@ Tai lieu nay huong dan quy trinh van hanh hang ngay. Cac so lieu tai chinh phai 
 - Dòng nhật ký import lỗi không lưu phân công kỹ thuật kèm theo. Phân biệt số dòng thêm/cập nhật/bỏ qua/giữ nguyên với cảnh báo, và kiểm tra thông báo sau mỗi lượt import.
 - Khi import nhật ký với mã nhóm dịch vụ `PHCN` hoặc `CS`, hệ thống dùng dịch vụ cụ thể của phân công đã chọn để nhận diện dòng khi nhập lại. Trong file phân công, Nhóm HĐ ghi rõ phải khớp danh mục (chấp nhận biến thể dấu Unicode và khoảng trắng); giá trị không tìm thấy sẽ báo lỗi thay vì chuyển sang nhóm của CBCT.
 - Django Admin chỉ cho xem phiếu thanh toán CBCT và chi tiết phiếu. Việc lập, hủy hoặc xác nhận chi thực hiện trên các màn hình thanh toán để giữ số liệu đối chiếu.
+- Nhật ký lịch sử gắn HĐ để liên kết kỹ thuật được phép lập phiếu nếu thỏa các điều kiện lập phiếu còn lại, kể cả khi HĐ liên kết không bao phủ ngày hoặc nhóm nguồn. Trước khi xác nhận đã chi, đối chiếu từng nhật ký với phân công, HĐ, đơn giá và lần thanh toán; không tự gộp nhật ký trùng từ các lần import cũ.
 
 ## 1. Khoi dong va dang nhap
 
